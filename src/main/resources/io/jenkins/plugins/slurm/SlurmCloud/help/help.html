@@ -1,0 +1,18 @@
+<div>
+  <p>
+    Configure Jenkins to use a SLURM cluster as a cloud provider for dynamically provisioning build agents.
+  </p>
+  <p>
+    This cloud provider will submit jobs to your SLURM cluster and use the allocated compute resources as Jenkins agents.
+    Each agent runs as a separate SLURM job, allowing you to leverage the full power of your HPC infrastructure for CI/CD workloads.
+  </p>
+  <p>
+    <strong>Prerequisites:</strong>
+  </p>
+  <ul>
+    <li>SLURM cluster with sbatch, squeue, and scancel commands available</li>
+    <li>SSH access to SLURM compute nodes</li>
+    <li>Java installed on compute nodes</li>
+    <li>Network connectivity between Jenkins and SLURM nodes</li>
+  </ul>
+</div>
