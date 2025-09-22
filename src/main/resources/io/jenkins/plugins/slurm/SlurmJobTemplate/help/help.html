@@ -1,0 +1,20 @@
+<div>
+  <p>
+    SLURM Job Templates define the parameters for submitting jobs to your SLURM cluster.
+    Each template specifies resource requirements, partition settings, and job configuration
+    that will be used when Jenkins provisions agents for builds.
+  </p>
+  <p>
+    <strong>Use Cases:</strong>
+  </p>
+  <ul>
+    <li><strong>Light builds:</strong> Small jobs with minimal CPU/memory requirements</li>
+    <li><strong>Heavy builds:</strong> Resource-intensive jobs requiring multiple CPUs or large memory</li>
+    <li><strong>GPU builds:</strong> Jobs requiring GPU resources</li>
+    <li><strong>Specialized partitions:</strong> Jobs that need specific hardware or queue priorities</li>
+  </ul>
+  <p>
+    Templates are matched to build jobs based on their labels. If no matching template is found,
+    a default template using the cloud's default partition will be used.
+  </p>
+</div>

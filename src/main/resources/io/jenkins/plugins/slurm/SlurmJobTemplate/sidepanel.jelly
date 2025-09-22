@@ -1,0 +1,13 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:t="/lib/hudson">
+    <l:header />
+    <l:side-panel>
+        <l:tasks>
+            <j:set var="canManageTemplate" value="${it.hasManagePermission()}"/>
+            <l:task href="" icon="symbol-settings"
+                    title="${canManageTemplate ? '%Configure' : '%View Configuration'}"/>
+            <l:delete permission="${it.managePermission}" title="${%Delete Job Template}" message="${%delete.template(it.name)}"/>
+            <t:actions />
+        </l:tasks>
+    </l:side-panel>
+</j:jelly>

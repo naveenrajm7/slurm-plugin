@@ -1,0 +1,14 @@
+<div>
+  Additional arguments to pass to the <code>sbatch</code> command when submitting jobs.
+  <br/><br/>
+  Examples:
+  <ul>
+    <li><code>--gres=gpu:1</code> - Request 1 GPU</li>
+    <li><code>--constraint=intel</code> - Request Intel nodes</li>
+    <li><code>--exclusive</code> - Request exclusive access to nodes</li>
+    <li><code>--mail-type=END --mail-user=user@example.com</code> - Email notifications</li>
+  </ul>
+  <br/>
+  <strong>Note:</strong> Do not include arguments that are already handled by other template fields
+  (like --partition, --nodes, --cpus-per-task, etc.)
+</div>

@@ -1,0 +1,30 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:l="/lib/layout" xmlns:f="/lib/form">
+  <l:layout permission="${app.MANAGE_AND_SYSTEM_READ}" title="${%Job template settings}">
+    <j:set var="canManageTemplate" value="${it.hasManagePermission()}"/>
+    <j:set var="readOnlyMode" value="${!canManageTemplate}"/>
+    <l:breadcrumb title="${it.name}"/>
+
+    <st:include page="sidepanel.jelly"/>
+    <l:main-panel>
+      <h1>${%Job template settings}</h1>
+      <f:form method="post" action="configSubmit" name="config" class="jenkins-form">
+        <j:set var="instance" value="${it}"/>
+        <j:set var="descriptor" value="${instance.descriptor}"/>
+
+        <!-- main body of the configuration -->
+        <st:include it="${instance}" page="config.jelly"/>
+
+        <j:if test="${canManageTemplate}">
+          <f:bottomButtonBar>
+            <f:submit value="${%Save}"/>
+          </f:bottomButtonBar>
+        </j:if>
+      </f:form>
+
+      <j:if test="${canManageTemplate}">
+        <st:adjunct includes="lib.form.confirm"/> 
+      </j:if>
+    </l:main-panel>
+  </l:layout>
+</j:jelly>

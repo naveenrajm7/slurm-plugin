@@ -1,0 +1,74 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout"
+         xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+    <!-- with empty type attribute, takes full width space, works only because core doesn't provide a CSS "app-page-body-" -->
+    <l:layout title="${it.name} - ${%Job templates}"
+              type="${request2.hasParameter('expand') ? 'full-screen' : 'two-column'}">
+      <st:include page="sidepanel.jelly"/>
+
+      <l:main-panel>
+        <j:choose>
+            <j:when test="${not empty it.jobTemplates}">
+                <l:app-bar title="${it.name} - ${%Job templates}">
+                    <j:if test="${it.hasManagePermission()}">
+                        <a name="newTemplate" class="jenkins-button jenkins-button--primary" href="new">
+                            <l:icon src="symbol-add"/>
+                            ${%Add a job template}
+                        </a>
+                    </j:if>
+                </l:app-bar>
+                <table id="templates" class="jenkins-table sortable">
+                    <thead>
+                    <tr>
+                        <th initialSortDir="down">${%Name}</th>
+                        <th>${%Partition}</th>
+                        <th>${%Nodes}</th>
+                        <th>${%CPUs}</th>
+                        <th>${%Memory}</th>
+                        <th class="jenkins-table__cell--tight"/>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    <j:forEach var="template" items="${it.jobTemplates}">
+                        <tr id="template_${template.name}">
+                        <td>
+                            <a href="template/${template.name}" class="jenkins-table__button">${template.name}</a>
+                        </td>
+                        <td>${template.partition}</td>
+                        <td>${template.nodes}</td>
+                        <td>${template.cpusPerTask}</td>
+                        <td>${template.memory}</td>
+                        <td class="jenkins-table__cell--tight">
+                            <div class="jenkins-table__cell__button-wrapper">
+                                <a href="template/${template.name}" class="jenkins-table__button">
+                                    <l:icon src="symbol-settings"/>
+                                </a>
+                            </div>
+                        </td>
+                        </tr>
+                    </j:forEach>
+                    </tbody>
+                </table>
+            </j:when>
+            <j:otherwise>
+                <l:app-bar title="${it.name} - ${%Job templates}"/>
+                <j:if test="${it.hasManagePermission()}">
+                    <div >
+                        <section>
+                            <div>
+                                <div class="jenkins-!-padding-bottom-3">No job template added yet.</div>
+                                <div>
+                                    <a name="newTemplate" class="jenkins-button jenkins-button--primary" href="new">
+                                        <l:icon src="symbol-add"/>
+                                        ${%Add a job template}
+                                    </a>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </j:if>
+            </j:otherwise>
+        </j:choose>
+      </l:main-panel>
+    </l:layout>
+</j:jelly>
