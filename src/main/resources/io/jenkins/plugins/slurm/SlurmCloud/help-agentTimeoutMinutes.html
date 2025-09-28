@@ -1,0 +1,18 @@
+<div>
+  Maximum time to wait for a Slurm job to start and the Jenkins agent to become available.
+  <br/><br/>
+  <p>This timeout covers the entire process from job submission to agent connection:</p>
+  <ul>
+    <li>Job queuing time in Slurm</li>
+    <li>Node allocation and job startup</li>
+    <li>SSH connection establishment</li>
+    <li>Jenkins agent initialization</li>
+  </ul>
+  <br/>
+  <p><strong>Recommended values:</strong></p>
+  <ul>
+    <li><code>30-60 minutes</code> - Busy clusters with queuing</li>
+    <li><code>10-15 minutes</code> - Dedicated or lightly loaded clusters</li>
+    <li><code>5-10 minutes</code> - Testing or development environments</li>
+  </ul>
+</div>

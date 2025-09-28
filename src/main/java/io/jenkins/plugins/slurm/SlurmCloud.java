@@ -363,5 +363,182 @@ public class SlurmCloud extends AbstractCloudImpl {
             items.add("Select JWT token credentials...", "");
             return items;
         }
+        
+        /**
+         * Test connection to SLURM REST API.
+         * Similar to Kubernetes plugin's test connection functionality.
+         */
+        public FormValidation doTestConnection(@QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
+                                             @QueryParameter("credentialsId") String credentialsId) {
+            Jenkins.get().checkPermission(Jenkins.MANAGE);
+            
+            if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
+                return FormValidation.error("SLURM REST API URL is required");
+            }
+            
+            try {
+                // Validate URL format first
+                java.net.URL url = new java.net.URL(slurmRestApiUrl);
+                if (!"http".equals(url.getProtocol()) && !"https".equals(url.getProtocol())) {
+                    return FormValidation.error("URL must use http or https protocol");
+                }
+                
+                // Test connection using ping endpoint
+                String pingResult = testSlurmConnection(slurmRestApiUrl, credentialsId);
+                return FormValidation.ok("✓ " + pingResult);
+                
+            } catch (java.net.MalformedURLException e) {
+                return FormValidation.error("Invalid URL format: " + e.getMessage());
+            } catch (Exception e) {
+                return FormValidation.error("Connection failed: " + e.getMessage());
+            }
+        }
+        
+        /**
+         * Tests the connection to SLURM REST API using the ping endpoint.
+         * Returns a success message with version info similar to Kubernetes plugin.
+         */
+        private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
+            // Normalize API URL - ensure it doesn't end with slash
+            String baseUrl = apiUrl.replaceAll("/+$", "");
+            
+            // Construct ping endpoint URL
+            // TODO: Make API version configurable - for now using v0.0.42
+            String pingUrl = baseUrl + "/slurm/v0.0.42/ping";
+            
+            LOGGER.info("Testing SLURM connection to: " + pingUrl);
+            
+            // TODO: Retrieve actual JWT token from credentials
+            String authToken = getAuthTokenFromCredentials(credentialsId);
+            
+            // Make HTTP request to ping endpoint
+            java.net.HttpURLConnection connection = null;
+            try {
+                java.net.URL url = new java.net.URL(pingUrl);
+                connection = (java.net.HttpURLConnection) url.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setConnectTimeout(10000); // 10 second timeout
+                connection.setReadTimeout(10000);
+                
+                // Add authentication header if token is available
+                if (authToken != null && !authToken.trim().isEmpty()) {
+                    connection.setRequestProperty("Authorization", "Bearer " + authToken);
+                }
+                
+                // Set content type
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "application/json");
+                
+                int responseCode = connection.getResponseCode();
+                
+                if (responseCode == 200) {
+                    // Read response
+                    java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(connection.getInputStream()));
+                    StringBuilder response = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        response.append(line);
+                    }
+                    reader.close();
+                    
+                    // Parse JSON response to extract version info
+                    return parseSlurmPingResponse(response.toString());
+                    
+                } else if (responseCode == 401) {
+                    throw new Exception("Authentication failed - check your JWT token credentials");
+                } else if (responseCode == 403) {
+                    throw new Exception("Access denied - insufficient permissions for SLURM API");
+                } else {
+                    // Read error response
+                    java.io.BufferedReader errorReader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(connection.getErrorStream()));
+                    StringBuilder errorResponse = new StringBuilder();
+                    String line;
+                    while ((line = errorReader.readLine()) != null) {
+                        errorResponse.append(line);
+                    }
+                    errorReader.close();
+                    
+                    throw new Exception("HTTP " + responseCode + ": " + errorResponse.toString());
+                }
+                
+            } finally {
+                if (connection != null) {
+                    connection.disconnect();
+                }
+            }
+        }
+        
+        /**
+         * Retrieves authentication token from Jenkins credentials.
+         * TODO: Implement proper credentials retrieval.
+         */
+        private String getAuthTokenFromCredentials(String credentialsId) {
+            if (credentialsId == null || credentialsId.trim().isEmpty()) {
+                LOGGER.warning("No credentials ID provided for SLURM authentication");
+                return null;
+            }
+            
+            // TODO: Implement actual credential lookup
+            // Should retrieve Secret Text credential containing JWT token
+            LOGGER.info("TODO: Retrieve JWT token from credentials ID: " + credentialsId);
+            return null; // For now, return null (no auth)
+        }
+        
+        /**
+         * Parses SLURM ping response JSON to extract version and status information.
+         */
+        private String parseSlurmPingResponse(String jsonResponse) {
+            try {
+                // Simple JSON parsing to extract version info
+                // TODO: Use proper JSON library for more robust parsing
+                
+                // Look for version information in the response
+                String version = "unknown";
+                String cluster = "unknown";
+                boolean isUp = false;
+                
+                // Extract version using simple string matching (basic approach)
+                if (jsonResponse.contains("\"release\"")) {
+                    int releaseStart = jsonResponse.indexOf("\"release\":");
+                    if (releaseStart != -1) {
+                        int valueStart = jsonResponse.indexOf("\"", releaseStart + 10);
+                        int valueEnd = jsonResponse.indexOf("\"", valueStart + 1);
+                        if (valueStart != -1 && valueEnd != -1) {
+                            version = jsonResponse.substring(valueStart + 1, valueEnd);
+                        }
+                    }
+                }
+                
+                // Extract cluster name
+                if (jsonResponse.contains("\"cluster\"")) {
+                    int clusterStart = jsonResponse.indexOf("\"cluster\":");
+                    if (clusterStart != -1) {
+                        int valueStart = jsonResponse.indexOf("\"", clusterStart + 10);
+                        int valueEnd = jsonResponse.indexOf("\"", valueStart + 1);
+                        if (valueStart != -1 && valueEnd != -1) {
+                            cluster = jsonResponse.substring(valueStart + 1, valueEnd);
+                        }
+                    }
+                }
+                
+                // Check if any ping shows UP status
+                if (jsonResponse.contains("\"pinged\":\"UP\"") || jsonResponse.contains("\"responding\":true")) {
+                    isUp = true;
+                }
+                
+                // Format response similar to Kubernetes plugin
+                if (isUp) {
+                    return String.format("Connected to SLURM %s (cluster: %s)", version, cluster);
+                } else {
+                    return String.format("Connected to SLURM %s (cluster: %s) - Warning: Some components may be down", version, cluster);
+                }
+                
+            } catch (Exception e) {
+                LOGGER.warning("Failed to parse SLURM ping response: " + e.getMessage());
+                return "Connected to SLURM (version info unavailable)";
+            }
+        }
     }
 }
