@@ -77,6 +77,14 @@
       <artifactId>ssh-credentials</artifactId>
     </dependency>
     
+    <!-- Plain credentials for JWT tokens -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>plain-credentials</artifactId>
+    </dependency>
+    
+
+    
     <!-- Configuration as Code support -->
     <dependency>
       <groupId>io.jenkins</groupId>

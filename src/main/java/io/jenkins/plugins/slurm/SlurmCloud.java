@@ -1,18 +1,28 @@
 package io.jenkins.plugins.slurm;
 
-import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.common.StandardCredentials;
+import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
+import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import hudson.Extension;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
+import hudson.model.Item;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.security.ACL;
 import hudson.slaves.AbstractCloudImpl;
 import hudson.slaves.Cloud;
 import hudson.slaves.NodeProvisioner.PlannedNode;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
+import hudson.util.Secret;
 import jenkins.model.Jenkins;
+import net.sf.json.JSONObject;
+import net.sf.json.JSONArray;
 import org.jenkinsci.Symbol;
+import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
@@ -26,11 +36,11 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * SLURM Cloud implementation for Jenkins.
+ * Slurm Cloud implementation for Jenkins.
  * 
- * This class represents a SLURM cluster as a Jenkins cloud provider,
+ * This class represents a Slurm cluster as a Jenkins cloud provider,
  * allowing Jenkins to dynamically provision build agents by communicating
- * with the SLURM REST API (slurmrestd) for job submission, monitoring, and cancellation.
+ * with the Slurm REST API (slurmrestd) for job submission, monitoring, and cancellation.
  */
 public class SlurmCloud extends AbstractCloudImpl {
     
@@ -113,25 +123,25 @@ public class SlurmCloud extends AbstractCloudImpl {
     public Collection<PlannedNode> provision(@CheckForNull Cloud.CloudState state,
                                            @NonNull Label label,
                                            int excessWorkload) {
-        LOGGER.info("SLURM Cloud: Provision request for label=" + label + 
+        LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
                    ", excessWorkload=" + excessWorkload);
         
         // Check if we can provision more agents
         int currentAgents = getCurrentAgentCount();
         if (currentAgents >= maxAgents) {
-            LOGGER.info("SLURM Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
+            LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
             return Collections.emptyList();
         }
         
         // Find appropriate job template for this label
         SlurmJobTemplate jobTemplate = getJobTemplateFor(label);
-        LOGGER.info("SLURM Cloud: Using job template: " + jobTemplate.getName() + 
+        LOGGER.info("Slurm Cloud: Using job template: " + jobTemplate.getName() + 
                    " for label: " + (label != null ? label.getName() : "none"));
         
         // Check template-specific instance capacity
         int templateAgents = getCurrentTemplateAgentCount(jobTemplate);
         if (templateAgents >= jobTemplate.getInstanceCapStr()) {
-            LOGGER.info("SLURM Cloud: Cannot provision - template '" + jobTemplate.getName() + 
+            LOGGER.info("Slurm Cloud: Cannot provision - template '" + jobTemplate.getName() + 
                        "' at capacity limit (" + jobTemplate.getInstanceCapStr() + ")");
             return Collections.emptyList();
         }
@@ -153,7 +163,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
         }
         
-        LOGGER.info("SLURM Cloud: Planned " + plannedNodes.size() + " agents using template: " + jobTemplate.getName());
+        LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents using template: " + jobTemplate.getName());
         return plannedNodes;
     }
     
@@ -163,17 +173,17 @@ public class SlurmCloud extends AbstractCloudImpl {
     private PlannedNode createPlannedNode(SlurmJobTemplate jobTemplate, @CheckForNull Label label) {
         String agentName = generateAgentName(jobTemplate);
         
-        // TODO: Implement actual SLURM job submission and agent creation
+        // TODO: Implement actual Slurm job submission and agent creation
         // For now, return a mock planned node
         return new PlannedNode(agentName, 
                               java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                                   try {
-                                      LOGGER.info("SLURM Cloud: Creating agent " + agentName + 
+                                      LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
                                                  " with template " + jobTemplate.getName());
                                       
                                       // This is where we would:
-                                      // 1. Generate SLURM script using jobTemplate.generateSbatchScript(agentName)
-                                      // 2. Submit job to SLURM cluster
+                                      // 1. Generate Slurm script using jobTemplate.generateSbatchScript(agentName)
+                                      // 2. Submit job to Slurm cluster
                                       // 3. Wait for job to start
                                       // 4. Create SlurmAgent instance
                                       // 5. Add agent to Jenkins
@@ -182,11 +192,11 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       Thread.sleep(5000);
                                       
                                       // Create a mock agent (this should be real SlurmAgent creation)
-                                      LOGGER.info("SLURM Cloud: Mock agent " + agentName + " created successfully");
+                                      LOGGER.info("Slurm Cloud: Mock agent " + agentName + " created successfully");
                                       return null; // Should return actual SlurmAgent instance
                                       
                                   } catch (Exception e) {
-                                      LOGGER.severe("Failed to create SLURM agent " + agentName + ": " + e.getMessage());
+                                      LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
                                       throw new RuntimeException(e);
                                   }
                               }), 
@@ -225,7 +235,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     /**
-     * Gets the current number of SLURM agents.
+     * Gets the current number of Slurm agents.
      */
     private int getCurrentAgentCount() {
         int count = 0;
@@ -324,12 +334,12 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         @Override
         public String getDisplayName() {
-            return "SLURM";
+            return "Slurm";
         }
         
         public FormValidation doCheckSlurmRestApiUrl(@QueryParameter String value) {
             if (value == null || value.trim().isEmpty()) {
-                return FormValidation.error("SLURM REST API URL is required");
+                return FormValidation.error("Slurm REST API URL is required");
             }
             
             // Basic URL validation
@@ -356,16 +366,26 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
         }
         
-        public ListBoxModel doFillCredentialsIdItems() {
-            // TODO: Implement credentials dropdown for JWT tokens
-            // This should list Secret Text credentials containing JWT tokens
-            ListBoxModel items = new ListBoxModel();
-            items.add("Select JWT token credentials...", "");
-            return items;
+        public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item item) {
+            StandardListBoxModel result = new StandardListBoxModel();
+            if (item == null) {
+                if (!Jenkins.get().hasPermission(Jenkins.ADMINISTER)) {
+                    return result.includeEmptyValue();
+                }
+            } else {
+                if (!item.hasPermission(Item.EXTENDED_READ) && !item.hasPermission(CredentialsProvider.USE_ITEM)) {
+                    return result.includeEmptyValue();
+                }
+            }
+            
+            return result
+                    .includeEmptyValue()
+                    .includeAs(ACL.SYSTEM, item, StringCredentials.class)
+                    .includeCurrentValue(null);
         }
         
         /**
-         * Test connection to SLURM REST API.
+         * Test connection to Slurm REST API.
          * Similar to Kubernetes plugin's test connection functionality.
          */
         public FormValidation doTestConnection(@QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
@@ -373,7 +393,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             Jenkins.get().checkPermission(Jenkins.MANAGE);
             
             if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
-                return FormValidation.error("SLURM REST API URL is required");
+                return FormValidation.error("Slurm REST API URL is required");
             }
             
             try {
@@ -385,7 +405,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 
                 // Test connection using ping endpoint
                 String pingResult = testSlurmConnection(slurmRestApiUrl, credentialsId);
-                return FormValidation.ok("✓ " + pingResult);
+                return FormValidation.ok(pingResult);
                 
             } catch (java.net.MalformedURLException e) {
                 return FormValidation.error("Invalid URL format: " + e.getMessage());
@@ -395,7 +415,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         /**
-         * Tests the connection to SLURM REST API using the ping endpoint.
+         * Tests the connection to Slurm REST API using the ping endpoint.
          * Returns a success message with version info similar to Kubernetes plugin.
          */
         private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
@@ -406,7 +426,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             // TODO: Make API version configurable - for now using v0.0.42
             String pingUrl = baseUrl + "/slurm/v0.0.42/ping";
             
-            LOGGER.info("Testing SLURM connection to: " + pingUrl);
+            LOGGER.info("Testing Slurm connection to: " + pingUrl);
             
             // TODO: Retrieve actual JWT token from credentials
             String authToken = getAuthTokenFromCredentials(credentialsId);
@@ -420,9 +440,9 @@ public class SlurmCloud extends AbstractCloudImpl {
                 connection.setConnectTimeout(10000); // 10 second timeout
                 connection.setReadTimeout(10000);
                 
-                // Add authentication header if token is available
+                // Add Slurm authentication header if token is available
                 if (authToken != null && !authToken.trim().isEmpty()) {
-                    connection.setRequestProperty("Authorization", "Bearer " + authToken);
+                    connection.setRequestProperty("X-SLURM-USER-TOKEN", authToken);
                 }
                 
                 // Set content type
@@ -448,7 +468,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 } else if (responseCode == 401) {
                     throw new Exception("Authentication failed - check your JWT token credentials");
                 } else if (responseCode == 403) {
-                    throw new Exception("Access denied - insufficient permissions for SLURM API");
+                    throw new Exception("Access denied - insufficient permissions for Slurm API");
                 } else {
                     // Read error response
                     java.io.BufferedReader errorReader = new java.io.BufferedReader(
@@ -472,72 +492,122 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         /**
          * Retrieves authentication token from Jenkins credentials.
-         * TODO: Implement proper credentials retrieval.
+         * Looks up Secret Text credentials containing JWT token.
          */
         private String getAuthTokenFromCredentials(String credentialsId) {
             if (credentialsId == null || credentialsId.trim().isEmpty()) {
-                LOGGER.warning("No credentials ID provided for SLURM authentication");
+                LOGGER.warning("No credentials ID provided for Slurm authentication");
                 return null;
             }
             
-            // TODO: Implement actual credential lookup
-            // Should retrieve Secret Text credential containing JWT token
-            LOGGER.info("TODO: Retrieve JWT token from credentials ID: " + credentialsId);
-            return null; // For now, return null (no auth)
+            try {
+                // Use the lookupCredentials method instead
+                List<StringCredentials> credentials = CredentialsProvider.lookupCredentials(
+                    StringCredentials.class,
+                    (Item) null,
+                    ACL.SYSTEM,
+                    Collections.<DomainRequirement>emptyList()
+                );
+                
+                for (StringCredentials credential : credentials) {
+                    if (credentialsId.equals(credential.getId())) {
+                        Secret secret = credential.getSecret();
+                        String token = Secret.toString(secret);
+                        LOGGER.info("Successfully retrieved JWT token from credentials ID: " + credentialsId);
+                        return token;
+                    }
+                }
+                
+                LOGGER.warning("Could not find Secret Text credentials with ID: " + credentialsId);
+                return null;
+                
+            } catch (Exception e) {
+                LOGGER.severe("Failed to retrieve credentials: " + e.getMessage());
+                return null;
+            }
         }
         
         /**
-         * Parses SLURM ping response JSON to extract version and status information.
+         * Parses Slurm ping response JSON to extract version and status information.
          */
         private String parseSlurmPingResponse(String jsonResponse) {
             try {
-                // Simple JSON parsing to extract version info
-                // TODO: Use proper JSON library for more robust parsing
+                JSONObject response = JSONObject.fromObject(jsonResponse);
                 
-                // Look for version information in the response
                 String version = "unknown";
                 String cluster = "unknown";
+                List<String> hostnames = new ArrayList<>();
                 boolean isUp = false;
+                int upNodes = 0;
+                int totalNodes = 0;
                 
-                // Extract version using simple string matching (basic approach)
-                if (jsonResponse.contains("\"release\"")) {
-                    int releaseStart = jsonResponse.indexOf("\"release\":");
-                    if (releaseStart != -1) {
-                        int valueStart = jsonResponse.indexOf("\"", releaseStart + 10);
-                        int valueEnd = jsonResponse.indexOf("\"", valueStart + 1);
-                        if (valueStart != -1 && valueEnd != -1) {
-                            version = jsonResponse.substring(valueStart + 1, valueEnd);
+                // Extract meta information
+                if (response.has("meta")) {
+                    JSONObject meta = response.getJSONObject("meta");
+                    if (meta.has("slurm")) {
+                        JSONObject slurm = meta.getJSONObject("slurm");
+                        if (slurm.has("release")) {
+                            version = slurm.getString("release");
+                        }
+                        if (slurm.has("cluster")) {
+                            cluster = slurm.getString("cluster");
                         }
                     }
                 }
                 
-                // Extract cluster name
-                if (jsonResponse.contains("\"cluster\"")) {
-                    int clusterStart = jsonResponse.indexOf("\"cluster\":");
-                    if (clusterStart != -1) {
-                        int valueStart = jsonResponse.indexOf("\"", clusterStart + 10);
-                        int valueEnd = jsonResponse.indexOf("\"", valueStart + 1);
-                        if (valueStart != -1 && valueEnd != -1) {
-                            cluster = jsonResponse.substring(valueStart + 1, valueEnd);
+                // Check ping results
+                if (response.has("pings")) {
+                    JSONArray pings = response.getJSONArray("pings");
+                    totalNodes = pings.size();
+                    
+                    for (int i = 0; i < pings.size(); i++) {
+                        JSONObject ping = pings.getJSONObject(i);
+                        
+                        // Extract hostname from each ping
+                        String currentHostname = "unknown";
+                        if (ping.has("hostname")) {
+                            currentHostname = ping.getString("hostname");
+                        }
+                        
+                        // Always collect hostname from ping list
+                        if (!currentHostname.equals("unknown") && !hostnames.contains(currentHostname)) {
+                            hostnames.add(currentHostname);
+                        }
+                        
+                        // Check if this node is responding
+                        if (ping.has("pinged") && "UP".equals(ping.getString("pinged"))) {
+                            upNodes++;
+                            isUp = true;
                         }
                     }
                 }
                 
-                // Check if any ping shows UP status
-                if (jsonResponse.contains("\"pinged\":\"UP\"") || jsonResponse.contains("\"responding\":true")) {
-                    isUp = true;
-                }
+                // Format response with detailed status
+                String hostnamesStr = hostnames.isEmpty() ? "unknown" : String.join(", ", hostnames);
                 
-                // Format response similar to Kubernetes plugin
                 if (isUp) {
-                    return String.format("Connected to SLURM %s (cluster: %s)", version, cluster);
+                    if (totalNodes > 1) {
+                        return String.format("Connected to Slurm %s (cluster: %s, hostnames: [%s], %d/%d nodes responding)", 
+                                           version, cluster, hostnamesStr, upNodes, totalNodes);
+                    } else {
+                        return String.format("Connected to Slurm %s (cluster: %s, hostname: %s)", 
+                                           version, cluster, hostnamesStr);
+                    }
                 } else {
-                    return String.format("Connected to SLURM %s (cluster: %s) - Warning: Some components may be down", version, cluster);
+                    return String.format("Connected to Slurm %s (cluster: %s, hostnames: [%s]) - No nodes responding", 
+                                       version, cluster, hostnamesStr);
                 }
                 
             } catch (Exception e) {
-                LOGGER.warning("Failed to parse SLURM ping response: " + e.getMessage());
-                return "Connected to SLURM (version info unavailable)";
+                LOGGER.warning("Failed to parse Slurm ping response: " + e.getMessage());
+                LOGGER.info("Raw response: " + jsonResponse);
+                
+                // Fallback: check for basic success indicators
+                if (jsonResponse.contains("UP") || jsonResponse.contains("responding")) {
+                    return "Connected to Slurm (response parsing failed but service appears up)";
+                } else {
+                    return "Connected to Slurm (version info unavailable)";
+                }
             }
         }
     }
