@@ -140,7 +140,8 @@ public class SlurmLauncher extends DelegatingComputerLauncher {
             
             // For now, simulate job starting after 10 seconds
             if (System.currentTimeMillis() - startTime > 10000) {
-                String mockHost = cloud.getSlurmControllerHost(); // In real implementation, would be compute node
+                // In real implementation, would query SLURM REST API to get allocated node info
+                String mockHost = "compute-node-001"; // Would be extracted from REST API response
                 listener.getLogger().println("Mock job started on host: " + mockHost);
                 return mockHost;
             }
@@ -158,7 +159,7 @@ public class SlurmLauncher extends DelegatingComputerLauncher {
         // Create SSH launcher using the allocated host
         return new SSHLauncher(
             host,                                    // host
-            cloud.getSlurmControllerPort(),         // port (could be different for compute nodes)
+            22,                                     // port (standard SSH port for compute nodes)
             credentialsId,                          // credentials
             null,                                   // jvmOptions
             null,                                   // javaPath

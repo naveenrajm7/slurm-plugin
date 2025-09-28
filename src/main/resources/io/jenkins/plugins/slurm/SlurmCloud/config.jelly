@@ -2,22 +2,17 @@
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
   <f:section title="SLURM Cloud Configuration">
     
-    <f:entry title="Cloud Name" field="name" description="A unique name for this SLURM cloud configuration">
+    <f:entry title="Name" field="name" description="A unique name for this SLURM cloud configuration">
       <f:textbox />
     </f:entry>
     
-    <f:entry title="SLURM Controller Host" field="slurmControllerHost" 
-             description="Hostname or IP address of the SLURM controller node">
-      <f:textbox />
-    </f:entry>
-    
-    <f:entry title="SSH Port" field="slurmControllerPort" 
-             description="SSH port for connecting to SLURM nodes (default: 22)">
-      <f:number default="22" min="1" max="65535" />
+    <f:entry title="SLURM REST API URL" field="slurmRestApiUrl" 
+             description="The URL of the SLURM REST API server. Example: http://slurm-controller:6820 (default port: 6820)">
+      <f:textbox default="http://localhost:6820" />
     </f:entry>
     
     <f:entry title="Credentials" field="credentialsId"
-             description="SSH credentials for connecting to SLURM nodes">
+             description="Authentication token for SLURM REST API (JWT token or similar)">
       <f:select />
     </f:entry>
     
@@ -36,7 +31,7 @@
       <f:number default="60" min="1" />
     </f:entry>
     
-    <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmControllerHost,slurmControllerPort,credentialsId" />
+    <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId" />
     
   </f:section>
 </j:jelly>

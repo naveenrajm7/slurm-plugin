@@ -29,15 +29,14 @@ import java.util.logging.Logger;
  * SLURM Cloud implementation for Jenkins.
  * 
  * This class represents a SLURM cluster as a Jenkins cloud provider,
- * allowing Jenkins to dynamically provision build agents by submitting
- * jobs to the SLURM workload manager.
+ * allowing Jenkins to dynamically provision build agents by communicating
+ * with the SLURM REST API (slurmrestd) for job submission, monitoring, and cancellation.
  */
 public class SlurmCloud extends AbstractCloudImpl {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmCloud.class.getName());
     
-    private final String slurmControllerHost;
-    private final int slurmControllerPort;
+    private final String slurmRestApiUrl;
     private final String credentialsId;
     private final String defaultPartition;
     private final int maxAgents;
@@ -46,15 +45,14 @@ public class SlurmCloud extends AbstractCloudImpl {
     
     @DataBoundConstructor
     public SlurmCloud(String name,
-                      String slurmControllerHost,
-                      int slurmControllerPort,
+                      String slurmRestApiUrl,
                       String credentialsId,
                       String defaultPartition,
                       int maxAgents,
                       int agentTimeoutMinutes) {
         super(name, String.valueOf(maxAgents > 0 ? maxAgents : 10));
-        this.slurmControllerHost = slurmControllerHost;
-        this.slurmControllerPort = slurmControllerPort > 0 ? slurmControllerPort : 22;
+        this.slurmRestApiUrl = slurmRestApiUrl != null && !slurmRestApiUrl.trim().isEmpty() ? 
+                              slurmRestApiUrl : "http://localhost:6820";
         this.credentialsId = credentialsId;
         this.defaultPartition = defaultPartition;
         this.maxAgents = maxAgents > 0 ? maxAgents : 10;
@@ -63,12 +61,8 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     // Getters for configuration values
-    public String getSlurmControllerHost() {
-        return slurmControllerHost;
-    }
-    
-    public int getSlurmControllerPort() {
-        return slurmControllerPort;
+    public String getSlurmRestApiUrl() {
+        return slurmRestApiUrl;
     }
     
     public String getCredentialsId() {
@@ -333,22 +327,20 @@ public class SlurmCloud extends AbstractCloudImpl {
             return "SLURM";
         }
         
-        public FormValidation doCheckSlurmControllerHost(@QueryParameter String value) {
+        public FormValidation doCheckSlurmRestApiUrl(@QueryParameter String value) {
             if (value == null || value.trim().isEmpty()) {
-                return FormValidation.error("SLURM controller hostname is required");
+                return FormValidation.error("SLURM REST API URL is required");
             }
-            return FormValidation.ok();
-        }
-        
-        public FormValidation doCheckSlurmControllerPort(@QueryParameter String value) {
+            
+            // Basic URL validation
             try {
-                int port = Integer.parseInt(value);
-                if (port <= 0 || port > 65535) {
-                    return FormValidation.error("Port must be between 1 and 65535");
+                java.net.URL url = new java.net.URL(value);
+                if (!"http".equals(url.getProtocol()) && !"https".equals(url.getProtocol())) {
+                    return FormValidation.error("URL must use http or https protocol");
                 }
                 return FormValidation.ok();
-            } catch (NumberFormatException e) {
-                return FormValidation.error("Invalid port number");
+            } catch (java.net.MalformedURLException e) {
+                return FormValidation.error("Invalid URL format. Example: http://slurm-controller:6820");
             }
         }
         
@@ -365,9 +357,10 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         public ListBoxModel doFillCredentialsIdItems() {
-            // TODO: Implement credentials dropdown
+            // TODO: Implement credentials dropdown for JWT tokens
+            // This should list Secret Text credentials containing JWT tokens
             ListBoxModel items = new ListBoxModel();
-            items.add("Select credentials...", "");
+            items.add("Select JWT token credentials...", "");
             return items;
         }
     }
