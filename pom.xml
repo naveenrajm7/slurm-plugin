@@ -83,7 +83,32 @@
       <artifactId>plain-credentials</artifactId>
     </dependency>
     
-
+    <!-- Jackson dependencies for generated OpenAPI clients -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-core</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-annotations</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.datatype</groupId>
+      <artifactId>jackson-datatype-jsr310</artifactId>
+      <version>2.17.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.openapitools</groupId>
+      <artifactId>jackson-databind-nullable</artifactId>
+      <version>0.2.6</version>
+    </dependency>
     
     <!-- Configuration as Code support -->
     <dependency>
@@ -99,6 +124,93 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <!-- OpenAPI Generator for multiple SLURM versions -->
+      <plugin>
+        <groupId>org.openapitools</groupId>
+        <artifactId>openapi-generator-maven-plugin</artifactId>
+        <version>7.0.1</version>
+        <executions>
+          <!-- Generate client for v0.0.40 -->
+          <execution>
+            <id>generate-slurm-client-v40</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <inputSpec>${project.basedir}/src/main/resources/openapi/slurm-v0.0.40.json</inputSpec>
+              <generatorName>java</generatorName>
+              <packageName>io.jenkins.plugins.slurm.client.v40</packageName>
+              <modelPackage>io.jenkins.plugins.slurm.client.v40.model</modelPackage>
+              <apiPackage>io.jenkins.plugins.slurm.client.v40.api</apiPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <library>native</library>
+                <dateLibrary>java8</dateLibrary>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+          
+          <!-- Generate client for v0.0.41 -->
+          <execution>
+            <id>generate-slurm-client-v41</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <inputSpec>${project.basedir}/src/main/resources/openapi/slurm-v0.0.41.json</inputSpec>
+              <generatorName>java</generatorName>
+              <packageName>io.jenkins.plugins.slurm.client.v41</packageName>
+              <modelPackage>io.jenkins.plugins.slurm.client.v41.model</modelPackage>
+              <apiPackage>io.jenkins.plugins.slurm.client.v41.api</apiPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <library>native</library>
+                <dateLibrary>java8</dateLibrary>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+          
+          <!-- Generate client for v0.0.42 -->
+          <execution>
+            <id>generate-slurm-client-v42</id>
+            <goals>
+              <goal>generate</goal>
+            </goals>
+            <configuration>
+              <inputSpec>${project.basedir}/src/main/resources/openapi/slurm-v0.0.42.json</inputSpec>
+              <generatorName>java</generatorName>
+              <packageName>io.jenkins.plugins.slurm.client.v42</packageName>
+              <modelPackage>io.jenkins.plugins.slurm.client.v42.model</modelPackage>
+              <apiPackage>io.jenkins.plugins.slurm.client.v42.api</apiPackage>
+              <generateApiTests>false</generateApiTests>
+              <generateModelTests>false</generateModelTests>
+              <generateApiDocumentation>false</generateApiDocumentation>
+              <generateModelDocumentation>false</generateModelDocumentation>
+              <configOptions>
+                <library>native</library>
+                <dateLibrary>java8</dateLibrary>
+                <sourceFolder>src/gen/java</sourceFolder>
+                <hideGenerationTimestamp>true</hideGenerationTimestamp>
+              </configOptions>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
 
   <repositories>
     <repository>
