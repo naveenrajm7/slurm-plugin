@@ -27,6 +27,9 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
+import io.jenkins.plugins.slurm.client.SlurmClient;
+import io.jenkins.plugins.slurm.client.SlurmPingInfo;
+
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import java.util.ArrayList;
@@ -415,78 +418,37 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         /**
-         * Tests the connection to Slurm REST API using the ping endpoint.
-         * Returns a success message with version info similar to Kubernetes plugin.
+         * Tests the connection to Slurm REST API using the ping endpoint with OpenAPI client.
          */
         private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
             // Normalize API URL - ensure it doesn't end with slash
             String baseUrl = apiUrl.replaceAll("/+$", "");
             
-            // Construct ping endpoint URL
-            // TODO: Make API version configurable - for now using v0.0.42
-            String pingUrl = baseUrl + "/slurm/v0.0.42/ping";
+            LOGGER.info("Testing Slurm connection to: " + baseUrl);
             
-            LOGGER.info("Testing Slurm connection to: " + pingUrl);
-            
-            // TODO: Retrieve actual JWT token from credentials
+            // Retrieve JWT token from credentials
             String authToken = getAuthTokenFromCredentials(credentialsId);
+            if (authToken == null || authToken.trim().isEmpty()) {
+                LOGGER.warning("No authentication token provided - connection may fail");
+            }
             
-            // Make HTTP request to ping endpoint
-            java.net.HttpURLConnection connection = null;
             try {
-                java.net.URL url = new java.net.URL(pingUrl);
-                connection = (java.net.HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("GET");
-                connection.setConnectTimeout(10000); // 10 second timeout
-                connection.setReadTimeout(10000);
+                SlurmClient client = new SlurmClient(baseUrl, authToken);
                 
-                // Add Slurm authentication header if token is available
-                if (authToken != null && !authToken.trim().isEmpty()) {
-                    connection.setRequestProperty("X-SLURM-USER-TOKEN", authToken);
-                }
+                // Test ping and get essential controller information
+                SlurmPingInfo slurmInfo = client.getSlurmInfo();
                 
-                // Set content type
-                connection.setRequestProperty("Content-Type", "application/json");
-                connection.setRequestProperty("Accept", "application/json");
-                
-                int responseCode = connection.getResponseCode();
-                
-                if (responseCode == 200) {
-                    // Read response
-                    java.io.BufferedReader reader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(connection.getInputStream()));
-                    StringBuilder response = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        response.append(line);
-                    }
-                    reader.close();
-                    
-                    // Parse JSON response to extract version info
-                    return parseSlurmPingResponse(response.toString());
-                    
-                } else if (responseCode == 401) {
-                    throw new Exception("Authentication failed - check your JWT token credentials");
-                } else if (responseCode == 403) {
-                    throw new Exception("Access denied - insufficient permissions for Slurm API");
+                if (slurmInfo != null) {
+                    return String.format("Connected to SLURM controller '%s' (v%s, cluster: %s) at %s", 
+                                       slurmInfo.getHostname(), slurmInfo.getVersion(), 
+                                       slurmInfo.getCluster(), baseUrl);
                 } else {
-                    // Read error response
-                    java.io.BufferedReader errorReader = new java.io.BufferedReader(
-                        new java.io.InputStreamReader(connection.getErrorStream()));
-                    StringBuilder errorResponse = new StringBuilder();
-                    String line;
-                    while ((line = errorReader.readLine()) != null) {
-                        errorResponse.append(line);
-                    }
-                    errorReader.close();
-                    
-                    throw new Exception("HTTP " + responseCode + ": " + errorResponse.toString());
+                    throw new Exception("Ping failed - no response from SLURM controller");
                 }
-                
-            } finally {
-                if (connection != null) {
-                    connection.disconnect();
-                }
+                                   
+            } catch (Exception e) {
+                LOGGER.warning("Slurm connection test failed: " + e.getMessage());
+                throw new Exception("Failed to connect to SLURM REST API at " + baseUrl + ". Error: " + e.getMessage());
             }
         }
         
@@ -527,88 +489,6 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
         }
         
-        /**
-         * Parses Slurm ping response JSON to extract version and status information.
-         */
-        private String parseSlurmPingResponse(String jsonResponse) {
-            try {
-                JSONObject response = JSONObject.fromObject(jsonResponse);
-                
-                String version = "unknown";
-                String cluster = "unknown";
-                List<String> hostnames = new ArrayList<>();
-                boolean isUp = false;
-                int upNodes = 0;
-                int totalNodes = 0;
-                
-                // Extract meta information
-                if (response.has("meta")) {
-                    JSONObject meta = response.getJSONObject("meta");
-                    if (meta.has("slurm")) {
-                        JSONObject slurm = meta.getJSONObject("slurm");
-                        if (slurm.has("release")) {
-                            version = slurm.getString("release");
-                        }
-                        if (slurm.has("cluster")) {
-                            cluster = slurm.getString("cluster");
-                        }
-                    }
-                }
-                
-                // Check ping results
-                if (response.has("pings")) {
-                    JSONArray pings = response.getJSONArray("pings");
-                    totalNodes = pings.size();
-                    
-                    for (int i = 0; i < pings.size(); i++) {
-                        JSONObject ping = pings.getJSONObject(i);
-                        
-                        // Extract hostname from each ping
-                        String currentHostname = "unknown";
-                        if (ping.has("hostname")) {
-                            currentHostname = ping.getString("hostname");
-                        }
-                        
-                        // Always collect hostname from ping list
-                        if (!currentHostname.equals("unknown") && !hostnames.contains(currentHostname)) {
-                            hostnames.add(currentHostname);
-                        }
-                        
-                        // Check if this node is responding
-                        if (ping.has("pinged") && "UP".equals(ping.getString("pinged"))) {
-                            upNodes++;
-                            isUp = true;
-                        }
-                    }
-                }
-                
-                // Format response with detailed status
-                String hostnamesStr = hostnames.isEmpty() ? "unknown" : String.join(", ", hostnames);
-                
-                if (isUp) {
-                    if (totalNodes > 1) {
-                        return String.format("Connected to Slurm %s (cluster: %s, hostnames: [%s], %d/%d nodes responding)", 
-                                           version, cluster, hostnamesStr, upNodes, totalNodes);
-                    } else {
-                        return String.format("Connected to Slurm %s (cluster: %s, hostname: %s)", 
-                                           version, cluster, hostnamesStr);
-                    }
-                } else {
-                    return String.format("Connected to Slurm %s (cluster: %s, hostnames: [%s]) - No nodes responding", 
-                                       version, cluster, hostnamesStr);
-                }
-                
-            } catch (Exception e) {
-                LOGGER.warning("Failed to parse Slurm ping response: " + e.getMessage());
-                LOGGER.info("Raw response: " + jsonResponse);
-                
-                // Fallback: check for basic success indicators
-                if (jsonResponse.contains("UP") || jsonResponse.contains("responding")) {
-                    return "Connected to Slurm (response parsing failed but service appears up)";
-                } else {
-                    return "Connected to Slurm (version info unavailable)";
-                }
-            }
-        }
+
     }
 }
