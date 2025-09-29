@@ -27,8 +27,7 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
-import io.jenkins.plugins.slurm.client.SlurmClientFactory;
-import io.jenkins.plugins.slurm.client.SlurmClientWrapper;
+import io.jenkins.plugins.slurm.client.SlurmClient;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -434,42 +433,21 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
             
             try {
-                // Use auto-detection to find the best API version
-                SlurmClientWrapper client = SlurmClientFactory.createClientWithAutoDetection(baseUrl, authToken);
+                // Use the simplified client for v0.0.42 API
+                SlurmClient client = new SlurmClient(baseUrl, authToken);
                 
-                // Test ping and get hostnames
-                List<String> hostnames = client.ping();
+                // Test ping
+                boolean success = client.ping();
                 
-                // Format success message
-                String hostnamesStr = hostnames.isEmpty() ? "unknown" : 
-                    (hostnames.size() > 1 ? "[" + String.join(", ", hostnames) + "]" : hostnames.get(0));
-                    
-                return String.format("Connected to Slurm using API %s (hostnames: %s, %d controller%s responding)", 
-                                   client.getApiVersion(), 
-                                   hostnamesStr,
-                                   hostnames.size(),
-                                   hostnames.size() != 1 ? "s" : "");
+                if (success) {
+                    return String.format("Connected to Slurm using API v0.0.42 at %s", baseUrl);
+                } else {
+                    throw new Exception("Ping failed - no response from SLURM controller");
+                }
                                    
             } catch (Exception e) {
                 LOGGER.warning("Slurm connection test failed: " + e.getMessage());
-                
-                // Try fallback: test with default version if auto-detection fails
-                try {
-                    SlurmClientWrapper client = SlurmClientFactory.createClient(baseUrl, authToken);
-                    List<String> hostnames = client.ping();
-                    
-                    String hostnamesStr = hostnames.isEmpty() ? "unknown" : 
-                        (hostnames.size() > 1 ? "[" + String.join(", ", hostnames) + "]" : hostnames.get(0));
-                        
-                    return String.format("Connected to Slurm using default API %s (hostnames: %s, %d controller%s responding)", 
-                                       client.getApiVersion(), 
-                                       hostnamesStr,
-                                       hostnames.size(),
-                                       hostnames.size() != 1 ? "s" : "");
-                                       
-                } catch (Exception fallbackException) {
-                    throw new Exception("Failed to connect with any supported API version. Last error: " + fallbackException.getMessage());
-                }
+                throw new Exception("Failed to connect to SLURM REST API at " + baseUrl + ". Error: " + e.getMessage());
             }
         }
         
