@@ -28,6 +28,7 @@ import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
 import io.jenkins.plugins.slurm.client.SlurmClient;
+import io.jenkins.plugins.slurm.client.SlurmPingInfo;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -418,7 +419,6 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         /**
          * Tests the connection to Slurm REST API using the ping endpoint with OpenAPI client.
-         * Auto-detects API version and returns a success message with version info.
          */
         private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
             // Normalize API URL - ensure it doesn't end with slash
@@ -433,14 +433,15 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
             
             try {
-                // Use the simplified client for v0.0.42 API
                 SlurmClient client = new SlurmClient(baseUrl, authToken);
                 
-                // Test ping
-                boolean success = client.ping();
+                // Test ping and get essential controller information
+                SlurmPingInfo slurmInfo = client.getSlurmInfo();
                 
-                if (success) {
-                    return String.format("Connected to Slurm using API v0.0.42 at %s", baseUrl);
+                if (slurmInfo != null) {
+                    return String.format("Connected to SLURM controller '%s' (v%s, cluster: %s) at %s", 
+                                       slurmInfo.getHostname(), slurmInfo.getVersion(), 
+                                       slurmInfo.getCluster(), baseUrl);
                 } else {
                     throw new Exception("Ping failed - no response from SLURM controller");
                 }

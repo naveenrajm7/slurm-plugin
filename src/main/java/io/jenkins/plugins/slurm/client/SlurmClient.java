@@ -63,39 +63,58 @@ public class SlurmClient {
     }
     
     /**
-     * Test connectivity by pinging the SLURM controller
-     * @return true if ping is successful, false otherwise
+     * Test connectivity by pinging the SLURM controller and return essential info
+     * @return SLURM controller information (hostname and version) or null if failed
      */
-    public boolean ping() {
+    public SlurmPingInfo getSlurmInfo() {
         try {
             LOGGER.info("Attempting to ping SLURM controller at: " + baseUrl);
             LOGGER.info("Full expected URL will be: " + baseUrl + "/slurm/v0.0.42/ping/");
             
             V0042OpenapiPingArrayResp response = api.slurmV0042GetPing();
             
-            if (response != null && response.getPings() != null) {
-                List<V0042ControllerPing> pings = response.getPings();
-                if (!pings.isEmpty()) {
-                    V0042ControllerPing ping = pings.get(0);
-                    LOGGER.info("SLURM ping successful - hostname: " + ping.getHostname() + 
-                               ", responding: " + ping.getResponding() + ", latency: " + ping.getLatency() + "μs");
-                    return true;
-                } else {
-                    LOGGER.warning("SLURM ping response received but no ping data found");
-                    return false;
+            if (response != null && response.getPings() != null && !response.getPings().isEmpty()) {
+                V0042ControllerPing ping = response.getPings().get(0);
+                String hostname = ping.getHostname();
+                String version = "unknown";
+                String cluster = "unknown";
+                boolean responding = Boolean.TRUE.equals(ping.getResponding());
+                Long latency = ping.getLatency();
+                
+                // Extract version and cluster info from metadata
+                if (response.getMeta() != null && response.getMeta().getSlurm() != null) {
+                    if (response.getMeta().getSlurm().getRelease() != null) {
+                        version = response.getMeta().getSlurm().getRelease();
+                    }
+                    if (response.getMeta().getSlurm().getCluster() != null) {
+                        cluster = response.getMeta().getSlurm().getCluster();
+                    }
                 }
+                
+                LOGGER.info(String.format("SLURM ping successful - hostname: %s, version: %s, cluster: %s, responding: %s, latency: %d μs", 
+                           hostname, version, cluster, responding, latency));
+                
+                return new SlurmPingInfo(hostname, version, cluster, responding, latency);
             } else {
-                LOGGER.warning("SLURM ping response is null or has no ping data");
-                return false;
+                LOGGER.warning("SLURM ping response received but no ping data found");
+                return null;
             }
         } catch (ApiException e) {
             LOGGER.log(Level.SEVERE, "SLURM ping failed with API error: HTTP " + e.getCode() + 
                       " - " + e.getMessage() + " (Response: " + e.getResponseBody() + ")", e);
-            return false;
+            return null;
         } catch (Exception e) {
             LOGGER.log(Level.SEVERE, "SLURM ping failed with unexpected error: " + e.getMessage(), e);
-            return false;
+            return null;
         }
+    }
+    
+    /**
+     * Test connectivity by pinging the SLURM controller
+     * @return true if ping is successful, false otherwise
+     */
+    public boolean ping() {
+        return getSlurmInfo() != null;
     }
     
     /**
