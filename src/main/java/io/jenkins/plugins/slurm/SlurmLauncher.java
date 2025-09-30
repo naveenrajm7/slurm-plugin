@@ -1,4 +1,4 @@
-﻿package io.jenkins.plugins.slurm;
+package io.jenkins.plugins.slurm;
 
 import hudson.Extension;
 import hudson.model.Descriptor;

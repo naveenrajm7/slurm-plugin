@@ -9,6 +9,11 @@ import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.interceptor.RequirePOST;
+import org.kohsuke.stapler.AncestorInPath;
+import org.kohsuke.stapler.HttpResponse;
+import org.kohsuke.stapler.HttpRedirect;
+import jenkins.model.Jenkins;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -345,20 +350,48 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     /**
      * Handles configuration form submission for individual template editing.
+     * Uses @AncestorInPath to get parent cloud from URL hierarchy.
+     * Uses @POST for CSRF protection.
      */
-    public void doConfigSubmit(org.kohsuke.stapler.StaplerRequest req, org.kohsuke.stapler.StaplerResponse rsp) 
-            throws Exception {
-        jenkins.model.Jenkins.get().checkPermission(jenkins.model.Jenkins.MANAGE);
+    @RequirePOST
+    public HttpResponse doConfigSubmit(org.kohsuke.stapler.StaplerRequest req, 
+                                        org.kohsuke.stapler.StaplerResponse rsp,
+                                        @AncestorInPath SlurmCloud owner) throws Exception {
+        if (owner == null) {
+            throw new IllegalStateException("Cloud could not be found");
+        }
+        
+        owner.checkManagePermission();
         
         net.sf.json.JSONObject formData = req.getSubmittedForm();
         
         // Update this template with form data
         req.bindJSON(this, formData);
         
-        // Configuration is handled by Jenkins automatically
-        // No explicit save needed as changes are persisted through the form submission
+        // Save Jenkins configuration
+        Jenkins.get().save();
         
-        rsp.sendRedirect(".");
+        // Redirect to template view
+        return new HttpRedirect(".");
+    }
+    
+    /**
+     * Deletes the template.
+     * Uses @AncestorInPath to get parent cloud from URL hierarchy.
+     * Uses @POST for CSRF protection.
+     */
+    @RequirePOST
+    public HttpResponse doDoDelete(@AncestorInPath SlurmCloud owner) throws Exception {
+        if (owner == null) {
+            throw new IllegalStateException("Cloud could not be found");
+        }
+        
+        owner.checkManagePermission();
+        owner.removeTemplate(this);
+        Jenkins.get().save();
+        
+        // Redirect back to templates list
+        return new HttpRedirect("../../templates");
     }
     
     @Extension

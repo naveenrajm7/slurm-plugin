@@ -432,6 +432,32 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     /**
+     * Removes a template from this cloud.
+     * Called by the template's delete method.
+     */
+    public void removeTemplate(SlurmJobTemplate template) {
+        if (jobTemplates != null) {
+            jobTemplates.removeIf(t -> t.getId().equals(template.getId()));
+        }
+    }
+    
+    /**
+     * Checks if the current user has manage permission.
+     * Used by templates for permission checks.
+     */
+    public void checkManagePermission() {
+        Jenkins.get().checkPermission(Jenkins.MANAGE);
+    }
+    
+    /**
+     * Gets the URL for the templates page.
+     * Used for redirects after template operations.
+     */
+    public String getTemplatesUrl() {
+        return getUrl() + "templates";
+    }
+    
+    /**
      * Provides access to templates via URLs like /cloud/cloudname/template/templatename
      * This is the method that will be called when accessing template URLs.
      */
