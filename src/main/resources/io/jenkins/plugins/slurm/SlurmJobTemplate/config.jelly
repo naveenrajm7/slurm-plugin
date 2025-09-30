@@ -6,6 +6,7 @@
     <input type="hidden" name="_.id" value="${instance.id}"/>
   </f:invisibleEntry>
 
+  <!-- Template Identification -->
   <f:entry field="name" title="Name" description="Unique name for this job template">
     <f:textbox/>
   </f:entry>
@@ -18,55 +19,87 @@
      <f:enum default="EXCLUSIVE">${it.description}</f:enum>
   </f:entry>
 
-  <!-- SLURM Job Configuration -->
+  <!-- Core SLURM Job Parameters (maps to v0.0.42_job_desc_msg) -->
   <f:section title="SLURM Job Configuration">
     
-    <f:entry field="partition" title="Partition" description="SLURM partition to submit jobs to">
+    <f:entry field="partition" title="Partition" 
+             description="SLURM partition to submit jobs to (e.g., 'gpu', 'compute', 'highmem')">
       <f:textbox/>
     </f:entry>
 
-    <f:entry field="nodes" title="Nodes" description="Number of nodes to request">
+    <f:entry field="currentWorkingDirectory" title="Working Directory" 
+             description="Working directory for the job (will contain Jenkins agent files)">
+      <f:textbox default="/tmp/jenkins"/>
+    </f:entry>
+
+    <f:entry field="cpusPerTask" title="CPUs per Task" 
+             description="Number of CPU cores per task (Jenkins agent runs as 1 task)">
       <f:number default="1" min="1"/>
     </f:entry>
 
-    <f:entry field="ntasks" title="Tasks" description="Number of tasks to run">
-      <f:number default="1" min="1"/>
+    <f:entry field="memoryPerNode" title="Memory per Node (MB)" 
+             description="Memory in megabytes per node (e.g., 1024 for 1GB, 16384 for 16GB)">
+      <f:number default="1024" min="512"/>
     </f:entry>
 
-    <f:entry field="cpusPerTask" title="CPUs per Task" description="Number of CPU cores per task">
-      <f:number default="1" min="1"/>
+    <f:entry field="timeLimit" title="Time Limit (minutes)" 
+             description="Maximum job runtime in minutes (e.g., 60 for 1 hour, 480 for 8 hours)">
+      <f:number default="60" min="10"/>
     </f:entry>
 
-    <f:entry field="memory" title="Memory" description="Memory requirement (e.g., '4G', '512M')">
-      <f:textbox default="1G"/>
+  </f:section>
+
+  <!-- GPU and TRES Configuration -->
+  <f:section title="GPU / TRES Configuration">
+    
+    <f:entry field="tresPerJob" title="TRES per Job" 
+             description="Trackable resources per job - for GPUs use format: gres/gpu:type:count (e.g., 'gres/gpu:gfx942:1')">
+      <f:textbox/>
     </f:entry>
 
-    <f:entry field="timeLimit" title="Time Limit" description="Maximum job runtime (e.g., '1:00:00', '30:00')">
-      <f:textbox default="1:00:00"/>
+    <f:entry field="tresPerNode" title="TRES per Node" 
+             description="Trackable resources per node (optional)">
+      <f:textbox/>
     </f:entry>
 
-    <f:entry field="workingDirectory" title="Working Directory" description="Initial working directory for the job">
-      <f:textbox default="/tmp"/>
-    </f:entry>
-
-    <f:entry field="additionalSbatchArgs" title="Additional sbatch Arguments" 
-             description="Additional SLURM sbatch arguments (e.g., '--gres=gpu:1 --constraint=intel')">
+    <f:entry field="tresPerTask" title="TRES per Task" 
+             description="Trackable resources per task (optional)">
       <f:textbox/>
     </f:entry>
 
   </f:section>
 
-  <!-- Agent Configuration -->
-  <f:section title="Agent Configuration">
+  <!-- Additional SLURM Options -->
+  <f:section title="Additional SLURM Options">
     
-    <f:entry field="instanceCapStr" title="Concurrency Limit" 
-             description="Maximum number of agents using this template">
+    <f:entry field="minimumNodes" title="Minimum Nodes" 
+             description="Minimum number of nodes (default: 1 - Jenkins agents typically use single node)">
       <f:number default="1" min="1"/>
     </f:entry>
 
-    <f:entry field="idleMinutes" title="Idle Minutes" 
-             description="Time in minutes to retain agent when idle before terminating">
-      <f:number default="5" min="1"/>
+    <f:entry field="tasks" title="Number of Tasks" 
+             description="Number of tasks (default: 1 - Jenkins agent runs as single task)">
+      <f:number default="1" min="1"/>
+    </f:entry>
+
+    <f:entry field="account" title="Account" 
+             description="SLURM account to charge for resource usage (optional)">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="qos" title="Quality of Service (QOS)" 
+             description="SLURM Quality of Service to use (optional)">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="constraints" title="Node Constraints" 
+             description="Required node features/constraints (e.g., 'AMD&amp;MI250X')">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="environment" title="Environment Variables" 
+             description="Environment variables as JSON array string (optional, advanced usage)">
+      <f:textarea/>
     </f:entry>
 
   </f:section>
@@ -74,9 +107,24 @@
   <!-- Custom Job Script -->
   <f:section title="Custom Job Script">
     
-    <f:entry field="jobScript" title="Custom SLURM Script" 
-             description="Custom script to run in the SLURM job (optional - if empty, a default agent script will be used)">
+    <f:entry field="script" title="Custom SLURM Batch Script" 
+             description="Custom batch script content (optional - if empty, a default agent launcher script will be generated)">
       <f:textarea/>
+    </f:entry>
+
+  </f:section>
+
+  <!-- Agent Management -->
+  <f:section title="Agent Management">
+    
+    <f:entry field="instanceCap" title="Instance Capacity" 
+             description="Maximum number of concurrent agents using this template">
+      <f:number default="1" min="1"/>
+    </f:entry>
+
+    <f:entry field="idleMinutes" title="Idle Minutes" 
+             description="Minutes to retain agent when idle before terminating">
+      <f:number default="5" min="0"/>
     </f:entry>
 
   </f:section>

@@ -17,46 +17,71 @@ import java.util.logging.Logger;
 
 /**
  * Represents a SLURM job template that defines the parameters for submitting
- * jobs to a SLURM cluster. Similar to Kubernetes PodTemplate, this allows
- * users to define different job configurations for different build requirements.
+ * jobs to a SLURM cluster. This template maps directly to SLURM's job_desc_msg structure
+ * from the REST API, allowing users to define different job configurations for different
+ * build requirements.
+ * 
+ * The template structure follows SLURM's v0.0.42_job_desc_msg to minimize processing
+ * and allow future code-based template definitions to match the API structure.
  */
 public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmJobTemplate.class.getName());
     
+    // Template metadata (not part of SLURM job submission)
     private final String id;
     private String name;
     private String label;
-    private String partition;
-    private int nodes;
-    private int ntasks;
-    private int cpusPerTask;
-    private String memory;
-    private String timeLimit;
-    private String jobScript;
-    private String workingDirectory;
     private Node.Mode nodeUsageMode;
-    private int instanceCapStr;
+    private int instanceCap;
     private int idleMinutes;
-    private String additionalSbatchArgs;
+    
+    // Core SLURM job submission fields (maps to v0.0.42_job_desc_msg)
+    private String partition;                    // partition: which SLURM partition to use
+    private String currentWorkingDirectory;      // current_working_directory: where to run the job
+    private Integer cpusPerTask;                 // cpus_per_task: CPUs per task
+    private Long memoryPerNode;                  // memory_per_node: memory in MB per node
+    private String script;                       // script: batch script content (will contain Jenkins agent launcher)
+    private Integer timeLimit;                   // time_limit: max runtime in minutes
+    
+    // TRES (Trackable RESources) - for GPUs and other resources
+    private String tresPerJob;                   // tres_per_job: e.g., "gres/gpu:gfx942:1"
+    private String tresPerNode;                  // tres_per_node: TRES per node
+    private String tresPerTask;                  // tres_per_task: TRES per task
+    
+    // Additional optional fields
+    private Integer minimumNodes;                // minimum_nodes: minimum node count (default 1)
+    private Integer tasks;                       // tasks: number of tasks (default 1)
+    private String account;                      // account: SLURM account to charge
+    private String qos;                          // qos: Quality of Service
+    private String constraints;                  // constraints: required features
+    private String environment;                  // environment: environment variables (as JSON array string)
     
     @DataBoundConstructor
     public SlurmJobTemplate() {
         this.id = UUID.randomUUID().toString();
-        this.name = "";
+        this.name = "default";
         this.label = "";
-        this.partition = "";
-        this.nodes = 1;
-        this.ntasks = 1;
-        this.cpusPerTask = 1;
-        this.memory = "1G";
-        this.timeLimit = "1:00:00";
-        this.jobScript = "";
-        this.workingDirectory = "/tmp";
         this.nodeUsageMode = Node.Mode.EXCLUSIVE;
-        this.instanceCapStr = 1;
+        this.instanceCap = 1;
         this.idleMinutes = 5;
-        this.additionalSbatchArgs = "";
+        
+        // SLURM defaults (keeping 1 node, 1 task for Jenkins agent)
+        this.partition = "";
+        this.currentWorkingDirectory = "/tmp/jenkins";
+        this.cpusPerTask = 1;
+        this.memoryPerNode = 1024L;  // 1GB in MB
+        this.script = "";
+        this.timeLimit = 60;  // 60 minutes default
+        this.minimumNodes = 1;
+        this.tasks = 1;
+        this.tresPerJob = "";
+        this.tresPerNode = "";
+        this.tresPerTask = "";
+        this.account = "";
+        this.qos = "";
+        this.constraints = "";
+        this.environment = "";
     }
     
     public SlurmJobTemplate(String name, String label) {
@@ -65,7 +90,10 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.label = label;
     }
     
-    // Core identification fields
+    // ====================
+    // Template Metadata Getters/Setters
+    // ====================
+    
     public String getId() {
         return id;
     }
@@ -76,7 +104,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     @DataBoundSetter
     public void setName(String name) {
-        this.name = name;
+        this.name = name != null ? name : "default";
     }
     
     public String getLabel() {
@@ -85,80 +113,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     @DataBoundSetter
     public void setLabel(String label) {
-        this.label = label;
-    }
-    
-    // SLURM job configuration fields
-    public String getPartition() {
-        return partition;
-    }
-    
-    @DataBoundSetter
-    public void setPartition(String partition) {
-        this.partition = partition;
-    }
-    
-    public int getNodes() {
-        return nodes;
-    }
-    
-    @DataBoundSetter
-    public void setNodes(int nodes) {
-        this.nodes = nodes > 0 ? nodes : 1;
-    }
-    
-    public int getNtasks() {
-        return ntasks;
-    }
-    
-    @DataBoundSetter
-    public void setNtasks(int ntasks) {
-        this.ntasks = ntasks > 0 ? ntasks : 1;
-    }
-    
-    public int getCpusPerTask() {
-        return cpusPerTask;
-    }
-    
-    @DataBoundSetter
-    public void setCpusPerTask(int cpusPerTask) {
-        this.cpusPerTask = cpusPerTask > 0 ? cpusPerTask : 1;
-    }
-    
-    public String getMemory() {
-        return memory;
-    }
-    
-    @DataBoundSetter
-    public void setMemory(String memory) {
-        this.memory = memory != null && !memory.trim().isEmpty() ? memory : "1G";
-    }
-    
-    public String getTimeLimit() {
-        return timeLimit;
-    }
-    
-    @DataBoundSetter
-    public void setTimeLimit(String timeLimit) {
-        this.timeLimit = timeLimit != null && !timeLimit.trim().isEmpty() ? timeLimit : "1:00:00";
-    }
-    
-    public String getJobScript() {
-        return jobScript;
-    }
-    
-    @DataBoundSetter
-    public void setJobScript(String jobScript) {
-        this.jobScript = jobScript != null ? jobScript : "";
-    }
-    
-    public String getWorkingDirectory() {
-        return workingDirectory;
-    }
-    
-    @DataBoundSetter
-    public void setWorkingDirectory(String workingDirectory) {
-        this.workingDirectory = workingDirectory != null && !workingDirectory.trim().isEmpty() ? workingDirectory : "/tmp";
+        this.label = label != null ? label : "";
     }
     
     public Node.Mode getNodeUsageMode() {
@@ -167,16 +122,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     @DataBoundSetter
     public void setNodeUsageMode(Node.Mode nodeUsageMode) {
-        this.nodeUsageMode = nodeUsageMode != null ? nodeUsageMode : Node.Mode.EXCLUSIVE;
+        this.nodeUsageMode = nodeUsageMode;
     }
     
-    public int getInstanceCapStr() {
-        return instanceCapStr;
+    public int getInstanceCap() {
+        return instanceCap;
     }
     
     @DataBoundSetter
-    public void setInstanceCapStr(int instanceCapStr) {
-        this.instanceCapStr = instanceCapStr > 0 ? instanceCapStr : 1;
+    public void setInstanceCap(int instanceCap) {
+        this.instanceCap = instanceCap > 0 ? instanceCap : 1;
     }
     
     public int getIdleMinutes() {
@@ -185,102 +140,191 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     @DataBoundSetter
     public void setIdleMinutes(int idleMinutes) {
-        this.idleMinutes = idleMinutes > 0 ? idleMinutes : 5;
+        this.idleMinutes = idleMinutes >= 0 ? idleMinutes : 5;
     }
     
-    public String getAdditionalSbatchArgs() {
-        return additionalSbatchArgs;
+    // ====================
+    // SLURM Job Submission Fields (maps to v0.0.42_job_desc_msg)
+    // ====================
+    
+    public String getPartition() {
+        return partition;
     }
     
     @DataBoundSetter
-    public void setAdditionalSbatchArgs(String additionalSbatchArgs) {
-        this.additionalSbatchArgs = additionalSbatchArgs != null ? additionalSbatchArgs : "";
+    public void setPartition(String partition) {
+        this.partition = partition != null ? partition : "";
     }
     
-    /**
-     * Generates the SLURM sbatch script for this job template.
-     */
-    public String generateSbatchScript(String agentName) {
-        StringBuilder script = new StringBuilder();
-        script.append("#!/bin/bash\n");
-        script.append("#SBATCH --job-name=").append(agentName).append("\n");
-        
-        if (partition != null && !partition.trim().isEmpty()) {
-            script.append("#SBATCH --partition=").append(partition).append("\n");
-        }
-        
-        script.append("#SBATCH --nodes=").append(nodes).append("\n");
-        script.append("#SBATCH --ntasks=").append(ntasks).append("\n");
-        script.append("#SBATCH --cpus-per-task=").append(cpusPerTask).append("\n");
-        script.append("#SBATCH --mem=").append(memory).append("\n");
-        script.append("#SBATCH --time=").append(timeLimit).append("\n");
-        
-        if (workingDirectory != null && !workingDirectory.trim().isEmpty()) {
-            script.append("#SBATCH --chdir=").append(workingDirectory).append("\n");
-        }
-        
-        // Add any additional sbatch arguments
-        if (additionalSbatchArgs != null && !additionalSbatchArgs.trim().isEmpty()) {
-            for (String arg : additionalSbatchArgs.split("\\s+")) {
-                if (!arg.trim().isEmpty()) {
-                    script.append("#SBATCH ").append(arg).append("\n");
-                }
-            }
-        }
-        
-        script.append("\n");
-        
-        // Add custom job script if provided
-        if (jobScript != null && !jobScript.trim().isEmpty()) {
-            script.append(jobScript).append("\n");
-        } else {
-            // Default: just keep the job running and wait for Jenkins agent
-            script.append("# Keep job running for Jenkins agent\n");
-            script.append("echo \"SLURM job started for Jenkins agent: ").append(agentName).append("\"\n");
-            script.append("echo \"Allocated nodes: $SLURM_JOB_NODELIST\"\n");
-            script.append("echo \"Job ID: $SLURM_JOB_ID\"\n");
-            script.append("\n");
-            script.append("# Wait for Jenkins agent to connect and complete\n");
-            script.append("# The Jenkins agent process will take over from here\n");
-            script.append("while true; do\n");
-            script.append("    sleep 30\n");
-            script.append("    # Check if Jenkins agent is still running\n");
-            script.append("    if ! pgrep -f 'jenkins.*agent' > /dev/null; then\n");
-            script.append("        echo \"Jenkins agent process not found, exiting\"\n");
-            script.append("        break\n");
-            script.append("    fi\n");
-            script.append("done\n");
-        }
-        
-        return script.toString();
+    public String getCurrentWorkingDirectory() {
+        return currentWorkingDirectory;
     }
     
+    @DataBoundSetter
+    public void setCurrentWorkingDirectory(String currentWorkingDirectory) {
+        this.currentWorkingDirectory = currentWorkingDirectory != null ? currentWorkingDirectory : "/tmp/jenkins";
+    }
+    
+    public Integer getCpusPerTask() {
+        return cpusPerTask;
+    }
+    
+    @DataBoundSetter
+    public void setCpusPerTask(Integer cpusPerTask) {
+        this.cpusPerTask = cpusPerTask != null && cpusPerTask > 0 ? cpusPerTask : 1;
+    }
+    
+    public Long getMemoryPerNode() {
+        return memoryPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setMemoryPerNode(Long memoryPerNode) {
+        this.memoryPerNode = memoryPerNode != null && memoryPerNode > 0 ? memoryPerNode : 1024L;
+    }
+    
+    public String getScript() {
+        return script;
+    }
+    
+    @DataBoundSetter
+    public void setScript(String script) {
+        this.script = script != null ? script : "";
+    }
+    
+    public Integer getTimeLimit() {
+        return timeLimit;
+    }
+    
+    @DataBoundSetter
+    public void setTimeLimit(Integer timeLimit) {
+        this.timeLimit = timeLimit != null && timeLimit > 0 ? timeLimit : 60;
+    }
+    
+    // TRES fields for GPUs and other resources
+    public String getTresPerJob() {
+        return tresPerJob;
+    }
+    
+    @DataBoundSetter
+    public void setTresPerJob(String tresPerJob) {
+        this.tresPerJob = tresPerJob != null ? tresPerJob : "";
+    }
+    
+    public String getTresPerNode() {
+        return tresPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setTresPerNode(String tresPerNode) {
+        this.tresPerNode = tresPerNode != null ? tresPerNode : "";
+    }
+    
+    public String getTresPerTask() {
+        return tresPerTask;
+    }
+    
+    @DataBoundSetter
+    public void setTresPerTask(String tresPerTask) {
+        this.tresPerTask = tresPerTask != null ? tresPerTask : "";
+    }
+    
+    // Additional optional fields
+    public Integer getMinimumNodes() {
+        return minimumNodes;
+    }
+    
+    @DataBoundSetter
+    public void setMinimumNodes(Integer minimumNodes) {
+        this.minimumNodes = minimumNodes != null && minimumNodes > 0 ? minimumNodes : 1;
+    }
+    
+    public Integer getTasks() {
+        return tasks;
+    }
+    
+    @DataBoundSetter
+    public void setTasks(Integer tasks) {
+        this.tasks = tasks != null && tasks > 0 ? tasks : 1;
+    }
+    
+    public String getAccount() {
+        return account;
+    }
+    
+    @DataBoundSetter
+    public void setAccount(String account) {
+        this.account = account != null ? account : "";
+    }
+    
+    public String getQos() {
+        return qos;
+    }
+    
+    @DataBoundSetter
+    public void setQos(String qos) {
+        this.qos = qos != null ? qos : "";
+    }
+    
+    public String getConstraints() {
+        return constraints;
+    }
+    
+    @DataBoundSetter
+    public void setConstraints(String constraints) {
+        this.constraints = constraints != null ? constraints : "";
+    }
+    
+    public String getEnvironment() {
+        return environment;
+    }
+    
+    @DataBoundSetter
+    public void setEnvironment(String environment) {
+        this.environment = environment != null ? environment : "";
+    }
+    
+    // ====================
+    // Utility Methods
+    // ====================
+    
     /**
-     * Checks if this job template can be used for the given label.
+     * Checks if this template can handle the given label.
      */
     public boolean canTake(@CheckForNull String requestedLabel) {
         if (requestedLabel == null || requestedLabel.trim().isEmpty()) {
-            return true; // Can take any job if no specific label requested
+            return this.label == null || this.label.trim().isEmpty();
         }
         
-        if (label == null || label.trim().isEmpty()) {
-            return true; // This template has no label restriction
+        if (this.label == null || this.label.trim().isEmpty()) {
+            return false;
         }
         
-        // Simple label matching - can be enhanced for complex label expressions
-        return label.equals(requestedLabel);
+        // Split labels by space and check if any match
+        String[] requestedLabels = requestedLabel.trim().split("\\s+");
+        String[] templateLabels = this.label.trim().split("\\s+");
+        
+        for (String reqLabel : requestedLabels) {
+            for (String tmpLabel : templateLabels) {
+                if (reqLabel.equals(tmpLabel)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    
+    /**
+     * Gets instance capacity as integer (for compatibility).
+     */
+    public int getInstanceCapStr() {
+        return instanceCap;
     }
     
     @Override
     public String toString() {
-        return "SlurmJobTemplate{" +
-                "name='" + name + '\'' +
-                ", label='" + label + '\'' +
-                ", partition='" + partition + '\'' +
-                ", nodes=" + nodes +
-                ", cpus=" + cpusPerTask +
-                ", memory='" + memory + '\'' +
-                '}';
+        return String.format("SlurmJobTemplate[name=%s, label=%s, partition=%s, cpus=%d, memory=%dMB, tres=%s]",
+                           name, label, partition, cpusPerTask, memoryPerNode, tresPerJob);
     }
     
     // Navigation methods for web UI
@@ -333,30 +377,6 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             return FormValidation.ok();
         }
         
-        public FormValidation doCheckNodes(@QueryParameter String value) {
-            try {
-                int nodes = Integer.parseInt(value);
-                if (nodes <= 0) {
-                    return FormValidation.error("Number of nodes must be greater than 0");
-                }
-                return FormValidation.ok();
-            } catch (NumberFormatException e) {
-                return FormValidation.error("Invalid number");
-            }
-        }
-        
-        public FormValidation doCheckNtasks(@QueryParameter String value) {
-            try {
-                int ntasks = Integer.parseInt(value);
-                if (ntasks <= 0) {
-                    return FormValidation.error("Number of tasks must be greater than 0");
-                }
-                return FormValidation.ok();
-            } catch (NumberFormatException e) {
-                return FormValidation.error("Invalid number");
-            }
-        }
-        
         public FormValidation doCheckCpusPerTask(@QueryParameter String value) {
             try {
                 int cpus = Integer.parseInt(value);
@@ -369,33 +389,82 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             }
         }
         
-        public FormValidation doCheckMemory(@QueryParameter String value) {
-            if (value == null || value.trim().isEmpty()) {
-                return FormValidation.error("Memory specification is required");
+        public FormValidation doCheckMemoryPerNode(@QueryParameter String value) {
+            try {
+                long memory = Long.parseLong(value);
+                if (memory <= 0) {
+                    return FormValidation.error("Memory per node must be greater than 0 MB");
+                }
+                if (memory < 512) {
+                    return FormValidation.warning("Memory less than 512MB might be insufficient for Jenkins agent");
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number - enter memory in MB (e.g., 1024 for 1GB)");
             }
-            // Basic validation for memory format (e.g., 1G, 512M, 2048)
-            if (!value.matches("\\d+[KMGT]?")) {
-                return FormValidation.warning("Memory format should be like '1G', '512M', or '2048'");
-            }
-            return FormValidation.ok();
         }
         
         public FormValidation doCheckTimeLimit(@QueryParameter String value) {
-            if (value == null || value.trim().isEmpty()) {
-                return FormValidation.error("Time limit is required");
+            try {
+                int minutes = Integer.parseInt(value);
+                if (minutes <= 0) {
+                    return FormValidation.error("Time limit must be greater than 0 minutes");
+                }
+                if (minutes < 10) {
+                    return FormValidation.warning("Time limit less than 10 minutes might be too short");
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number - enter time limit in minutes");
             }
-            // Basic validation for time format (e.g., 1:00:00, 30:00, 60)
-            if (!value.matches("\\d{1,2}(:\\d{2}){0,2}")) {
-                return FormValidation.warning("Time format should be like '1:00:00', '30:00', or '60'");
+        }
+        
+        public FormValidation doCheckTresPerJob(@QueryParameter String value) {
+            if (value != null && !value.trim().isEmpty()) {
+                // Basic validation for TRES format: type:name:count or type:count
+                // Examples: gres/gpu:gfx942:1, gres/gpu:2
+                if (!value.matches("\\w+(/\\w+)?(:\\w+)?(:\\d+)?")) {
+                    return FormValidation.warning("TRES format should be like 'gres/gpu:gfx942:1' or 'gres/gpu:2'");
+                }
             }
             return FormValidation.ok();
         }
         
-        public FormValidation doCheckInstanceCapStr(@QueryParameter String value) {
+        public FormValidation doCheckInstanceCap(@QueryParameter String value) {
             try {
                 int cap = Integer.parseInt(value);
                 if (cap <= 0) {
                     return FormValidation.error("Instance capacity must be greater than 0");
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number");
+            }
+        }
+        
+        public FormValidation doCheckMinimumNodes(@QueryParameter String value) {
+            try {
+                int nodes = Integer.parseInt(value);
+                if (nodes <= 0) {
+                    return FormValidation.error("Minimum nodes must be greater than 0");
+                }
+                if (nodes > 1) {
+                    return FormValidation.warning("Jenkins agents typically run on single nodes. Multi-node jobs require special configuration.");
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number");
+            }
+        }
+        
+        public FormValidation doCheckTasks(@QueryParameter String value) {
+            try {
+                int tasks = Integer.parseInt(value);
+                if (tasks <= 0) {
+                    return FormValidation.error("Number of tasks must be greater than 0");
+                }
+                if (tasks > 1) {
+                    return FormValidation.warning("Jenkins agents typically run as single tasks. Multiple tasks require special configuration.");
                 }
                 return FormValidation.ok();
             } catch (NumberFormatException e) {

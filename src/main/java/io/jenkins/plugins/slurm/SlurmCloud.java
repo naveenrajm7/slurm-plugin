@@ -105,22 +105,20 @@ public class SlurmCloud extends AbstractCloudImpl {
     
     /**
      * Finds a suitable job template for the given label.
+     * Uses the template utility class to get filtered templates.
      */
     public SlurmJobTemplate getJobTemplateFor(@CheckForNull Label label) {
-        String labelString = label != null ? label.getName() : null;
+        // Use utility class to get filtered templates
+        SlurmJobTemplate template = SlurmJobTemplateUtils.getTemplateByLabel(this, label);
         
-        // Look for a matching job template
-        for (SlurmJobTemplate template : getJobTemplates()) {
-            if (template.canTake(labelString)) {
-                return template;
-            }
+        if (template != null) {
+            return template;
         }
         
         // If no specific template found, create a default one
-        SlurmJobTemplate defaultTemplate = new SlurmJobTemplate();
-        defaultTemplate.setName("default");
-        defaultTemplate.setPartition(defaultPartition);
-        return defaultTemplate;
+        LOGGER.info("No matching template found for label " + 
+                   (label != null ? label.getName() : "none") + ", using default");
+        return SlurmJobTemplateUtils.createDefaultTemplate(this);
     }
     
     public Collection<PlannedNode> provision(@CheckForNull Cloud.CloudState state,
@@ -232,8 +230,22 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     public boolean canProvision(@CheckForNull Cloud.CloudState state, @NonNull Label label) {
-        // TODO: Implement logic to determine if we can provision for this label
-        // For now, accept all labels
+        // Check if we have any templates that can handle this label
+        List<SlurmJobTemplate> templates = SlurmJobTemplateUtils.getTemplatesFor(this, label);
+        
+        if (templates.isEmpty()) {
+            LOGGER.fine("No templates available for label: " + 
+                       (label != null ? label.getName() : "none"));
+            // Still return true to allow default template creation
+            return true;
+        }
+        
+        // Check if we're at capacity
+        if (getCurrentAgentCount() >= maxAgents) {
+            LOGGER.fine("Cannot provision - at maximum agent capacity");
+            return false;
+        }
+        
         return true;
     }
     
