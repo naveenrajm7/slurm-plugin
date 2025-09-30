@@ -115,17 +115,31 @@ public class SlurmCloud extends AbstractCloudImpl {
             return template;
         }
         
-        // If no specific template found, create a default one
-        LOGGER.info("No matching template found for label " + 
-                   (label != null ? label.getName() : "none") + ", using default");
-        return SlurmJobTemplateUtils.createDefaultTemplate(this);
+        // No default fallback - require explicit template configuration
+        LOGGER.warning("No matching template found for label " + 
+                      (label != null ? label.getName() : "none"));
+        return null;
     }
     
-    public Collection<PlannedNode> provision(@CheckForNull Cloud.CloudState state,
-                                           @NonNull Label label,
+    @Override
+    public Collection<PlannedNode> provision(@NonNull Cloud.CloudState state,
                                            int excessWorkload) {
+        // Extract label from state
+        Label label = state.getLabel();
+        
         LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
                    ", excessWorkload=" + excessWorkload);
+        
+        // Find appropriate job template for this label
+        SlurmJobTemplate jobTemplate = getJobTemplateFor(label);
+        if (jobTemplate == null) {
+            LOGGER.warning("Slurm Cloud: No template configured for label: " + 
+                         (label != null ? label.getName() : "none"));
+            return Collections.emptyList();
+        }
+        
+        LOGGER.info("Slurm Cloud: Using job template: " + jobTemplate.getName() + 
+                   " for label: " + (label != null ? label.getName() : "none"));
         
         // Check if we can provision more agents
         int currentAgents = getCurrentAgentCount();
@@ -133,11 +147,6 @@ public class SlurmCloud extends AbstractCloudImpl {
             LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
             return Collections.emptyList();
         }
-        
-        // Find appropriate job template for this label
-        SlurmJobTemplate jobTemplate = getJobTemplateFor(label);
-        LOGGER.info("Slurm Cloud: Using job template: " + jobTemplate.getName() + 
-                   " for label: " + (label != null ? label.getName() : "none"));
         
         // Check template-specific instance capacity
         int templateAgents = getCurrentTemplateAgentCount(jobTemplate);
@@ -174,30 +183,45 @@ public class SlurmCloud extends AbstractCloudImpl {
     private PlannedNode createPlannedNode(SlurmJobTemplate jobTemplate, @CheckForNull Label label) {
         String agentName = generateAgentName(jobTemplate);
         
-        // TODO: Implement actual Slurm job submission and agent creation
-        // For now, return a mock planned node
         return new PlannedNode(agentName, 
                               java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                                   try {
                                       LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
                                                  " with template " + jobTemplate.getName());
                                       
-                                      // This is where we would:
-                                      // 1. Generate Slurm script using jobTemplate.generateSbatchScript(agentName)
-                                      // 2. Submit job to Slurm cluster
-                                      // 3. Wait for job to start
-                                      // 4. Create SlurmAgent instance
-                                      // 5. Add agent to Jenkins
+                                      // 1. Create the SLURM launcher (no-arg constructor)
+                                      SlurmLauncher launcher = new SlurmLauncher();
                                       
-                                      // For now, simulate with a delay
-                                      Thread.sleep(5000);
+                                      // 2. Create retention strategy (keep alive for idle minutes)
+                                      hudson.slaves.RetentionStrategy<?> retentionStrategy = 
+                                          new hudson.slaves.RetentionStrategy.Always();
                                       
-                                      // Create a mock agent (this should be real SlurmAgent creation)
-                                      LOGGER.info("Slurm Cloud: Mock agent " + agentName + " created successfully");
-                                      return null; // Should return actual SlurmAgent instance
+                                      // 3. Create the SLURM agent with proper constructor parameters
+                                      SlurmAgent agent = new SlurmAgent(
+                                          agentName,                                    // name
+                                          "SLURM agent from template " + jobTemplate.getName(),  // description
+                                          jobTemplate.getCurrentWorkingDirectory(),      // remoteFS
+                                          jobTemplate.getCpusPerTask(),                 // numExecutors
+                                          jobTemplate.getNodeUsageMode(),               // mode
+                                          jobTemplate.getLabel(),                       // labelString
+                                          launcher,                                     // launcher
+                                          retentionStrategy,                            // retentionStrategy
+                                          new java.util.ArrayList<>(),                  // nodeProperties (empty)
+                                          this.name,                                    // cloudName
+                                          jobTemplate.getId(),                          // templateId
+                                          jobTemplate.getPartition()                    // partition
+                                      );
+                                      
+                                      // 4. Add agent to Jenkins
+                                      Jenkins.get().addNode(agent);
+                                      
+                                      LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
+                                      
+                                      return agent;
                                       
                                   } catch (Exception e) {
                                       LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
+                                      e.printStackTrace();
                                       throw new RuntimeException(e);
                                   }
                               }), 
@@ -219,25 +243,28 @@ public class SlurmCloud extends AbstractCloudImpl {
         for (Node node : Jenkins.get().getNodes()) {
             if (node instanceof SlurmAgent) {
                 SlurmAgent slurmAgent = (SlurmAgent) node;
-                // Check if this agent belongs to our cloud and uses this template
-                // (This would need additional tracking in SlurmAgent)
-                if (this.name.equals(slurmAgent.getCloudName())) {
-                    count++; // Simplified - should check template match
+                // Check if this agent belongs to our cloud and uses this specific template
+                if (this.name.equals(slurmAgent.getCloudName()) && 
+                    jobTemplate.getId().equals(slurmAgent.getTemplateId())) {
+                    count++;
                 }
             }
         }
         return count;
     }
     
-    public boolean canProvision(@CheckForNull Cloud.CloudState state, @NonNull Label label) {
-        // Check if we have any templates that can handle this label
-        List<SlurmJobTemplate> templates = SlurmJobTemplateUtils.getTemplatesFor(this, label);
+    @Override
+    public boolean canProvision(@NonNull Cloud.CloudState state) {
+        // Get the label from the state
+        Label label = state.getLabel();
         
-        if (templates.isEmpty()) {
-            LOGGER.fine("No templates available for label: " + 
+        // Check if we have a template that can handle this label
+        SlurmJobTemplate template = getJobTemplateFor(label);
+        
+        if (template == null) {
+            LOGGER.fine("No template available for label: " + 
                        (label != null ? label.getName() : "none"));
-            // Still return true to allow default template creation
-            return true;
+            return false;
         }
         
         // Check if we're at capacity
