@@ -1,214 +1,131 @@
-package io.jenkins.plugins.slurm;
+﻿package io.jenkins.plugins.slurm;
 
-import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.common.StandardUsernameCredentials;
+import hudson.Extension;
+import hudson.model.Descriptor;
 import hudson.model.TaskListener;
-import hudson.plugins.sshslaves.SSHLauncher;
 import hudson.slaves.ComputerLauncher;
-import hudson.slaves.DelegatingComputerLauncher;
+import hudson.slaves.JNLPLauncher;
 import hudson.slaves.SlaveComputer;
-import jenkins.model.Jenkins;
-
-import edu.umd.cs.findbugs.annotations.NonNull;
+import io.jenkins.plugins.slurm.client.model.V0042JobDescMsg;
 import java.io.IOException;
-import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 import java.util.logging.Logger;
+import jenkins.model.Jenkins;
+import jenkins.model.JenkinsLocationConfiguration;
 
 /**
- * Launcher for SLURM-based Jenkins agents.
- * 
- * This class handles the process of submitting a job to SLURM,
- * waiting for it to start, and then establishing an SSH connection
- * to the allocated compute node(s).
+ * Launcher for SLURM agents that submits jobs via the SLURM REST API.
+ * The agent connects back to Jenkins using JNLP.
  */
-public class SlurmLauncher extends DelegatingComputerLauncher {
-    
+public class SlurmLauncher extends JNLPLauncher {
     private static final Logger LOGGER = Logger.getLogger(SlurmLauncher.class.getName());
     
-    private final SlurmCloud cloud;
-    private final String credentialsId;
-    private final String partition;
-    private final String slurmScriptTemplate;
-    private final int timeoutMinutes;
-    
-    // Transient fields for job tracking
-    private transient String slurmJobId;
-    private transient String allocatedHost;
-    
-    public SlurmLauncher(@NonNull SlurmCloud cloud,
-                         @NonNull String credentialsId,
-                         String partition,
-                         String slurmScriptTemplate,
-                         int timeoutMinutes) {
-        // Initialize with a placeholder launcher - will be replaced once we know the target host
-        super(new PlaceholderLauncher());
-        
-        this.cloud = cloud;
-        this.credentialsId = credentialsId;
-        this.partition = partition != null ? partition : cloud.getDefaultPartition();
-        this.slurmScriptTemplate = slurmScriptTemplate;
-        this.timeoutMinutes = timeoutMinutes > 0 ? timeoutMinutes : cloud.getAgentTimeoutMinutes();
-    }
-    
     @Override
-    public void launch(@NonNull SlaveComputer computer, @NonNull TaskListener listener) 
-            throws IOException, InterruptedException {
-        
+    public void launch(SlaveComputer computer, TaskListener listener) {
         if (!(computer instanceof SlurmComputer)) {
-            throw new IllegalArgumentException("Expected SlurmComputer, got " + computer.getClass());
+            throw new IllegalArgumentException("Computer must be an instance of SlurmComputer");
         }
         
         SlurmComputer slurmComputer = (SlurmComputer) computer;
         SlurmAgent agent = slurmComputer.getNode();
         
         if (agent == null) {
-            throw new IOException("No agent associated with computer");
+            throw new IllegalStateException("Agent is null");
         }
         
-        listener.getLogger().println("Starting SLURM agent: " + agent.getNodeName());
+        listener.getLogger().println("Launching SLURM agent: " + agent.getNodeName());
         
         try {
-            // Step 1: Submit job to SLURM
-            slurmJobId = submitSlurmJob(agent, listener);
-            if (slurmJobId == null) {
-                throw new IOException("Failed to submit SLURM job");
+            // Get the cloud
+            SlurmCloud cloud = agent.getSlurmCloud();
+            
+            // Get the template
+            SlurmJobTemplate template = cloud.getTemplate(agent.getTemplateId());
+            if (template == null) {
+                throw new IllegalStateException("Template not found: " + agent.getTemplateId());
             }
             
-            listener.getLogger().println("Submitted SLURM job: " + slurmJobId);
+            listener.getLogger().println("Using template: " + template.getName());
             
-            // Step 2: Wait for job to start and get allocated host
-            allocatedHost = waitForJobToStart(slurmJobId, listener);
-            if (allocatedHost == null) {
-                throw new IOException("Failed to get allocated host for job " + slurmJobId);
+            // Set the launching state
+            slurmComputer.setLaunching(true);
+            
+            try {
+                // Build the job description
+                SlurmJobBuilder builder = new SlurmJobBuilder(
+                    template,
+                    agent.getNodeName(),
+                    getJenkinsUrl(),
+                    getAgentSecret(slurmComputer)
+                );
+                V0042JobDescMsg jobDesc = builder.build();
+                
+                // Submit the job
+                listener.getLogger().println("Submitting job to SLURM...");
+                String jobId = cloud.submitJob(jobDesc, listener);
+                
+                // Store the job ID in the agent
+                agent.setSlurmJobId(jobId);
+                listener.getLogger().println("SLURM job submitted with ID: " + jobId);
+                
+                // Wait for the agent to connect via JNLP
+                listener.getLogger().println("Waiting for agent to connect via JNLP...");
+                super.launch(computer, listener);
+                
+            } finally {
+                slurmComputer.setLaunching(false);
             }
             
-            listener.getLogger().println("Job allocated to host: " + allocatedHost);
-            
-            // Step 3: Create SSH launcher for the allocated host
-            ComputerLauncher sshLauncher = createSSHLauncher(allocatedHost, agent);
-            // Replace the delegate launcher
-            launcher = sshLauncher;
-            
-            // Step 4: Launch using SSH
-            super.launch(computer, listener);
-            
+        } catch (InterruptedException e) {
+            LOGGER.log(Level.WARNING, "Interrupted while launching SLURM agent: " + agent.getNodeName(), e);
+            listener.error("Launch interrupted: " + e.getMessage());
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Launch interrupted", e);
         } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to launch SLURM agent: " + agent.getNodeName(), e);
             listener.error("Failed to launch SLURM agent: " + e.getMessage());
-            // Cleanup job if it was submitted
-            if (slurmJobId != null) {
-                cancelSlurmJob(slurmJobId, listener);
+            throw new RuntimeException("Failed to launch SLURM agent", e);
+        }
+    }
+    
+    /**
+     * Gets the Jenkins URL for agent connection.
+     */
+    private String getJenkinsUrl() {
+        JenkinsLocationConfiguration config = JenkinsLocationConfiguration.get();
+        if (config == null) {
+            throw new IllegalStateException("JenkinsLocationConfiguration is null");
+        }
+        
+        String url = config.getUrl();
+        if (url == null || url.isEmpty()) {
+            // Fallback to root URL if location is not configured
+            Jenkins jenkins = Jenkins.get();
+            url = jenkins.getRootUrl();
+            if (url == null || url.isEmpty()) {
+                throw new IllegalStateException("Jenkins URL is not configured");
             }
-            throw new IOException("SLURM launch failed", e);
-        }
-    }
-    
-    /**
-     * Submits a job to SLURM and returns the job ID.
-     */
-    private String submitSlurmJob(@NonNull SlurmAgent agent, @NonNull TaskListener listener) 
-            throws IOException, InterruptedException {
-        
-        listener.getLogger().println("Submitting SLURM job for agent: " + agent.getNodeName());
-        
-        // TODO: Implement actual SLURM job submission
-        // This would involve:
-        // 1. Creating a SLURM batch script
-        // 2. Executing sbatch command on the controller
-        // 3. Parsing the job ID from the output
-        
-        // For now, return a mock job ID
-        String mockJobId = "12345"; // In real implementation, this would come from sbatch output
-        
-        listener.getLogger().println("Mock SLURM job submitted with ID: " + mockJobId);
-        return mockJobId;
-    }
-    
-    /**
-     * Waits for the SLURM job to start and returns the allocated hostname.
-     */
-    private String waitForJobToStart(@NonNull String jobId, @NonNull TaskListener listener) 
-            throws IOException, InterruptedException {
-        
-        listener.getLogger().println("Waiting for SLURM job " + jobId + " to start...");
-        
-        long startTime = System.currentTimeMillis();
-        long timeoutMs = TimeUnit.MINUTES.toMillis(timeoutMinutes);
-        
-        while (System.currentTimeMillis() - startTime < timeoutMs) {
-            // TODO: Implement actual job status checking
-            // This would involve executing: squeue -j <jobId> -h -o %N
-            
-            // For now, simulate job starting after 10 seconds
-            if (System.currentTimeMillis() - startTime > 10000) {
-                // In real implementation, would query SLURM REST API to get allocated node info
-                String mockHost = "compute-node-001"; // Would be extracted from REST API response
-                listener.getLogger().println("Mock job started on host: " + mockHost);
-                return mockHost;
-            }
-            
-            Thread.sleep(5000); // Check every 5 seconds
         }
         
-        throw new IOException("Timeout waiting for SLURM job " + jobId + " to start");
+        return url;
     }
     
     /**
-     * Creates an SSH launcher for connecting to the allocated host.
+     * Gets the JNLP secret for the agent.
      */
-    private ComputerLauncher createSSHLauncher(@NonNull String host, @NonNull SlurmAgent agent) {
-        // Create SSH launcher using the allocated host
-        return new SSHLauncher(
-            host,                                    // host
-            22,                                     // port (standard SSH port for compute nodes)
-            credentialsId,                          // credentials
-            null,                                   // jvmOptions
-            null,                                   // javaPath
-            null,                                   // prefixStartSlaveCmd
-            null,                                   // suffixStartSlaveCmd
-            60,                                     // launchTimeoutSeconds
-            3,                                      // maxNumRetries
-            5,                                      // retryWaitTime
-            null                                    // sshHostKeyVerificationStrategy
-        );
-    }
-    
-    /**
-     * Cancels a SLURM job.
-     */
-    private void cancelSlurmJob(@NonNull String jobId, @NonNull TaskListener listener) {
-        try {
-            listener.getLogger().println("Cancelling SLURM job: " + jobId);
-            // TODO: Implement actual job cancellation
-            // This would execute: scancel <jobId>
-        } catch (Exception e) {
-            listener.getLogger().println("Warning: Failed to cancel SLURM job " + jobId + ": " + e.getMessage());
+    private String getAgentSecret(SlurmComputer computer) {
+        String secret = computer.getJnlpMac();
+        if (secret == null || secret.isEmpty()) {
+            throw new IllegalStateException("Failed to get JNLP secret for agent");
         }
+        return secret;
     }
     
-    public String getCredentialsId() {
-        return credentialsId;
-    }
-    
-    public String getPartition() {
-        return partition;
-    }
-    
-    public String getSlurmScriptTemplate() {
-        return slurmScriptTemplate;
-    }
-    
-    public int getTimeoutMinutes() {
-        return timeoutMinutes;
-    }
-    
-    /**
-     * Placeholder launcher used during initialization.
-     */
-    private static class PlaceholderLauncher extends ComputerLauncher {
+    @Extension
+    public static final class DescriptorImpl extends Descriptor<ComputerLauncher> {
         @Override
-        public void launch(@NonNull SlaveComputer computer, @NonNull TaskListener listener) 
-                throws IOException, InterruptedException {
-            throw new IOException("Placeholder launcher should not be called directly");
+        public String getDisplayName() {
+            return "Launch SLURM agent";
         }
     }
 }

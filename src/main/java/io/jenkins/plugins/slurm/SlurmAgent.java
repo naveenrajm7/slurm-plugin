@@ -1,15 +1,20 @@
 package io.jenkins.plugins.slurm;
 
+import hudson.Extension;
 import hudson.model.Descriptor;
 import hudson.model.TaskListener;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.NodeProperty;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.RetentionStrategy;
+import hudson.slaves.Cloud;
+import jenkins.model.Jenkins;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import java.io.IOException;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
@@ -22,11 +27,30 @@ public class SlurmAgent extends AbstractCloudSlave {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmAgent.class.getName());
     
-    private final String cloudName;
-    private final String slurmJobId;
-    private final String partition;
-    private final String nodeList;
+    private static final long serialVersionUID = 1L;
     
+    private final String cloudName;
+    private String slurmJobId;  // Non-final because it might be set after creation
+    private final String templateId;
+    private final String partition;
+    private String nodeList;  // Non-final because it's set when job starts
+    
+    /**
+     * Creates a new SLURM agent.
+     * 
+     * @param name Agent name (unique identifier)
+     * @param description Human-readable description
+     * @param remoteFS Remote file system root on the agent
+     * @param numExecutors Number of concurrent executors
+     * @param mode Agent usage mode (NORMAL or EXCLUSIVE)
+     * @param labelString Space-separated labels
+     * @param launcher Launcher that will connect this agent
+     * @param retentionStrategy Strategy for keeping/terminating the agent
+     * @param nodeProperties Additional node properties
+     * @param cloudName Name of the SLURM cloud that created this agent
+     * @param templateId ID of the job template used
+     * @param partition SLURM partition for this agent
+     */
     public SlurmAgent(@NonNull String name,
                       @NonNull String description,
                       @NonNull String remoteFS,
@@ -34,87 +58,170 @@ public class SlurmAgent extends AbstractCloudSlave {
                       @NonNull Mode mode,
                       @NonNull String labelString,
                       @NonNull ComputerLauncher launcher,
-                      @NonNull RetentionStrategy retentionStrategy,
+                      @NonNull RetentionStrategy<?> retentionStrategy,
                       @NonNull List<? extends NodeProperty<?>> nodeProperties,
                       @NonNull String cloudName,
-                      String slurmJobId,
-                      String partition,
-                      String nodeList) throws Descriptor.FormException, IOException {
+                      @NonNull String templateId,
+                      String partition) throws Descriptor.FormException, IOException {
         
         super(name, description, remoteFS, numExecutors, mode, labelString, 
               launcher, retentionStrategy, nodeProperties);
         
         this.cloudName = cloudName;
-        this.slurmJobId = slurmJobId;
+        this.templateId = templateId;
         this.partition = partition;
-        this.nodeList = nodeList;
+        this.slurmJobId = null;  // Will be set when job is submitted
+        this.nodeList = null;     // Will be set when job starts
         
-        LOGGER.info("Created SLURM agent: " + name + 
-                   " (job=" + slurmJobId + ", partition=" + partition + ")");
+        LOGGER.log(Level.INFO, "Created SLURM agent: {0} (cloud={1}, template={2}, partition={3})", 
+                  new Object[]{name, cloudName, templateId, partition});
     }
     
     /**
      * Gets the name of the cloud that created this agent.
      */
+    @NonNull
     public String getCloudName() {
         return cloudName;
     }
     
     /**
-     * Gets the SLURM job ID for this agent.
+     * Gets the template ID used to create this agent.
      */
+    @NonNull
+    public String getTemplateId() {
+        return templateId;
+    }
+    
+    /**
+     * Gets the SLURM job ID for this agent.
+     * May be null if job hasn't been submitted yet.
+     */
+    @CheckForNull
     public String getSlurmJobId() {
         return slurmJobId;
     }
     
     /**
+     * Sets the SLURM job ID after job submission.
+     */
+    public void setSlurmJobId(@NonNull String slurmJobId) {
+        this.slurmJobId = slurmJobId;
+        LOGGER.log(Level.FINE, "Set SLURM job ID for agent {0}: {1}", 
+                  new Object[]{getNodeName(), slurmJobId});
+    }
+    
+    /**
      * Gets the SLURM partition this agent is running in.
      */
+    @CheckForNull
     public String getPartition() {
         return partition;
     }
     
     /**
      * Gets the SLURM node list assigned to this job.
+     * May be null if job hasn't started yet.
      */
+    @CheckForNull
     public String getNodeList() {
         return nodeList;
     }
     
-    public AbstractCloudSlave createNode(@NonNull String nodeName,
-                                       @NonNull TaskListener listener) throws IOException, InterruptedException {
-        // This method is called when the agent needs to be recreated
-        // For SLURM agents, we would need to submit a new job
-        LOGGER.info("Recreating SLURM agent: " + nodeName);
-        
-        // TODO: Implement node recreation logic
-        // This would involve submitting a new SLURM job and creating a new SlurmAgent
-        return this;
-    }
-    
-    protected void _terminate(@NonNull TaskListener listener) throws IOException, InterruptedException {
-        LOGGER.info("Terminating SLURM agent: " + getNodeName() + " (job=" + slurmJobId + ")");
-        
-        // TODO: Implement SLURM job cancellation
-        // This should cancel the SLURM job using scancel command
-        try {
-            if (slurmJobId != null && !slurmJobId.isEmpty()) {
-                // Would execute: scancel <slurmJobId>
-                listener.getLogger().println("Cancelling SLURM job: " + slurmJobId);
-                // Implementation needed
-            }
-        } catch (Exception e) {
-            LOGGER.warning("Failed to cancel SLURM job " + slurmJobId + ": " + e.getMessage());
-            listener.error("Failed to cancel SLURM job: " + e.getMessage());
-        }
+    /**
+     * Sets the SLURM node list after job starts.
+     */
+    public void setNodeList(@NonNull String nodeList) {
+        this.nodeList = nodeList;
+        LOGGER.log(Level.FINE, "Set node list for agent {0}: {1}", 
+                  new Object[]{getNodeName(), nodeList});
     }
     
     /**
-     * Creates a computer for this SLURM agent.
+     * Gets the SLURM cloud instance that created this agent.
+     * 
+     * @return SLURM cloud instance
+     * @throws IllegalStateException if cloud no longer exists
+     */
+    @NonNull
+    public SlurmCloud getSlurmCloud() throws IllegalStateException {
+        Cloud cloud = Jenkins.get().getCloud(cloudName);
+        
+        if (cloud == null) {
+            throw new IllegalStateException("Cloud '" + cloudName + "' no longer exists");
+        }
+        
+        if (!(cloud instanceof SlurmCloud)) {
+            throw new IllegalStateException("Cloud '" + cloudName + "' is not a SlurmCloud: " + 
+                                           cloud.getClass().getName());
+        }
+        
+        return (SlurmCloud) cloud;
+    }
+    
+    /**
+     * Creates the computer instance for this agent.
      */
     @Override
     @NonNull
     public SlurmComputer createComputer() {
         return new SlurmComputer(this);
+    }
+    
+    /**
+     * Terminates this SLURM agent.
+     * This method is called by Jenkins when the agent should be shut down.
+     */
+    @Override
+    protected void _terminate(@NonNull TaskListener listener) throws IOException, InterruptedException {
+        LOGGER.log(Level.INFO, "Terminating SLURM agent: {0} (job={1})", 
+                  new Object[]{getNodeName(), slurmJobId});
+        
+        listener.getLogger().println("Terminating SLURM agent: " + getNodeName());
+        
+        if (slurmJobId == null) {
+            listener.getLogger().println("No SLURM job ID - agent may not have been started");
+            return;
+        }
+        
+        try {
+            SlurmCloud cloud = getSlurmCloud();
+            
+            // Cancel the SLURM job
+            listener.getLogger().println("Cancelling SLURM job: " + slurmJobId);
+            cloud.cancelJob(slurmJobId, listener);
+            
+            listener.getLogger().println("SLURM job cancelled successfully");
+            
+        } catch (IllegalStateException e) {
+            // Cloud no longer exists - log but don't fail
+            LOGGER.log(Level.WARNING, "Cloud no longer exists, cannot cancel job: " + e.getMessage());
+            listener.getLogger().println("Warning: Cloud no longer exists, SLURM job may still be running");
+            
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Failed to cancel SLURM job " + slurmJobId, e);
+            listener.getLogger().println("Warning: Failed to cancel SLURM job: " + e.getMessage());
+            // Don't throw - we want termination to succeed even if job cancellation fails
+        }
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("SlurmAgent[name=%s, job=%s, cloud=%s]", 
+                           getNodeName(), slurmJobId, cloudName);
+    }
+    
+    @Extension
+    public static class DescriptorImpl extends SlaveDescriptor {
+        @Override
+        @NonNull
+        public String getDisplayName() {
+            return "SLURM Agent";
+        }
+        
+        @Override
+        public boolean isInstantiable() {
+            return false;  // Don't show in UI - only created programmatically
+        }
     }
 }

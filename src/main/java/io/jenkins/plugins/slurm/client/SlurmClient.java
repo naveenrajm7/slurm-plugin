@@ -132,4 +132,83 @@ public class SlurmClient {
     public SlurmApi getApi() {
         return api;
     }
+    
+    /**
+     * Submit a job to SLURM
+     * @param submitReq The job submission request containing job description
+     * @return The job submission response with job ID
+     * @throws ApiException if submission fails
+     */
+    public io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse submitJob(
+            io.jenkins.plugins.slurm.client.model.V0042JobSubmitReq submitReq) throws ApiException {
+        
+        if (submitReq == null || submitReq.getJob() == null) {
+            throw new IllegalArgumentException("Job submission request and job description cannot be null");
+        }
+        
+        LOGGER.info("Submitting job to SLURM: " + submitReq.getJob().getName());
+        LOGGER.fine("Job details - partition: " + submitReq.getJob().getPartition() + 
+                   ", CPUs: " + submitReq.getJob().getCpusPerTask());
+        
+        try {
+            io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse response = 
+                api.slurmV0042PostJobSubmit(submitReq);
+            
+            if (response != null) {
+                if (response.getJobId() != null) {
+                    LOGGER.info("Job submitted successfully with ID: " + response.getJobId());
+                } else if (response.getErrors() != null && !response.getErrors().isEmpty()) {
+                    LOGGER.warning("Job submission returned errors:");
+                    for (io.jenkins.plugins.slurm.client.model.V0042OpenapiError error : response.getErrors()) {
+                        LOGGER.warning("  - " + error.getError());
+                    }
+                }
+                return response;
+            } else {
+                throw new ApiException("Job submission returned null response");
+            }
+            
+        } catch (ApiException e) {
+            LOGGER.log(Level.SEVERE, 
+                      "Job submission failed with API error: HTTP " + e.getCode() + 
+                      " - " + e.getMessage() + " (Response: " + e.getResponseBody() + ")", e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Cancel a SLURM job by job ID
+     * @param jobId The SLURM job ID to cancel
+     * @throws ApiException if cancellation fails
+     */
+    public void cancelJob(String jobId) throws ApiException {
+        if (jobId == null || jobId.isEmpty()) {
+            throw new IllegalArgumentException("Job ID cannot be null or empty");
+        }
+        
+        LOGGER.info("Canceling SLURM job: " + jobId);
+        
+        try {
+            // The API expects job ID as a string
+            io.jenkins.plugins.slurm.client.model.V0042OpenapiKillJobResp response = 
+                api.slurmV0042DeleteJob(jobId, null, null);
+            
+            if (response != null) {
+                if (response.getErrors() != null && !response.getErrors().isEmpty()) {
+                    LOGGER.warning("Job cancellation returned errors:");
+                    for (io.jenkins.plugins.slurm.client.model.V0042OpenapiError error : response.getErrors()) {
+                        LOGGER.warning("  - " + error.getError());
+                    }
+                } else {
+                    LOGGER.info("Job " + jobId + " canceled successfully");
+                }
+            }
+            
+        } catch (ApiException e) {
+            LOGGER.log(Level.WARNING, 
+                      "Job cancellation failed with API error: HTTP " + e.getCode() + 
+                      " - " + e.getMessage() + " (Response: " + e.getResponseBody() + ")", e);
+            throw e;
+        }
+    }
 }

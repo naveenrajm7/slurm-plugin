@@ -265,6 +265,114 @@ public class SlurmCloud extends AbstractCloudImpl {
         return count;
     }
     
+    /**
+     * Submits a SLURM job via the REST API.
+     * 
+     * @param jobDesc The job description to submit
+     * @param listener The task listener for logging
+     * @return The SLURM job ID, or null if submission failed
+     * @throws Exception if submission fails
+     */
+    public String submitJob(io.jenkins.plugins.slurm.client.model.V0042JobDescMsg jobDesc, 
+                           hudson.model.TaskListener listener) throws Exception {
+        
+        LOGGER.info("Submitting SLURM job with name: " + jobDesc.getName());
+        
+        // Get the SLURM client for this cloud
+        SlurmClient client = SlurmClientProvider.createClient(this);
+        
+        if (client == null) {
+            throw new Exception("Failed to create SLURM client - check cloud configuration");
+        }
+        
+        try {
+            // Create job submit request
+            io.jenkins.plugins.slurm.client.model.V0042JobSubmitReq submitReq = 
+                new io.jenkins.plugins.slurm.client.model.V0042JobSubmitReq();
+            submitReq.setJob(jobDesc);
+            
+            // Submit the job
+            io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse response = client.submitJob(submitReq);
+            
+            if (response == null) {
+                throw new Exception("Job submission returned null response");
+            }
+            
+            // Extract job ID from response
+            String jobId = extractJobId(response);
+            
+            if (jobId != null && !jobId.isEmpty()) {
+                LOGGER.info("SLURM job submitted successfully: " + jobId);
+                listener.getLogger().println("Job submitted with ID: " + jobId);
+                return jobId;
+            } else {
+                throw new Exception("Job submission succeeded but no job ID was returned");
+            }
+            
+        } catch (Exception e) {
+            LOGGER.severe("Failed to submit SLURM job: " + e.getMessage());
+            listener.error("Failed to submit job: " + e.getMessage());
+            throw e;
+        }
+    }
+    
+    /**
+     * Extracts the job ID from a job submission response.
+     */
+    private String extractJobId(io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse response) {
+        // The response should contain job_id in the result
+        if (response.getJobId() != null) {
+            return String.valueOf(response.getJobId());
+        }
+        
+        // Check errors list for information
+        if (response.getErrors() != null && !response.getErrors().isEmpty()) {
+            LOGGER.warning("Job submission response contains errors");
+            for (io.jenkins.plugins.slurm.client.model.V0042OpenapiError error : response.getErrors()) {
+                LOGGER.warning("  Error: " + error.getError());
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Cancels a SLURM job.
+     * 
+     * @param jobId The SLURM job ID to cancel
+     * @param listener Optional task listener for logging
+     */
+    public void cancelJob(String jobId, @CheckForNull hudson.model.TaskListener listener) {
+        if (jobId == null || jobId.isEmpty()) {
+            LOGGER.warning("Cannot cancel job - no job ID provided");
+            return;
+        }
+        
+        LOGGER.info("Canceling SLURM job: " + jobId);
+        
+        try {
+            SlurmClient client = SlurmClientProvider.createClient(this);
+            
+            if (client == null) {
+                LOGGER.warning("Failed to get SLURM client for job cancellation");
+                return;
+            }
+            
+            client.cancelJob(jobId);
+            
+            LOGGER.info("SLURM job canceled: " + jobId);
+            if (listener != null) {
+                listener.getLogger().println("Canceled SLURM job: " + jobId);
+            }
+            
+        } catch (Exception e) {
+            LOGGER.warning("Failed to cancel SLURM job " + jobId + ": " + e.getMessage());
+            if (listener != null) {
+                listener.error("Failed to cancel job: " + e.getMessage());
+            }
+        }
+    }
+    
     // Template management methods for web UI navigation
     
     /**
@@ -304,7 +412,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         jobTemplates.add(template);
-        
+
         rsp.sendRedirect("templates");
     }
     
