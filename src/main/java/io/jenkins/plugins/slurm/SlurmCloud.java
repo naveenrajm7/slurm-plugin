@@ -592,6 +592,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         /**
          * Tests the connection to Slurm REST API using the ping endpoint with OpenAPI client.
+         * Validates both REST API connectivity and JWT token authentication.
          */
         private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
             // Normalize API URL - ensure it doesn't end with slash
@@ -602,26 +603,94 @@ public class SlurmCloud extends AbstractCloudImpl {
             // Retrieve JWT token from credentials
             String authToken = getAuthTokenFromCredentials(credentialsId);
             if (authToken == null || authToken.trim().isEmpty()) {
-                LOGGER.warning("No authentication token provided - connection may fail");
+                throw new Exception("No authentication token provided. Please configure JWT token credentials.");
             }
             
             try {
                 SlurmClient client = new SlurmClient(baseUrl, authToken);
                 
-                // Test ping and get essential controller information
+                // Test ping and get detailed controller information
                 SlurmPingInfo slurmInfo = client.getSlurmInfo();
                 
-                if (slurmInfo != null) {
-                    return String.format("Connected to SLURM controller '%s' (v%s, cluster: %s) at %s", 
-                                       slurmInfo.getHostname(), slurmInfo.getVersion(), 
-                                       slurmInfo.getCluster(), baseUrl);
-                } else {
-                    throw new Exception("Ping failed - no response from SLURM controller");
+                if (slurmInfo == null) {
+                    throw new Exception("Ping failed - no response from SLURM REST API. Check if slurmrestd is running.");
                 }
+                
+                // Check if controller is actually responding
+                if (slurmInfo.getResponding() == null || !slurmInfo.getResponding()) {
+                    // REST API is up but controller is not responding - likely auth issue
+                    StringBuilder errorMsg = new StringBuilder();
+                    errorMsg.append("SLURM REST API is reachable but controller is not responding.\n\n");
+                    
+                    if (slurmInfo.getPinged() != null && !slurmInfo.getPinged().isEmpty()) {
+                        errorMsg.append("Pinged: ").append(slurmInfo.getPinged()).append("\n\n");
+                    }
+                    
+                    errorMsg.append("This usually indicates:\n");
+                    errorMsg.append("• Invalid or expired JWT token\n");
+                    errorMsg.append("• Insufficient token permissions\n");
+                    errorMsg.append("• slurmctld service is down\n\n");
+                    errorMsg.append("Please verify your JWT token credentials.");
+                    
+                    LOGGER.warning("Controller not responding: " + errorMsg.toString());
+                    throw new Exception(errorMsg.toString());
+                }
+                
+                // Successfully connected - build detailed status message
+                StringBuilder statusMsg = new StringBuilder();
+                statusMsg.append("✓ Successfully connected to SLURM controller\n\n");
+                
+                // Controller information
+                if (slurmInfo.getHostname() != null) {
+                    statusMsg.append("Hostname: ").append(slurmInfo.getHostname()).append("\n");
+                }
+                
+                if (slurmInfo.getVersion() != null) {
+                    statusMsg.append("Version: ").append(slurmInfo.getVersion()).append("\n");
+                }
+                
+                if (slurmInfo.getCluster() != null) {
+                    statusMsg.append("Cluster: ").append(slurmInfo.getCluster()).append("\n");
+                }
+                
+                if (slurmInfo.getMode() != null) {
+                    statusMsg.append("Mode: ").append(slurmInfo.getMode()).append("\n");
+                }
+                
+                if (slurmInfo.getPrimary() != null) {
+                    statusMsg.append("Primary Controller: ").append(slurmInfo.getPrimary() ? "Yes" : "No").append("\n");
+                }
+                
+                if (slurmInfo.getLatency() != null) {
+                    statusMsg.append("Latency: ").append(slurmInfo.getLatency()).append(" µs\n");
+                }
+                
+                if (slurmInfo.getPinged() != null) {
+                    statusMsg.append("Ping Result: ").append(slurmInfo.getPinged()).append("\n");
+                }
+                
+                statusMsg.append("\nAPI URL: ").append(baseUrl);
+                statusMsg.append("\nAuthentication: ✓ Valid JWT token");
+                
+                LOGGER.info("Slurm connection test successful");
+                return statusMsg.toString();
                                    
             } catch (Exception e) {
                 LOGGER.warning("Slurm connection test failed: " + e.getMessage());
-                throw new Exception("Failed to connect to SLURM REST API at " + baseUrl + ". Error: " + e.getMessage());
+                
+                // Re-throw with better context if not already formatted
+                if (e.getMessage().contains("controller is not responding") || 
+                    e.getMessage().contains("no response from SLURM REST API") ||
+                    e.getMessage().contains("No authentication token")) {
+                    throw e;
+                }
+                
+                throw new Exception("Failed to connect to SLURM REST API at " + baseUrl + 
+                                  ".\n\nError: " + e.getMessage() + 
+                                  "\n\nTroubleshooting:\n" +
+                                  "• Verify slurmrestd is running and accessible\n" +
+                                  "• Check network connectivity and firewall rules\n" +
+                                  "• Ensure URL format is correct (http://host:6820)");
             }
         }
         

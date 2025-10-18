@@ -63,8 +63,8 @@ public class SlurmClient {
     }
     
     /**
-     * Test connectivity by pinging the SLURM controller and return essential info
-     * @return SLURM controller information (hostname and version) or null if failed
+     * Test connectivity by pinging the SLURM controller and return detailed info
+     * @return SLURM controller information from v0.0.43_controller_ping response or null if failed
      */
     public SlurmPingInfo getSlurmInfo() {
         try {
@@ -75,11 +75,17 @@ public class SlurmClient {
             
             if (response != null && response.getPings() != null && !response.getPings().isEmpty()) {
                 V0042ControllerPing ping = response.getPings().get(0);
-                String hostname = ping.getHostname();
+                
+                // Extract all fields from v0.0.43_controller_ping
+                String hostname = ping.getHostname();           // Target for ping
+                String pinged = ping.getPinged();               // Ping result
+                Boolean responding = ping.getResponding();      // If ping RPC responded with pong from controller
+                Long latency = ping.getLatency();               // Number of microseconds it took to successfully ping or timeout
+                String mode = ping.getMode() != null ? ping.getMode().toString() : null;  // Operating mode of responding slurmctld
+                Boolean primary = ping.getPrimary();            // Is responding slurmctld the primary controller
+                
                 String version = "unknown";
                 String cluster = "unknown";
-                boolean responding = Boolean.TRUE.equals(ping.getResponding());
-                Long latency = ping.getLatency();
                 
                 // Extract version and cluster info from metadata
                 if (response.getMeta() != null && response.getMeta().getSlurm() != null) {
@@ -91,10 +97,10 @@ public class SlurmClient {
                     }
                 }
                 
-                LOGGER.info(String.format("SLURM ping successful - hostname: %s, version: %s, cluster: %s, responding: %s, latency: %d μs", 
-                           hostname, version, cluster, responding, latency));
+                LOGGER.info(String.format("SLURM ping - hostname: %s, pinged: %s, responding: %s, latency: %d μs, mode: %s, primary: %s, version: %s, cluster: %s", 
+                           hostname, pinged, responding, latency, mode, primary, version, cluster));
                 
-                return new SlurmPingInfo(hostname, version, cluster, responding, latency);
+                return new SlurmPingInfo(hostname, pinged, responding, latency, mode, primary, version, cluster);
             } else {
                 LOGGER.warning("SLURM ping response received but no ping data found");
                 return null;
