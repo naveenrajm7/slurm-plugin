@@ -203,9 +203,18 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       // 1. Create the SLURM launcher (no-arg constructor)
                                       SlurmLauncher launcher = new SlurmLauncher();
                                       
-                                      // 2. Create retention strategy (keep alive for idle minutes)
+                                      // 2. Create retention strategy based on template configuration
+                                      // Always use CloudRetentionStrategy - it will terminate agent after idle timeout
                                       hudson.slaves.RetentionStrategy<?> retentionStrategy = 
-                                          new hudson.slaves.RetentionStrategy.Always();
+                                          new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
+                                      
+                                      if (jobTemplate.isRunOnce()) {
+                                          LOGGER.info("Using CloudRetentionStrategy with idle minutes: " + jobTemplate.getIdleMinutes() + " (run-once mode)");
+                                          LOGGER.info("Agent will be terminated after build completes and idle timeout expires");
+                                      } else {
+                                          LOGGER.info("Using CloudRetentionStrategy with idle minutes: " + jobTemplate.getIdleMinutes() + " (reusable mode)");
+                                          LOGGER.info("Agent can be reused for multiple builds");
+                                      }
                                       
                                       // 3. Create the SLURM agent with proper constructor parameters
                                       SlurmAgent agent = new SlurmAgent(

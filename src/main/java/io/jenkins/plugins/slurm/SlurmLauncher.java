@@ -2,6 +2,7 @@ package io.jenkins.plugins.slurm;
 
 import hudson.Extension;
 import hudson.model.Descriptor;
+import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.JNLPLauncher;

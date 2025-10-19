@@ -186,12 +186,25 @@ public class SlurmAgent extends AbstractCloudSlave {
         
         try {
             SlurmCloud cloud = getSlurmCloud();
+            SlurmJobTemplate template = cloud.getTemplateById(templateId);
             
-            // Cancel the SLURM job
-            listener.getLogger().println("Cancelling SLURM job: " + slurmJobId);
-            cloud.cancelJob(slurmJobId, listener);
+            // Check if we should cancel the job based on retention policy
+            boolean shouldCancel = true;
             
-            listener.getLogger().println("SLURM job cancelled successfully");
+            if (template != null && template.isKeepJobOnFailure()) {
+                // User wants to keep jobs for debugging - just log and skip cancellation
+                shouldCancel = false;
+                listener.getLogger().println("Keeping SLURM job running for debugging (job ID: " + slurmJobId + ")");
+                listener.getLogger().println("You can manually cancel it with: scancel " + slurmJobId);
+                LOGGER.info("Keeping SLURM job " + slurmJobId + " running due to keepJobOnFailure=true");
+            }
+            
+            if (shouldCancel) {
+                // Cancel the SLURM job
+                listener.getLogger().println("Cancelling SLURM job: " + slurmJobId);
+                cloud.cancelJob(slurmJobId, listener);
+                listener.getLogger().println("SLURM job cancelled successfully");
+            }
             
         } catch (IllegalStateException e) {
             // Cloud no longer exists - log but don't fail

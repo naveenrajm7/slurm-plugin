@@ -123,8 +123,18 @@
     </f:entry>
 
     <f:entry field="idleMinutes" title="Idle Minutes" 
-             description="Minutes to retain agent when idle before terminating">
-      <f:number default="5" min="0"/>
+             description="Minutes to retain agent when idle before terminating (only used if 'Run Once' is disabled)">
+      <f:number default="1" min="0"/>
+    </f:entry>
+    
+    <f:entry field="runOnce" title="Run Once" 
+             description="If checked, agent will terminate after completing one build (recommended for most cases)">
+      <f:checkbox default="true"/>
+    </f:entry>
+    
+    <f:entry field="keepJobOnFailure" title="Keep Job on Failure" 
+             description="If checked, SLURM job will not be cancelled when build fails (useful for debugging failed builds)">
+      <f:checkbox default="false"/>
     </f:entry>
 
   </f:section>

@@ -40,6 +40,8 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private Node.Mode nodeUsageMode;
     private int instanceCap;
     private int idleMinutes;
+    private boolean runOnce;  // If true, agent terminates after one build (default: true)
+    private boolean keepJobOnFailure;  // If true, don't cancel SLURM job when build fails (for debugging)
     
     // Core SLURM job submission fields (maps to v0.0.42_job_desc_msg)
     private String partition;                    // partition: which SLURM partition to use
@@ -70,6 +72,8 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.nodeUsageMode = Node.Mode.EXCLUSIVE;
         this.instanceCap = 1;
         this.idleMinutes = 5;
+        this.runOnce = true;  // Default: terminate after one build
+        this.keepJobOnFailure = false;  // Default: always cancel job on termination
         
         // SLURM defaults (keeping 1 node, 1 task for Jenkins agent)
         this.partition = "";
@@ -146,6 +150,24 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setIdleMinutes(int idleMinutes) {
         this.idleMinutes = idleMinutes >= 0 ? idleMinutes : 5;
+    }
+    
+    public boolean isRunOnce() {
+        return runOnce;
+    }
+    
+    @DataBoundSetter
+    public void setRunOnce(boolean runOnce) {
+        this.runOnce = runOnce;
+    }
+    
+    public boolean isKeepJobOnFailure() {
+        return keepJobOnFailure;
+    }
+    
+    @DataBoundSetter
+    public void setKeepJobOnFailure(boolean keepJobOnFailure) {
+        this.keepJobOnFailure = keepJobOnFailure;
     }
     
     // ====================
