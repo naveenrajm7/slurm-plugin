@@ -363,6 +363,9 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         
         owner.checkManagePermission();
         
+        // Capture old name before updating
+        String oldName = this.name;
+        
         net.sf.json.JSONObject formData = req.getSubmittedForm();
         
         // Update this template with form data
@@ -371,7 +374,13 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         // Save Jenkins configuration
         Jenkins.get().save();
         
-        // Redirect to template view
+        // If name changed, redirect to new name, otherwise stay on current page
+        if (oldName != null && !oldName.equals(this.name)) {
+            LOGGER.info("Template renamed from '" + oldName + "' to '" + this.name + "', redirecting to new URL");
+            return new HttpRedirect("../" + this.name);
+        }
+        
+        // Redirect to template view (current page)
         return new HttpRedirect(".");
     }
     
