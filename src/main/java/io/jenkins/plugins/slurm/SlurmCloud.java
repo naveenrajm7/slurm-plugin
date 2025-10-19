@@ -54,6 +54,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     private final String defaultPartition;
     private final int maxAgents;
     private final int agentTimeoutMinutes;
+    private String jenkinsUrl;  // Optional - if not set, will auto-detect
     private List<SlurmJobTemplate> jobTemplates;
     
     @DataBoundConstructor
@@ -70,6 +71,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         this.defaultPartition = defaultPartition;
         this.maxAgents = maxAgents > 0 ? maxAgents : 10;
         this.agentTimeoutMinutes = agentTimeoutMinutes > 0 ? agentTimeoutMinutes : 60;
+        this.jenkinsUrl = null;  // Will be set via DataBoundSetter or auto-detected
         this.jobTemplates = new ArrayList<>();
     }
     
@@ -92,6 +94,15 @@ public class SlurmCloud extends AbstractCloudImpl {
     
     public int getAgentTimeoutMinutes() {
         return agentTimeoutMinutes;
+    }
+    
+    public String getJenkinsUrl() {
+        return jenkinsUrl;
+    }
+    
+    @DataBoundSetter
+    public void setJenkinsUrl(String jenkinsUrl) {
+        this.jenkinsUrl = jenkinsUrl;
     }
     
     public List<SlurmJobTemplate> getJobTemplates() {
@@ -216,6 +227,15 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       Jenkins.get().addNode(agent);
                                       
                                       LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
+                                      
+                                      // 5. Get the computer and trigger the launcher to submit SLURM job
+                                      hudson.model.Computer computer = agent.toComputer();
+                                      if (computer != null) {
+                                          LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
+                                          computer.connect(false);  // Trigger the launcher
+                                      } else {
+                                          LOGGER.warning("Slurm Cloud: Computer is null for agent " + agentName);
+                                      }
                                       
                                       return agent;
                                       
@@ -452,6 +472,21 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         for (SlurmJobTemplate template : jobTemplates) {
             if (template.getName().equals(name)) {
+                return template;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Gets a specific job template by ID (UUID).
+     * Used by agents to look up their template.
+     */
+    public SlurmJobTemplate getTemplateById(String templateId) {
+        if (jobTemplates == null || templateId == null) return null;
+        
+        for (SlurmJobTemplate template : jobTemplates) {
+            if (templateId.equals(template.getId())) {
                 return template;
             }
         }

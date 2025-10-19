@@ -31,6 +31,11 @@
       <f:number default="60" min="1" />
     </f:entry>
     
+    <f:entry title="Jenkins URL" field="jenkinsUrl"
+             description="Jenkins URL for agent connections (optional - will auto-detect if not specified). Example: http://jenkins-server:8080/jenkins/">
+      <f:textbox />
+    </f:entry>
+    
     <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId" />
     
   </f:section>
