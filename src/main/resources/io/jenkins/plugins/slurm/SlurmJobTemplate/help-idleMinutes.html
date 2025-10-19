@@ -1,0 +1,53 @@
+<div>
+    <p>
+        <strong>Idle Minutes</strong> controls how long the agent remains active after becoming idle (no builds assigned).
+    </p>
+    
+    <h3>Behavior:</h3>
+    <ul>
+        <li><strong>0 minutes:</strong> Agent terminates <em>immediately</em> when idle (one-shot mode).
+            <br/><strong>⚠️ Warning:</strong> May cause build assignment failures due to network delays.
+            <br/>Use this only if you understand the risks.
+        </li>
+        <li><strong>1 minute:</strong> Recommended minimum for run-once agents. Provides safety buffer for build assignment.</li>
+        <li><strong>5 minutes</strong> (default): Good balance - allows agent reuse while cleaning up promptly.</li>
+        <li><strong>10+ minutes:</strong> Keeps agents alive longer for high reusability across multiple builds.</li>
+    </ul>
+    
+    <h3>Important Notes:</h3>
+    <ul>
+        <li>This setting <strong>always applies</strong>, regardless of "Run Once" setting</li>
+        <li>Agent does <strong>not</strong> terminate immediately on startup - it waits for work first</li>
+        <li>Idle timeout only starts <strong>after</strong> a build completes and agent becomes idle</li>
+        <li>Lower values = faster cleanup but less reusability</li>
+        <li>Higher values = more SLURM resource usage but better reusability</li>
+    </ul>
+    
+    <h3>Recommended Settings:</h3>
+    <table>
+        <tr>
+            <th>Use Case</th>
+            <th>Run Once</th>
+            <th>Idle Minutes</th>
+        </tr>
+        <tr>
+            <td>One-shot agents</td>
+            <td>✓ Enabled</td>
+            <td>1-2 minutes</td>
+        </tr>
+        <tr>
+            <td>Reusable agents (low traffic)</td>
+            <td>✗ Disabled</td>
+            <td>5 minutes</td>
+        </tr>
+        <tr>
+            <td>Reusable agents (high traffic)</td>
+            <td>✗ Disabled</td>
+            <td>10-15 minutes</td>
+        </tr>
+    </table>
+    
+    <p>
+        See <code>IDLE_MINUTES_BEHAVIOR.md</code> in the plugin repository for detailed documentation.
+    </p>
+</div>

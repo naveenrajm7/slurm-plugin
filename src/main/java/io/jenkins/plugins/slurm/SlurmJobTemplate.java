@@ -494,6 +494,25 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             return FormValidation.ok();
         }
         
+        public FormValidation doCheckIdleMinutes(@QueryParameter String value) {
+            try {
+                int minutes = Integer.parseInt(value);
+                if (minutes < 0) {
+                    return FormValidation.error("Idle minutes cannot be negative");
+                }
+                if (minutes == 0) {
+                    return FormValidation.warning(
+                        "Using idleMinutes=0 enables one-shot mode: agent will terminate immediately after completing a build. " +
+                        "This may cause build assignment failures if there are network delays. " +
+                        "Consider using at least 1 minute for more reliable agent provisioning."
+                    );
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number - enter idle minutes as an integer");
+            }
+        }
+        
         public FormValidation doCheckInstanceCap(@QueryParameter String value) {
             try {
                 int cap = Integer.parseInt(value);
