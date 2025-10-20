@@ -64,6 +64,54 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private String constraints;                  // constraints: required features
     private String environment;                  // environment: environment variables (as JSON array string)
     
+    // Phase 1: Essential fields for pipeline support
+    // Job identification and features
+    private String jobName;                      // name: SLURM job name (different from template name)
+    private String comment;                      // comment: user comment for the job
+    private String prefer;                       // prefer: preferred but not required features
+    private String reservation;                  // reservation: name of reservation to use
+    private String network;                      // network: network specifications for job
+    private Integer nice;                        // nice: requested job priority change
+    private Boolean reboot;                      // reboot: node reboot requested before start
+    
+    // Extended TRES fields
+    private String tresPerSocket;                // tres_per_socket: TRES per socket
+    private String tresBind;                     // tres_bind: task to TRES binding directives
+    private String tresFreq;                     // tres_freq: TRES frequency directives
+    
+    // Time limits
+    private Integer timeMinimum;                 // time_minimum: minimum time limit in minutes
+    
+    // Resource allocation - node specs
+    private String nodes;                        // nodes: node count range (e.g., "1-15:4")
+    private Integer maximumNodes;                // maximum_nodes: maximum node count
+    private Integer minimumCpus;                 // minimum_cpus: minimum CPU count
+    private Integer maximumCpus;                 // maximum_cpus: maximum CPU count
+    
+    // Resource allocation - per-node specs
+    private Integer socketsPerNode;              // sockets_per_node: sockets per node
+    private Integer threadsPerCore;              // threads_per_core: threads per core
+    private Integer tasksPerNode;                // tasks_per_node: tasks per node
+    private Integer tasksPerSocket;              // tasks_per_socket: tasks per socket
+    private Integer tasksPerCore;                // tasks_per_core: tasks per core
+    private Integer tasksPerBoard;               // tasks_per_board: tasks per board
+    private Integer ntasksPerTres;               // ntasks_per_tres: tasks per TRES (e.g., per GPU)
+    private Integer minimumCpusPerNode;          // minimum_cpus_per_node: min CPUs per node
+    private Integer minimumBoardsPerNode;        // minimum_boards_per_node: boards per node
+    private Integer minimumSocketsPerBoard;      // minimum_sockets_per_board: sockets per board
+    
+    // Memory allocation
+    private Long memoryPerCpu;                   // memory_per_cpu: memory in MB per CPU
+    private Integer temporaryDiskPerNode;        // temporary_disk_per_node: tmp disk per node in MB
+    
+    // I/O redirection
+    private String standardOutput;               // standard_output: path to stdout file
+    private String standardError;                // standard_error: path to stderr file
+    private String standardInput;                // standard_input: path to stdin file
+    
+    // Container support (Pyxis/Enroot)
+    private PyxisConfig pyxis;                   // Pyxis container configuration
+    
     @DataBoundConstructor
     public SlurmJobTemplate() {
         this.id = UUID.randomUUID().toString();
@@ -91,6 +139,39 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.qos = "";
         this.constraints = "";
         this.environment = "";
+        
+        // Phase 1 fields - initialize to null/empty (all optional)
+        this.jobName = "";
+        this.comment = "";
+        this.prefer = "";
+        this.reservation = "";
+        this.network = "";
+        this.nice = null;
+        this.reboot = null;
+        this.tresPerSocket = "";
+        this.tresBind = "";
+        this.tresFreq = "";
+        this.timeMinimum = null;
+        this.nodes = "";
+        this.maximumNodes = null;
+        this.minimumCpus = null;
+        this.maximumCpus = null;
+        this.socketsPerNode = null;
+        this.threadsPerCore = null;
+        this.tasksPerNode = null;
+        this.tasksPerSocket = null;
+        this.tasksPerCore = null;
+        this.tasksPerBoard = null;
+        this.ntasksPerTres = null;
+        this.minimumCpusPerNode = null;
+        this.minimumBoardsPerNode = null;
+        this.minimumSocketsPerBoard = null;
+        this.memoryPerCpu = null;
+        this.temporaryDiskPerNode = null;
+        this.standardOutput = "";
+        this.standardError = "";
+        this.standardInput = "";
+        this.pyxis = null;
     }
     
     public SlurmJobTemplate(String name, String label) {
@@ -309,6 +390,328 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setEnvironment(String environment) {
         this.environment = environment != null ? environment : "";
+    }
+    
+    // ====================
+    // Phase 1: Essential fields for pipeline support
+    // ====================
+    
+    // Job identification and features
+    @CheckForNull
+    public String getJobName() {
+        return jobName;
+    }
+    
+    @DataBoundSetter
+    public void setJobName(String jobName) {
+        this.jobName = jobName != null ? jobName : "";
+    }
+    
+    @CheckForNull
+    public String getComment() {
+        return comment;
+    }
+    
+    @DataBoundSetter
+    public void setComment(String comment) {
+        this.comment = comment != null ? comment : "";
+    }
+    
+    @CheckForNull
+    public String getPrefer() {
+        return prefer;
+    }
+    
+    @DataBoundSetter
+    public void setPrefer(String prefer) {
+        this.prefer = prefer != null ? prefer : "";
+    }
+    
+    @CheckForNull
+    public String getReservation() {
+        return reservation;
+    }
+    
+    @DataBoundSetter
+    public void setReservation(String reservation) {
+        this.reservation = reservation != null ? reservation : "";
+    }
+    
+    @CheckForNull
+    public String getNetwork() {
+        return network;
+    }
+    
+    @DataBoundSetter
+    public void setNetwork(String network) {
+        this.network = network != null ? network : "";
+    }
+    
+    @CheckForNull
+    public Integer getNice() {
+        return nice;
+    }
+    
+    @DataBoundSetter
+    public void setNice(Integer nice) {
+        this.nice = nice;
+    }
+    
+    @CheckForNull
+    public Boolean getReboot() {
+        return reboot;
+    }
+    
+    @DataBoundSetter
+    public void setReboot(Boolean reboot) {
+        this.reboot = reboot;
+    }
+    
+    // Extended TRES fields
+    @CheckForNull
+    public String getTresPerSocket() {
+        return tresPerSocket;
+    }
+    
+    @DataBoundSetter
+    public void setTresPerSocket(String tresPerSocket) {
+        this.tresPerSocket = tresPerSocket != null ? tresPerSocket : "";
+    }
+    
+    @CheckForNull
+    public String getTresBind() {
+        return tresBind;
+    }
+    
+    @DataBoundSetter
+    public void setTresBind(String tresBind) {
+        this.tresBind = tresBind != null ? tresBind : "";
+    }
+    
+    @CheckForNull
+    public String getTresFreq() {
+        return tresFreq;
+    }
+    
+    @DataBoundSetter
+    public void setTresFreq(String tresFreq) {
+        this.tresFreq = tresFreq != null ? tresFreq : "";
+    }
+    
+    // Time limits
+    @CheckForNull
+    public Integer getTimeMinimum() {
+        return timeMinimum;
+    }
+    
+    @DataBoundSetter
+    public void setTimeMinimum(Integer timeMinimum) {
+        this.timeMinimum = timeMinimum;
+    }
+    
+    // Resource allocation - node specs
+    @CheckForNull
+    public String getNodes() {
+        return nodes;
+    }
+    
+    @DataBoundSetter
+    public void setNodes(String nodes) {
+        this.nodes = nodes != null ? nodes : "";
+    }
+    
+    @CheckForNull
+    public Integer getMaximumNodes() {
+        return maximumNodes;
+    }
+    
+    @DataBoundSetter
+    public void setMaximumNodes(Integer maximumNodes) {
+        this.maximumNodes = maximumNodes;
+    }
+    
+    @CheckForNull
+    public Integer getMinimumCpus() {
+        return minimumCpus;
+    }
+    
+    @DataBoundSetter
+    public void setMinimumCpus(Integer minimumCpus) {
+        this.minimumCpus = minimumCpus;
+    }
+    
+    @CheckForNull
+    public Integer getMaximumCpus() {
+        return maximumCpus;
+    }
+    
+    @DataBoundSetter
+    public void setMaximumCpus(Integer maximumCpus) {
+        this.maximumCpus = maximumCpus;
+    }
+    
+    // Resource allocation - per-node specs
+    @CheckForNull
+    public Integer getSocketsPerNode() {
+        return socketsPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setSocketsPerNode(Integer socketsPerNode) {
+        this.socketsPerNode = socketsPerNode;
+    }
+    
+    @CheckForNull
+    public Integer getThreadsPerCore() {
+        return threadsPerCore;
+    }
+    
+    @DataBoundSetter
+    public void setThreadsPerCore(Integer threadsPerCore) {
+        this.threadsPerCore = threadsPerCore;
+    }
+    
+    @CheckForNull
+    public Integer getTasksPerNode() {
+        return tasksPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setTasksPerNode(Integer tasksPerNode) {
+        this.tasksPerNode = tasksPerNode;
+    }
+    
+    @CheckForNull
+    public Integer getTasksPerSocket() {
+        return tasksPerSocket;
+    }
+    
+    @DataBoundSetter
+    public void setTasksPerSocket(Integer tasksPerSocket) {
+        this.tasksPerSocket = tasksPerSocket;
+    }
+    
+    @CheckForNull
+    public Integer getTasksPerCore() {
+        return tasksPerCore;
+    }
+    
+    @DataBoundSetter
+    public void setTasksPerCore(Integer tasksPerCore) {
+        this.tasksPerCore = tasksPerCore;
+    }
+    
+    @CheckForNull
+    public Integer getTasksPerBoard() {
+        return tasksPerBoard;
+    }
+    
+    @DataBoundSetter
+    public void setTasksPerBoard(Integer tasksPerBoard) {
+        this.tasksPerBoard = tasksPerBoard;
+    }
+    
+    @CheckForNull
+    public Integer getNtasksPerTres() {
+        return ntasksPerTres;
+    }
+    
+    @DataBoundSetter
+    public void setNtasksPerTres(Integer ntasksPerTres) {
+        this.ntasksPerTres = ntasksPerTres;
+    }
+    
+    @CheckForNull
+    public Integer getMinimumCpusPerNode() {
+        return minimumCpusPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setMinimumCpusPerNode(Integer minimumCpusPerNode) {
+        this.minimumCpusPerNode = minimumCpusPerNode;
+    }
+    
+    @CheckForNull
+    public Integer getMinimumBoardsPerNode() {
+        return minimumBoardsPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setMinimumBoardsPerNode(Integer minimumBoardsPerNode) {
+        this.minimumBoardsPerNode = minimumBoardsPerNode;
+    }
+    
+    @CheckForNull
+    public Integer getMinimumSocketsPerBoard() {
+        return minimumSocketsPerBoard;
+    }
+    
+    @DataBoundSetter
+    public void setMinimumSocketsPerBoard(Integer minimumSocketsPerBoard) {
+        this.minimumSocketsPerBoard = minimumSocketsPerBoard;
+    }
+    
+    // Memory allocation
+    @CheckForNull
+    public Long getMemoryPerCpu() {
+        return memoryPerCpu;
+    }
+    
+    @DataBoundSetter
+    public void setMemoryPerCpu(Long memoryPerCpu) {
+        this.memoryPerCpu = memoryPerCpu;
+    }
+    
+    @CheckForNull
+    public Integer getTemporaryDiskPerNode() {
+        return temporaryDiskPerNode;
+    }
+    
+    @DataBoundSetter
+    public void setTemporaryDiskPerNode(Integer temporaryDiskPerNode) {
+        this.temporaryDiskPerNode = temporaryDiskPerNode;
+    }
+    
+    // I/O redirection
+    @CheckForNull
+    public String getStandardOutput() {
+        return standardOutput;
+    }
+    
+    @DataBoundSetter
+    public void setStandardOutput(String standardOutput) {
+        this.standardOutput = standardOutput != null ? standardOutput : "";
+    }
+    
+    @CheckForNull
+    public String getStandardError() {
+        return standardError;
+    }
+    
+    @DataBoundSetter
+    public void setStandardError(String standardError) {
+        this.standardError = standardError != null ? standardError : "";
+    }
+    
+    @CheckForNull
+    public String getStandardInput() {
+        return standardInput;
+    }
+    
+    @DataBoundSetter
+    public void setStandardInput(String standardInput) {
+        this.standardInput = standardInput != null ? standardInput : "";
+    }
+    
+    // Container support (Pyxis/Enroot)
+    @CheckForNull
+    public PyxisConfig getPyxis() {
+        return pyxis;
+    }
+    
+    @DataBoundSetter
+    public void setPyxis(PyxisConfig pyxis) {
+        this.pyxis = pyxis;
     }
     
     // ====================
