@@ -132,6 +132,47 @@ public class SlurmCloud extends AbstractCloudImpl {
         return null;
     }
     
+    /**
+     * Adds a dynamic (temporary) job template to this cloud.
+     * Used by pipeline steps to temporarily register templates.
+     * 
+     * @param template The template to add
+     */
+    public synchronized void addDynamicTemplate(@NonNull SlurmJobTemplate template) {
+        if (jobTemplates == null) {
+            jobTemplates = new ArrayList<>();
+        }
+        
+        // Template label should be unique - we'll use that for identification
+        LOGGER.fine("Adding dynamic template: " + template.getLabel());
+        jobTemplates.add(template);
+    }
+    
+    /**
+     * Removes a dynamic (temporary) job template from this cloud.
+     * Used by pipeline steps to clean up after execution.
+     * 
+     * @param template The template to remove
+     */
+    public synchronized void removeDynamicTemplate(@NonNull SlurmJobTemplate template) {
+        if (jobTemplates != null) {
+            LOGGER.fine("Removing dynamic template: " + template.getLabel());
+            jobTemplates.removeIf(t -> 
+                template.getLabel() != null && template.getLabel().equals(t.getLabel())
+            );
+        }
+    }
+    
+    /**
+     * Gets all templates including both configured and dynamic ones.
+     * 
+     * @return All templates
+     */
+    @NonNull
+    public List<SlurmJobTemplate> getTemplates() {
+        return getJobTemplates();
+    }
+    
     @Override
     public Collection<PlannedNode> provision(@NonNull Cloud.CloudState state,
                                            int excessWorkload) {
@@ -292,14 +333,25 @@ public class SlurmCloud extends AbstractCloudImpl {
         // Get the label from the state
         Label label = state.getLabel();
         
+        LOGGER.info("canProvision called for label: " + 
+                   (label != null ? label.getName() : "none"));
+        
         // Check if we have a template that can handle this label
         SlurmJobTemplate template = getJobTemplateFor(label);
         
         if (template == null) {
-            LOGGER.fine("No template available for label: " + 
-                       (label != null ? label.getName() : "none"));
+            LOGGER.info("No template available for label: " + 
+                       (label != null ? label.getName() : "none") + 
+                       ". Available templates: " + 
+                       (jobTemplates != null ? jobTemplates.size() : 0));
+            if (jobTemplates != null && !jobTemplates.isEmpty()) {
+                LOGGER.info("Available template labels: " + 
+                           jobTemplates.stream().map(t -> t.getLabel()).toList());
+            }
             return false;
         }
+        
+        LOGGER.info("Found matching template: " + template.getName());
         
         // Check if we're at capacity
         if (getCurrentAgentCount() >= maxAgents) {

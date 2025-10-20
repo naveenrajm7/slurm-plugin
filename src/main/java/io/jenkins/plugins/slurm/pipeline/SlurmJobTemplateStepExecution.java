@@ -1,0 +1,174 @@
+package io.jenkins.plugins.slurm.pipeline;
+
+import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.AbortException;
+import hudson.model.Label;
+import io.jenkins.plugins.slurm.SlurmCloud;
+import io.jenkins.plugins.slurm.SlurmJobTemplate;
+import io.jenkins.plugins.slurm.SlurmJobTemplateUtils;
+import jenkins.model.Jenkins;
+import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
+import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
+import org.jenkinsci.plugins.workflow.steps.StepExecution;
+
+import java.io.Serializable;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+/**
+ * Execution for {@link SlurmJobTemplateStep}.
+ * 
+ * Creates a temporary SLURM job template from the step configuration
+ * and makes it available to nested pipeline steps.
+ */
+public class SlurmJobTemplateStepExecution extends StepExecution implements Serializable {
+    
+    private static final long serialVersionUID = 1L;
+    private static final Logger LOGGER = Logger.getLogger(SlurmJobTemplateStepExecution.class.getName());
+    
+    private final SlurmJobTemplateStep step;
+    
+    public SlurmJobTemplateStepExecution(@NonNull SlurmJobTemplateStep step, @NonNull StepContext context) {
+        super(context);
+        this.step = step;
+    }
+    
+    @Override
+    public boolean start() throws Exception {
+        // Resolve the SLURM cloud
+        SlurmCloud cloud = resolveSlurmCloud();
+        if (cloud == null) {
+            getContext().onFailure(new AbortException(
+                "No SLURM cloud found. Either specify a cloud name or configure a default SLURM cloud."
+            ));
+            return false;
+        }
+        
+        LOGGER.log(Level.INFO, "Using SLURM cloud: {0}", cloud.name);
+        
+        // Build the job template from step configuration
+        SlurmJobTemplate template = step.buildJobTemplate(cloud);
+        
+        // Temporarily add template to cloud if it has a label
+        // This allows the cloud to provision agents based on this template
+        boolean addedTemplate = false;
+        if (!StringUtils.isEmpty(template.getLabel())) {
+            LOGGER.log(Level.INFO, "Adding temporary template to cloud ''{0}'' with label: ''{1}''", 
+                      new Object[]{cloud.name, template.getLabel()});
+            LOGGER.log(Level.INFO, "Template details: name={0}, partition={1}, cpus={2}, memory={3}", 
+                      new Object[]{template.getName(), template.getPartition(), 
+                                  template.getCpusPerTask(), template.getMemoryPerNode()});
+            cloud.addDynamicTemplate(template);
+            addedTemplate = true;
+            LOGGER.log(Level.INFO, "Template added successfully. Total templates in cloud: {0}", 
+                      cloud.getJobTemplates().size());
+        } else {
+            LOGGER.log(Level.WARNING, "Template has no label, cannot be added to cloud for provisioning");
+        }
+        
+        try {
+            // Execute the body with the template in scope
+            BodyInvoker bodyInvoker = getContext().newBodyInvoker()
+                    .withCallback(new TemplateCleanupCallback(cloud, template, addedTemplate));
+            
+            bodyInvoker.start();
+            
+        } catch (Exception e) {
+            // Clean up on error
+            if (addedTemplate) {
+                cloud.removeDynamicTemplate(template);
+            }
+            throw e;
+        }
+        
+        return false;  // Async execution
+    }
+    
+    @Override
+    public void stop(@NonNull Throwable cause) throws Exception {
+        getContext().onFailure(cause);
+    }
+    
+    /**
+     * Resolve which SLURM cloud to use for this template.
+     */
+    private SlurmCloud resolveSlurmCloud() throws AbortException {
+        Jenkins jenkins = Jenkins.get();
+        
+        // If cloud name specified, use it
+        if (!StringUtils.isEmpty(step.getCloud())) {
+            for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
+                if (step.getCloud().equals(cloud.name)) {
+                    return cloud;
+                }
+            }
+            throw new AbortException("SLURM cloud not found: " + step.getCloud());
+        }
+        
+        // Otherwise use the first available SLURM cloud
+        for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
+            return cloud;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Callback to clean up the temporary template after execution.
+     */
+    private static class TemplateCleanupCallback extends BodyExecutionCallback {
+        
+        private static final long serialVersionUID = 1L;
+        
+        private final String cloudName;
+        private final String templateLabel;
+        private final boolean wasAdded;
+        
+        TemplateCleanupCallback(SlurmCloud cloud, SlurmJobTemplate template, boolean wasAdded) {
+            this.cloudName = cloud.name;
+            this.templateLabel = template.getLabel();
+            this.wasAdded = wasAdded;
+        }
+        
+        @Override
+        public void onSuccess(StepContext context, Object result) {
+            cleanup();
+            context.onSuccess(result);
+        }
+        
+        @Override
+        public void onFailure(StepContext context, Throwable t) {
+            cleanup();
+            context.onFailure(t);
+        }
+        
+        private void cleanup() {
+            if (wasAdded && templateLabel != null && cloudName != null) {
+                LOGGER.log(Level.FINE, "Removing temporary template with label: {0} from cloud: {1}", 
+                          new Object[]{templateLabel, cloudName});
+                
+                // Look up the cloud by name
+                Jenkins jenkins = Jenkins.get();
+                for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
+                    if (cloudName.equals(cloud.name)) {
+                        // Find the template by label and remove it
+                        // Convert the label string back to a Label object
+                        hudson.model.Label label = hudson.model.Label.get(templateLabel);
+                        SlurmJobTemplate template = SlurmJobTemplateUtils.getTemplateByLabel(cloud, label);
+                        if (template != null) {
+                            cloud.removeDynamicTemplate(template);
+                            LOGGER.log(Level.INFO, "Successfully removed temporary template with label: {0} from cloud: {1}", 
+                                      new Object[]{templateLabel, cloudName});
+                        } else {
+                            LOGGER.log(Level.WARNING, "Could not find template with label: {0} in cloud: {1} for cleanup", 
+                                      new Object[]{templateLabel, cloudName});
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
