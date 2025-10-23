@@ -56,6 +56,12 @@ public class SlurmDeclarativeAgentScript extends DeclarativeAgentScript<SlurmDec
         return {
             script.echo "=== Inside closure execution ==="
             
+            // Handle JSON file loading (similar to Kubernetes yamlFile)
+            if ((describable.jsonFile != null) && (describable.hasScmContext(script))) {
+                script.echo "Loading JSON configuration from file: ${describable.jsonFile}"
+                describable.json = script.readTrusted(describable.jsonFile)
+            }
+            
             // Convert declarative agent configuration to slurmJobTemplate arguments
             def args = describable.asArgs
             script.echo "Args generated: ${args}"

@@ -161,7 +161,13 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             template = new SlurmJobTemplate();
         }
         
-        // Apply configuration from this step
+        // Apply JSON configuration first (if provided)
+        if (!StringUtils.isEmpty(json)) {
+            LOGGER.fine("Applying JSON configuration");
+            applyJsonConfiguration(template, json);
+        }
+        
+        // Then apply individual properties (which override JSON if both specified)
         if (!StringUtils.isEmpty(label)) {
             template.setLabel(label);
         }
@@ -234,6 +240,93 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         template.setKeepJobOnFailure(keepJobOnFailure);
         
         return template;
+    }
+    
+    /**
+     * Apply JSON configuration to template.
+     * Supports property names matching SlurmJobTemplate setters.
+     */
+    private void applyJsonConfiguration(@NonNull SlurmJobTemplate template, @NonNull String jsonString) {
+        try {
+            net.sf.json.JSONObject jsonConfig = net.sf.json.JSONObject.fromObject(jsonString);
+            
+            // Core SLURM fields
+            if (jsonConfig.has("partition")) {
+                template.setPartition(jsonConfig.getString("partition"));
+            }
+            if (jsonConfig.has("workingDir")) {
+                template.setCurrentWorkingDirectory(jsonConfig.getString("workingDir"));
+            }
+            if (jsonConfig.has("cpus")) {
+                template.setCpusPerTask(jsonConfig.getInt("cpus"));
+            }
+            if (jsonConfig.has("memory")) {
+                template.setMemoryPerNode(parseMemoryToMB(jsonConfig.getString("memory")));
+            }
+            if (jsonConfig.has("time")) {
+                template.setTimeLimit(parseTimeToMinutes(jsonConfig.getString("time")));
+            }
+            if (jsonConfig.has("gres")) {
+                template.setTresPerJob(jsonConfig.getString("gres"));
+            }
+            if (jsonConfig.has("account")) {
+                template.setAccount(jsonConfig.getString("account"));
+            }
+            if (jsonConfig.has("qos")) {
+                template.setQos(jsonConfig.getString("qos"));
+            }
+            if (jsonConfig.has("reservation")) {
+                template.setReservation(jsonConfig.getString("reservation"));
+            }
+            if (jsonConfig.has("constraints")) {
+                template.setConstraints(jsonConfig.getString("constraints"));
+            }
+            if (jsonConfig.has("prefer")) {
+                template.setPrefer(jsonConfig.getString("prefer"));
+            }
+            if (jsonConfig.has("nodes")) {
+                template.setNodes(jsonConfig.getString("nodes"));
+            }
+            if (jsonConfig.has("tasks")) {
+                template.setTasks(jsonConfig.getInt("tasks"));
+            }
+            if (jsonConfig.has("tasksPerNode")) {
+                template.setTasksPerNode(jsonConfig.getInt("tasksPerNode"));
+            }
+            if (jsonConfig.has("ntasksPerTres")) {
+                template.setNtasksPerTres(jsonConfig.getInt("ntasksPerTres"));
+            }
+            
+            // Container support (basic - Pyxis would need nested object)
+            if (jsonConfig.has("containerImage")) {
+                PyxisConfig pyxisConfig = new PyxisConfig();
+                pyxisConfig.setContainerImage(jsonConfig.getString("containerImage"));
+                if (jsonConfig.has("containerMounts")) {
+                    pyxisConfig.setContainerMounts(jsonConfig.getString("containerMounts"));
+                }
+                if (jsonConfig.has("containerWorkdir")) {
+                    pyxisConfig.setContainerWorkdir(jsonConfig.getString("containerWorkdir"));
+                }
+                if (jsonConfig.has("containerMountHome")) {
+                    pyxisConfig.setContainerMountHome(jsonConfig.getBoolean("containerMountHome"));
+                }
+                template.setPyxis(pyxisConfig);
+            }
+            
+            // I/O
+            if (jsonConfig.has("standardOutput")) {
+                template.setStandardOutput(jsonConfig.getString("standardOutput"));
+            }
+            if (jsonConfig.has("standardError")) {
+                template.setStandardError(jsonConfig.getString("standardError"));
+            }
+            
+            LOGGER.fine("Successfully applied JSON configuration to template");
+            
+        } catch (Exception e) {
+            LOGGER.warning("Failed to parse JSON configuration: " + e.getMessage());
+            // Continue with other configuration - don't fail the build
+        }
     }
     
     /**

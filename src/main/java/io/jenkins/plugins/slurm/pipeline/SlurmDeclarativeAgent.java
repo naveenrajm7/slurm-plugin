@@ -26,9 +26,10 @@ import java.util.stream.Collectors;
 /**
  * Declarative Pipeline agent for SLURM.
  * 
- * Supports two modes:
+ * Supports three modes:
  * 1. Property-based configuration (similar to Kubernetes plugin)
- * 2. JSON-based configuration for complete SLURM REST API flexibility
+ * 2. Inline JSON configuration for complete SLURM REST API flexibility
+ * 3. JSON file from workspace (requires SCM checkout)
  * 
  * Example 1: Property-based
  * <pre>
@@ -45,7 +46,7 @@ import java.util.stream.Collectors;
  * }
  * </pre>
  * 
- * Example 2: JSON-based
+ * Example 2: Inline JSON
  * <pre>
  * agent {
  *   slurm {
@@ -60,6 +61,16 @@ import java.util.stream.Collectors;
  *         "containerImage": "/path/to/image.sqsh"
  *       }
  *     '''
+ *   }
+ * }
+ * </pre>
+ * 
+ * Example 3: JSON from file (requires SCM)
+ * <pre>
+ * agent {
+ *   slurm {
+ *     cloud 'my-slurm-cluster'
+ *     jsonFile '.jenkins/slurm-gpu-config.json'
  *   }
  * }
  * </pre>
@@ -84,6 +95,9 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     // JSON configuration (alternative to property-based)
     @CheckForNull
     private String json;
+    
+    @CheckForNull
+    private String jsonFile;  // Path to JSON file in SCM
     
     // Core SLURM job submission fields
     @CheckForNull
@@ -224,6 +238,33 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     @DataBoundSetter
     public void setJson(String json) {
         this.json = Util.fixEmpty(json);
+    }
+    
+    @CheckForNull
+    public String getJsonFile() {
+        return jsonFile;
+    }
+    
+    @DataBoundSetter
+    public void setJsonFile(String jsonFile) {
+        this.jsonFile = Util.fixEmpty(jsonFile);
+    }
+    
+    /**
+     * Checks if this agent has SCM context (i.e., running in a job with SCM checkout).
+     * Used to determine if we can read JSON files from the workspace.
+     */
+    public boolean hasScmContext(Object script) {
+        try {
+            if (script instanceof org.jenkinsci.plugins.workflow.cps.CpsScript) {
+                org.jenkinsci.plugins.workflow.cps.CpsScript cpsScript = 
+                    (org.jenkinsci.plugins.workflow.cps.CpsScript) script;
+                return cpsScript.getBinding().hasVariable("scm");
+            }
+        } catch (Exception e) {
+            LOGGER.fine("Could not determine SCM context: " + e.getMessage());
+        }
+        return false;
     }
     
     // ====================
