@@ -176,20 +176,49 @@
         </configuration>
       </plugin>
       
-      <!-- OpenAPI Generator for SLURM v0.0.42 (Single Version) -->
+      <!-- Exec Plugin to preprocess OpenAPI spec and remove version prefixes -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>preprocess-openapi-spec</id>
+            <phase>generate-sources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>python</executable>
+              <arguments>
+                <argument>${project.basedir}/scripts/preprocess-openapi-spec.py</argument>
+                <argument>${project.basedir}/src/main/resources/openapi/slurm-v0.0.42.json</argument>
+                <argument>${project.build.directory}/generated-resources/openapi/slurm-processed.json</argument>
+              </arguments>
+              <successCodes>
+                <successCode>0</successCode>
+              </successCodes>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      
+      <!-- OpenAPI Generator for SLURM (Version-Independent) -->
       <plugin>
         <groupId>org.openapitools</groupId>
         <artifactId>openapi-generator-maven-plugin</artifactId>
         <version>7.0.1</version>
         <executions>
-          <!-- Generate unversioned client for v0.0.42 -->
+          <!-- Generate version-independent client from preprocessed spec -->
           <execution>
             <id>generate-slurm-client</id>
+            <phase>generate-sources</phase>
             <goals>
               <goal>generate</goal>
             </goals>
             <configuration>
-              <inputSpec>${project.basedir}/src/main/resources/openapi/slurm-v0.0.42.json</inputSpec>
+              <!-- Use preprocessed spec with version prefixes removed -->
+              <inputSpec>${project.build.directory}/generated-resources/openapi/slurm-processed.json</inputSpec>
               <generatorName>java</generatorName>
               <packageName>io.jenkins.plugins.slurm.client</packageName>
               <modelPackage>io.jenkins.plugins.slurm.client.model</modelPackage>

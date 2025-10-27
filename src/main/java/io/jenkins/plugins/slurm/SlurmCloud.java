@@ -386,7 +386,7 @@ public class SlurmCloud extends AbstractCloudImpl {
      * @return The SLURM job ID, or null if submission failed
      * @throws Exception if submission fails
      */
-    public String submitJob(io.jenkins.plugins.slurm.client.model.V0042JobDescMsg jobDesc, 
+    public String submitJob(io.jenkins.plugins.slurm.client.model.JobDescMsg jobDesc,
                            hudson.model.TaskListener listener) throws Exception {
         
         LOGGER.info("Submitting SLURM job with name: " + jobDesc.getName());
@@ -400,12 +400,12 @@ public class SlurmCloud extends AbstractCloudImpl {
         
         try {
             // Create job submit request
-            io.jenkins.plugins.slurm.client.model.V0042JobSubmitReq submitReq = 
-                new io.jenkins.plugins.slurm.client.model.V0042JobSubmitReq();
+            io.jenkins.plugins.slurm.client.model.JobSubmitReq submitReq = 
+                new io.jenkins.plugins.slurm.client.model.JobSubmitReq();
             submitReq.setJob(jobDesc);
             
             // Submit the job
-            io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse response = client.submitJob(submitReq);
+            io.jenkins.plugins.slurm.client.model.OpenapiJobSubmitResponse response = client.submitJob(submitReq);
             
             if (response == null) {
                 throw new Exception("Job submission returned null response");
@@ -432,7 +432,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     /**
      * Extracts the job ID from a job submission response.
      */
-    private String extractJobId(io.jenkins.plugins.slurm.client.model.V0042OpenapiJobSubmitResponse response) {
+    private String extractJobId(io.jenkins.plugins.slurm.client.model.OpenapiJobSubmitResponse response) {
         // The response should contain job_id in the result
         if (response.getJobId() != null) {
             return String.valueOf(response.getJobId());
@@ -441,7 +441,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         // Check errors list for information
         if (response.getErrors() != null && !response.getErrors().isEmpty()) {
             LOGGER.warning("Job submission response contains errors");
-            for (io.jenkins.plugins.slurm.client.model.V0042OpenapiError error : response.getErrors()) {
+            for (io.jenkins.plugins.slurm.client.model.OpenapiError error : response.getErrors()) {
                 LOGGER.warning("  Error: " + error.getError());
             }
         }

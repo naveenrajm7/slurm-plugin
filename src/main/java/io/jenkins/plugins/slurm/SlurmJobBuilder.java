@@ -11,11 +11,11 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 /**
- * Builder class that constructs SLURM job submission objects from job templates.
+ * Builder class for creating SLURM job descriptions.
  * 
- * This class takes a {@link SlurmJobTemplate} and converts it into a 
- * {@link V0042JobDescMsg} suitable for submission to the SLURM REST API.
- * 
+ * This class takes a {@link SlurmJobTemplate} and converts it into a
+ * {@link JobDescMsg} suitable for submission to the SLURM REST API.
+ *
  * Similar to Kubernetes plugin's PodTemplateBuilder.
  */
 public class SlurmJobBuilder {
@@ -46,15 +46,15 @@ public class SlurmJobBuilder {
     }
     
     /**
-     * Builds the V0042JobDescMsg for submission to SLURM.
+     * Builds the JobDescMsg for submission to SLURM.
      * 
      * @return The job description message ready for submission
      */
     @NonNull
-    public V0042JobDescMsg build() {
+    public JobDescMsg build() {
         LOGGER.info("Building SLURM job for agent: " + agentName);
         
-        V0042JobDescMsg jobDesc = new V0042JobDescMsg();
+        JobDescMsg jobDesc = new JobDescMsg();
         
         // Set job name (required)
         jobDesc.setName(agentName);
@@ -76,7 +76,7 @@ public class SlurmJobBuilder {
         
         // Set memory per node (in MB)
         if (template.getMemoryPerNode() != null && template.getMemoryPerNode() > 0) {
-            V0042Uint64NoValStruct memory = new V0042Uint64NoValStruct();
+            Uint64NoValStruct memory = new Uint64NoValStruct();
             memory.setSet(true);
             memory.setInfinite(false);
             memory.setNumber(template.getMemoryPerNode());
@@ -85,7 +85,7 @@ public class SlurmJobBuilder {
         
         // Set time limit (in minutes)
         if (template.getTimeLimit() != null && template.getTimeLimit() > 0) {
-            V0042Uint32NoValStruct time = new V0042Uint32NoValStruct();
+            Uint32NoValStruct time = new Uint32NoValStruct();
             time.setSet(true);
             time.setInfinite(false);
             time.setNumber(template.getTimeLimit());
@@ -212,7 +212,7 @@ public class SlurmJobBuilder {
      * @param jobDesc The job description to validate
      * @throws IllegalStateException if validation fails
      */
-    public static void validate(@NonNull V0042JobDescMsg jobDesc) throws IllegalStateException {
+    public static void validate(@NonNull JobDescMsg jobDesc) throws IllegalStateException {
         if (jobDesc.getName() == null || jobDesc.getName().isEmpty()) {
             throw new IllegalStateException("Job name is required");
         }
@@ -222,14 +222,14 @@ public class SlurmJobBuilder {
         }
         
         // Warn about common configuration issues
-        V0042Uint64NoValStruct memory = jobDesc.getMemoryPerNode();
+        Uint64NoValStruct memory = jobDesc.getMemoryPerNode();
         if (memory != null && Boolean.TRUE.equals(memory.getSet()) && 
             memory.getNumber() != null && memory.getNumber() < 512) {
             LOGGER.warning("Job " + jobDesc.getName() + " has very low memory: " + 
                           memory.getNumber() + "MB");
         }
         
-        V0042Uint32NoValStruct time = jobDesc.getTimeLimit();
+        Uint32NoValStruct time = jobDesc.getTimeLimit();
         if (time != null && Boolean.TRUE.equals(time.getSet()) && 
             time.getNumber() != null && time.getNumber() < 10) {
             LOGGER.warning("Job " + jobDesc.getName() + " has very short time limit: " + 

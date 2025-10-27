@@ -7,7 +7,7 @@ import hudson.model.TaskListener;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.JNLPLauncher;
 import hudson.slaves.SlaveComputer;
-import io.jenkins.plugins.slurm.client.model.V0042JobDescMsg;
+import io.jenkins.plugins.slurm.client.model.JobDescMsg;
 import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -68,7 +68,7 @@ public class SlurmLauncher extends JNLPLauncher {
                     getJenkinsUrl(cloud),
                     getAgentSecret(slurmComputer)
                 );
-                V0042JobDescMsg jobDesc = builder.build();
+                JobDescMsg jobDesc = builder.build();
                 LOGGER.info("Job description built successfully");
                 
                 // Submit the job
