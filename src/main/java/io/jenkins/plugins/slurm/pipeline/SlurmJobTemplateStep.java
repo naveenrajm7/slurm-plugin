@@ -297,20 +297,34 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 template.setNtasksPerTres(jsonConfig.getInt("ntasksPerTres"));
             }
             
-            // Container support (basic - Pyxis would need nested object)
-            if (jsonConfig.has("containerImage")) {
+            // Container support - pyxis object
+            if (jsonConfig.has("pyxis")) {
+                LOGGER.fine("Found nested 'pyxis' object in JSON configuration");
+                net.sf.json.JSONObject pyxisJson = jsonConfig.getJSONObject("pyxis");
                 PyxisConfig pyxisConfig = new PyxisConfig();
-                pyxisConfig.setContainerImage(jsonConfig.getString("containerImage"));
-                if (jsonConfig.has("containerMounts")) {
-                    pyxisConfig.setContainerMounts(jsonConfig.getString("containerMounts"));
+                
+                if (pyxisJson.has("containerImage")) {
+                    pyxisConfig.setContainerImage(pyxisJson.getString("containerImage"));
+                    LOGGER.fine("Set container image: " + pyxisJson.getString("containerImage"));
                 }
-                if (jsonConfig.has("containerWorkdir")) {
-                    pyxisConfig.setContainerWorkdir(jsonConfig.getString("containerWorkdir"));
+                if (pyxisJson.has("containerMounts")) {
+                    pyxisConfig.setContainerMounts(pyxisJson.getString("containerMounts"));
                 }
-                if (jsonConfig.has("containerMountHome")) {
-                    pyxisConfig.setContainerMountHome(jsonConfig.getBoolean("containerMountHome"));
+                if (pyxisJson.has("containerWorkdir")) {
+                    pyxisConfig.setContainerWorkdir(pyxisJson.getString("containerWorkdir"));
                 }
+                if (pyxisJson.has("containerMountHome")) {
+                    pyxisConfig.setContainerMountHome(pyxisJson.getBoolean("containerMountHome"));
+                }
+                if (pyxisJson.has("containerWritable")) {
+                    pyxisConfig.setContainerWritable(pyxisJson.getBoolean("containerWritable"));
+                }
+                if (pyxisJson.has("containerRemap")) {
+                    pyxisConfig.setContainerRemap(pyxisJson.getBoolean("containerRemap"));
+                }
+                
                 template.setPyxis(pyxisConfig);
+                LOGGER.fine("Applied PyxisConfig to template");
             }
             
             // I/O
