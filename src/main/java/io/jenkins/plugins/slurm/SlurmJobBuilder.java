@@ -165,7 +165,7 @@ public class SlurmJobBuilder {
     /**
      * Generates the batch script for running the Jenkins agent in a container.
      * 
-     * Uses container image with pre-baked Jenkins agent (no download needed).
+     * Uses container image from Pyxis configuration with pre-baked Jenkins agent.
      * The script format matches the actual working SLURM job submission.
      * 
      * @return The complete batch script content
@@ -181,12 +181,50 @@ public class SlurmJobBuilder {
         }
         
         // Launch Jenkins agent using srun with container
-        // Format: srun --container-mount-home --container-image=<image> java -jar agent.jar <args>
-        script.append("srun --container-mount-home");
+        script.append("srun");
         
-        // Add container image if specified in template (future enhancement)
-        // For now, use a default path that users should configure
-        script.append(" --container-image=/home/AMD/nmuthura/jenkins+inbound-agent+latest.sqsh");
+        // Add Pyxis/container arguments if configured
+        PyxisConfig pyxis = template.getPyxis();
+        if (pyxis != null && pyxis.isConfigured()) {
+            // Container image (required for Pyxis)
+            if (pyxis.getContainerImage() != null && !pyxis.getContainerImage().trim().isEmpty()) {
+                script.append(" --container-image=").append(pyxis.getContainerImage());
+            }
+            
+            // Mount home directory flag
+            if (pyxis.getContainerMountHome()) {
+                script.append(" --container-mount-home");
+            }
+            
+            // Additional mounts
+            if (pyxis.getContainerMounts() != null && !pyxis.getContainerMounts().trim().isEmpty()) {
+                script.append(" --container-mounts=").append(pyxis.getContainerMounts());
+            }
+            
+            // Container working directory
+            if (pyxis.getContainerWorkdir() != null && !pyxis.getContainerWorkdir().trim().isEmpty()) {
+                script.append(" --container-workdir=").append(pyxis.getContainerWorkdir());
+            }
+            
+            // Container name
+            if (pyxis.getContainerName() != null && !pyxis.getContainerName().trim().isEmpty()) {
+                script.append(" --container-name=").append(pyxis.getContainerName());
+            }
+            
+            // Container writable flag
+            if (pyxis.getContainerWritable()) {
+                script.append(" --container-writable");
+            }
+            
+            // Container remap user flag
+            if (pyxis.getContainerRemap()) {
+                script.append(" --container-remap-root");
+            }
+            
+            LOGGER.fine("Using Pyxis container configuration: " + pyxis.getContainerImage());
+        } else {
+            LOGGER.warning("No Pyxis configuration found in template - job will run without container isolation");
+        }
         
         // Start Jenkins agent with WebSocket connection (more reliable than direct JNLP)
         script.append(" /opt/java/openjdk/bin/java -jar /usr/share/jenkins/agent.jar");

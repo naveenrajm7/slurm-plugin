@@ -114,6 +114,13 @@
 
   </f:section>
 
+  <!-- Container Configuration (Pyxis/Enroot) -->
+  <f:section title="Container Configuration (Pyxis)">
+    
+    <f:optionalProperty field="pyxis" title="Enable Pyxis Container Support"/>
+    
+  </f:section>
+
   <!-- Agent Management -->
   <f:section title="Agent Management">
     

@@ -1,0 +1,50 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout"
+         xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+
+  <f:entry field="containerImage" title="Container Image" 
+           description="Path to container image file (e.g., /path/to/jenkins-agent.sqsh for Enroot, or docker://jenkins/inbound-agent:latest)">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerMountHome" title="Mount Home Directory" 
+           description="Mount user's home directory inside the container">
+    <f:checkbox/>
+  </f:entry>
+
+  <f:entry field="containerMounts" title="Additional Mounts" 
+           description="Additional paths to mount in the container (format: /host/path:/container/path,/another/host:/another/container)">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerWorkdir" title="Container Working Directory" 
+           description="Working directory inside the container (optional - overrides default)">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerName" title="Container Name" 
+           description="Name for the container instance (optional - auto-generated if not specified)">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerWritable" title="Writable Container" 
+           description="Make the container filesystem writable (allows modifications during job)">
+    <f:checkbox/>
+  </f:entry>
+
+  <f:entry field="containerRemap" title="Remap Root User" 
+           description="Remap root user inside container to launching user (enhances security)">
+    <f:checkbox/>
+  </f:entry>
+
+  <f:entry field="containerSave" title="Save Container Path" 
+           description="Path to save the container after job completes (optional - for debugging/caching)">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerEntrypoint" title="Container Entrypoint" 
+           description="Custom entrypoint for the container (optional - overrides image default)">
+    <f:textbox/>
+  </f:entry>
+
+</j:jelly>

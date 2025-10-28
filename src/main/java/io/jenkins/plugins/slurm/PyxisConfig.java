@@ -42,7 +42,7 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
         this.containerMountHome = true;  // Default: mount home
         this.containerWorkdir = "";
         this.containerName = "";
-        this.containerRemap = null;
+        this.containerRemap = false;  // Default: no remap
         this.containerSave = "";
         this.containerWritable = false;
         this.containerEntrypoint = "";
@@ -71,14 +71,13 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
     }
     
     // Mount Home Directory
-    @CheckForNull
-    public Boolean getContainerMountHome() {
-        return containerMountHome;
+    public boolean getContainerMountHome() {
+        return containerMountHome != null ? containerMountHome : true;
     }
     
     @DataBoundSetter
     public void setContainerMountHome(Boolean containerMountHome) {
-        this.containerMountHome = containerMountHome;
+        this.containerMountHome = containerMountHome != null ? containerMountHome : true;
     }
     
     // Container Working Directory
@@ -104,14 +103,13 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
     }
     
     // Container Remap
-    @CheckForNull
-    public Boolean getContainerRemap() {
-        return containerRemap;
+    public boolean getContainerRemap() {
+        return containerRemap != null ? containerRemap : false;
     }
     
     @DataBoundSetter
     public void setContainerRemap(Boolean containerRemap) {
-        this.containerRemap = containerRemap;
+        this.containerRemap = containerRemap != null ? containerRemap : false;
     }
     
     // Container Save
@@ -126,14 +124,13 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
     }
     
     // Container Writable
-    @CheckForNull
-    public Boolean getContainerWritable() {
-        return containerWritable;
+    public boolean getContainerWritable() {
+        return containerWritable != null ? containerWritable : false;
     }
     
     @DataBoundSetter
     public void setContainerWritable(Boolean containerWritable) {
-        this.containerWritable = containerWritable;
+        this.containerWritable = containerWritable != null ? containerWritable : false;
     }
     
     // Container Entrypoint
