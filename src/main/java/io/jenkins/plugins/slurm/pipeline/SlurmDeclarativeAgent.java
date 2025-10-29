@@ -167,7 +167,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     private String standardError;  // Path to stderr
     
     // Agent configuration
-    private int idleMinutes = 5;  // Idle timeout in minutes
+    private int idleMinutes = 1;  // Idle timeout in minutes (default: 1 minute for declarative agents)
     
     private boolean runOnce = true;  // Terminate after one build
     
@@ -623,7 +623,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         }
         
         // Agent configuration
-        if (idleMinutes != 5) {  // Only include if not default
+        if (idleMinutes != 1) {  // Only include if not default
             argMap.put("idleMinutes", idleMinutes);
         }
         argMap.put("runOnce", runOnce);
