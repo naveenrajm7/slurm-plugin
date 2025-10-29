@@ -68,13 +68,13 @@ public class SlurmJobTemplateUtils {
         List<SlurmJobTemplate> templates = getTemplatesFor(cloud, label);
         
         if (templates.isEmpty()) {
-            LOGGER.info("No templates found for label: " + (label != null ? label.getName() : "none"));
+            LOGGER.fine("No templates found for label: " + (label != null ? label.getName() : "none"));
             return null;
         }
         
         // Return first matching template
         SlurmJobTemplate selected = templates.get(0);
-        LOGGER.info("Selected template '" + selected.getName() + "' for label: " + 
+        LOGGER.fine("Selected template '" + selected.getName() + "' for label: " + 
                    (label != null ? label.getName() : "none"));
         
         return selected;

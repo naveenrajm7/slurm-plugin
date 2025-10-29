@@ -333,25 +333,25 @@ public class SlurmCloud extends AbstractCloudImpl {
         // Get the label from the state
         Label label = state.getLabel();
         
-        LOGGER.info("canProvision called for label: " + 
+        LOGGER.fine("canProvision called for label: " + 
                    (label != null ? label.getName() : "none"));
         
         // Check if we have a template that can handle this label
         SlurmJobTemplate template = getJobTemplateFor(label);
         
         if (template == null) {
-            LOGGER.info("No template available for label: " + 
+            LOGGER.fine("No template available for label: " + 
                        (label != null ? label.getName() : "none") + 
                        ". Available templates: " + 
                        (jobTemplates != null ? jobTemplates.size() : 0));
             if (jobTemplates != null && !jobTemplates.isEmpty()) {
-                LOGGER.info("Available template labels: " + 
+                LOGGER.fine("Available template labels: " + 
                            jobTemplates.stream().map(t -> t.getLabel()).toList());
             }
             return false;
         }
         
-        LOGGER.info("Found matching template: " + template.getName());
+        LOGGER.fine("Found matching template: " + template.getName());
         
         // Check if we're at capacity
         if (getCurrentAgentCount() >= maxAgents) {
