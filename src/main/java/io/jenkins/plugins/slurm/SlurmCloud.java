@@ -38,6 +38,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.logging.Logger;
 
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.TrackedPlannedNode;
+
 /**
  * Slurm Cloud implementation for Jenkins.
  * 
@@ -235,7 +238,17 @@ public class SlurmCloud extends AbstractCloudImpl {
     private PlannedNode createPlannedNode(SlurmJobTemplate jobTemplate, @CheckForNull Label label) {
         String agentName = generateAgentName(jobTemplate);
         
-        return new PlannedNode(agentName, 
+        // Create cloud-stats tracking ID for this provisioning activity
+        ProvisioningActivity.Id cloudStatsId = 
+            new ProvisioningActivity.Id(
+                this.name,                    // cloud name
+                jobTemplate.getName(),        // template name  
+                agentName                     // agent name
+            );
+        
+        // Use cloud-stats' TrackedPlannedNode for automatic activity tracking
+        return new TrackedPlannedNode(cloudStatsId, 
+                              jobTemplate.getCpusPerTask(),  // numExecutors
                               java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                                   try {
                                       LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
@@ -275,7 +288,8 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           new java.util.ArrayList<>(),                  // nodeProperties (empty)
                                           this.name,                                    // cloudName
                                           jobTemplate.getId(),                          // templateId
-                                          jobTemplate.getPartition()                    // partition
+                                          jobTemplate.getPartition(),                   // partition
+                                          cloudStatsId                                  // cloud-stats tracking ID
                                       );
                                       
                                       // 4. Add agent to Jenkins
@@ -299,8 +313,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       e.printStackTrace();
                                       throw new RuntimeException(e);
                                   }
-                              }), 
-                              jobTemplate.getCpusPerTask()); // Use CPUs as approximate number of executors
+                              }));
     }
     
     /**

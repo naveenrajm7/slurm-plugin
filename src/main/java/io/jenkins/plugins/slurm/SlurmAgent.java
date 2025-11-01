@@ -9,6 +9,8 @@ import hudson.slaves.ComputerLauncher;
 import hudson.slaves.RetentionStrategy;
 import hudson.slaves.Cloud;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.cloudstats.TrackedItem;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity.Id;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -21,9 +23,10 @@ import java.util.logging.Logger;
  * Represents a Jenkins agent running as a SLURM job.
  * 
  * This class extends AbstractCloudSlave to provide integration with
- * Jenkins' cloud agent lifecycle management.
+ * Jenkins' cloud agent lifecycle management and implements TrackedItem
+ * for cloud-stats integration.
  */
-public class SlurmAgent extends AbstractCloudSlave {
+public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmAgent.class.getName());
     
@@ -34,6 +37,9 @@ public class SlurmAgent extends AbstractCloudSlave {
     private final String templateId;
     private final String partition;
     private String nodeList;  // Non-final because it's set when job starts
+    
+    // Cloud-stats tracking ID
+    private final Id cloudStatsId;
     
     /**
      * Creates a new SLURM agent.
@@ -50,6 +56,7 @@ public class SlurmAgent extends AbstractCloudSlave {
      * @param cloudName Name of the SLURM cloud that created this agent
      * @param templateId ID of the job template used
      * @param partition SLURM partition for this agent
+     * @param cloudStatsId Cloud-stats tracking ID (for lifecycle tracking)
      */
     public SlurmAgent(@NonNull String name,
                       @NonNull String description,
@@ -62,7 +69,8 @@ public class SlurmAgent extends AbstractCloudSlave {
                       @NonNull List<? extends NodeProperty<?>> nodeProperties,
                       @NonNull String cloudName,
                       @NonNull String templateId,
-                      String partition) throws Descriptor.FormException, IOException {
+                      String partition,
+                      @CheckForNull Id cloudStatsId) throws Descriptor.FormException, IOException {
         
         super(name, description, remoteFS, numExecutors, mode, labelString, 
               launcher, retentionStrategy, nodeProperties);
@@ -73,8 +81,22 @@ public class SlurmAgent extends AbstractCloudSlave {
         this.slurmJobId = null;  // Will be set when job is submitted
         this.nodeList = null;     // Will be set when job starts
         
+        // Store the cloud-stats ID for tracking, or create a new one if not provided
+        this.cloudStatsId = cloudStatsId != null ? cloudStatsId : 
+                           new Id(cloudName, templateId, name);
+        
         LOGGER.log(Level.INFO, "Created SLURM agent: {0} (cloud={1}, template={2}, partition={3})", 
                   new Object[]{name, cloudName, templateId, partition});
+    }
+    
+    /**
+     * Gets the cloud-stats tracking ID.
+     * This ID connects PlannedNode -> Node -> Computer for lifecycle tracking.
+     */
+    @NonNull
+    @Override
+    public Id getId() {
+        return cloudStatsId;
     }
     
     /**

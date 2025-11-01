@@ -11,13 +11,17 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
+import org.jenkinsci.plugins.cloudstats.TrackedItem;
+import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+
 /**
  * Computer implementation for SLURM agents.
  * 
  * This class manages the execution state and lifecycle of a SLURM-based
  * Jenkins agent, including handling connection status and job execution.
+ * Implements TrackedItem for cloud-stats plugin integration.
  */
-public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> {
+public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements TrackedItem {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmComputer.class.getName());
     
@@ -126,5 +130,18 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> {
     @Override
     public String toString() {
         return String.format("SlurmComputer[%s]", getName());
+    }
+    
+    /**
+     * Gets the cloud-stats tracking ID for this computer.
+     * Returns the ID from the associated SLURM agent.
+     * 
+     * @return the cloud-stats tracking ID, or null if agent not available
+     */
+    @Override
+    @CheckForNull
+    public ProvisioningActivity.Id getId() {
+        SlurmAgent agent = getNode();
+        return agent != null ? agent.getId() : null;
     }
 }
