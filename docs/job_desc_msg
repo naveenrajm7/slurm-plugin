@@ -1,0 +1,240 @@
+v0.0.43_job_desc_msg -Up
+account (optional)
+String Account associated with the job
+account_gather_frequency (optional)
+String Job accounting and profiling sampling intervals in seconds
+admin_comment (optional)
+String Arbitrary comment made by administrator
+allocation_node_list (optional)
+String Local node making the resource allocation
+allocation_node_port (optional)
+Integer Port to send allocation confirmation to format: int32
+argv (optional)
+array[String]
+array (optional)
+String Job array index value specification
+batch_features (optional)
+String Features required for batch script's node
+begin_time (optional)
+v0.0.43_uint64_no_val_struct
+flags (optional)
+array[String] Job flags
+Enum:
+burst_buffer (optional)
+String Burst buffer specifications
+clusters (optional)
+String Clusters that a federated job can run on
+cluster_constraint (optional)
+String Required features that a federated cluster must have to have a sibling job submitted to it
+comment (optional)
+String Arbitrary comment made by user
+contiguous (optional)
+Boolean True if job requires contiguous nodes
+container (optional)
+String Absolute path to OCI container bundle
+container_id (optional)
+String OCI container ID
+core_specification (optional)
+Integer Specialized core count format: int32
+thread_specification (optional)
+Integer Specialized thread count format: int32
+cpu_binding (optional)
+String Method for binding tasks to allocated CPUs
+cpu_binding_flags (optional)
+array[String] Flags for CPU binding
+Enum:
+cpu_frequency (optional)
+String Requested CPU frequency range [-p2][:p3]
+cpus_per_tres (optional)
+String Semicolon delimited list of TRES=# values values indicating how many CPUs should be allocated for each specified TRES (currently only used for gres/gpu)
+crontab (optional)
+v0.0.43_cron_entry
+deadline (optional)
+Long Latest time that the job may start (UNIX timestamp) (UNIX timestamp or time string recognized by Slurm (e.g., '[MM/DD[/YY]-]HH:MM[:SS]')) format: int64
+delay_boot (optional)
+Integer Number of seconds after job eligible start that nodes will be rebooted to satisfy feature specification format: int32
+dependency (optional)
+String Other jobs that must meet certain criteria before this job can start
+end_time (optional)
+Long Expected end time (UNIX timestamp) (UNIX timestamp or time string recognized by Slurm (e.g., '[MM/DD[/YY]-]HH:MM[:SS]')) format: int64
+environment (optional)
+array[String]
+rlimits (optional)
+v0_0_43_job_desc_msg_rlimits
+excluded_nodes (optional)
+array[String]  list of nodes that may not be used
+extra (optional)
+String Arbitrary string used for node filtering if extra constraints are enabled
+constraints (optional)
+String Comma-separated list of features that are required
+group_id (optional)
+String Group ID of the user that owns the job
+hetjob_group (optional)
+Integer Unique sequence number applied to this component of the heterogeneous job format: int32
+immediate (optional)
+Boolean If true, exit if resources are not available within the time period specified
+job_id (optional)
+Integer Job ID format: int32
+kill_on_node_fail (optional)
+Boolean If true, kill job on node failure
+licenses (optional)
+String License(s) required by the job
+mail_type (optional)
+array[String] Mail event type(s)
+Enum:
+mail_user (optional)
+String User to receive email notifications
+mcs_label (optional)
+String Multi-Category Security label on the job
+memory_binding (optional)
+String Binding map for map/mask_cpu
+memory_binding_type (optional)
+array[String] Method for binding tasks to memory
+Enum:
+memory_per_tres (optional)
+String Semicolon delimited list of TRES=# values indicating how much memory in megabytes should be allocated for each specified TRES (currently only used for gres/gpu)
+name (optional)
+String Job name
+network (optional)
+String Network specs for job step
+nice (optional)
+Integer Requested job priority change format: int32
+tasks (optional)
+Integer Number of tasks format: int32
+oom_kill_step (optional)
+Integer Kill whole step in case of OOM in one of the tasks format: int32
+open_mode (optional)
+array[String] Open mode used for stdout and stderr files
+Enum:
+reserve_ports (optional)
+Integer Port to send various notification msg to format: int32
+overcommit (optional)
+Boolean Overcommit resources
+partition (optional)
+String Partition assigned to the job
+distribution_plane_size (optional)
+v0.0.43_uint16_no_val_struct
+power_flags (optional)
+array[oas_any_type_not_mapped]
+prefer (optional)
+String Comma-separated list of features that are preferred but not required
+hold (optional)
+Boolean Hold (true) or release (false) job (Job held)
+priority (optional)
+v0.0.43_uint32_no_val_struct
+profile (optional)
+array[String] Profile used by the acct_gather_profile plugin
+Enum:
+qos (optional)
+String Quality of Service assigned to the job
+reboot (optional)
+Boolean Node reboot requested before start
+required_nodes (optional)
+array[String]
+requeue (optional)
+Boolean Determines whether the job may be requeued
+reservation (optional)
+String Name of reservation to use
+script (optional)
+String Job batch script; only the first component in a HetJob is populated or honored
+shared (optional)
+array[String] How the job can share resources with other jobs, if at all
+Enum:
+site_factor (optional)
+Integer Site-specific priority factor format: int32
+spank_environment (optional)
+array[String]
+distribution (optional)
+String Layout
+time_limit (optional)
+v0.0.43_uint32_no_val_struct
+time_minimum (optional)
+v0.0.43_uint32_no_val_struct
+tres_bind (optional)
+String Task to TRES binding directives
+tres_freq (optional)
+String TRES frequency directives
+tres_per_job (optional)
+String Comma-separated list of TRES=# values to be allocated for every job
+tres_per_node (optional)
+String Comma-separated list of TRES=# values to be allocated for every node
+tres_per_socket (optional)
+String Comma-separated list of TRES=# values to be allocated for every socket
+tres_per_task (optional)
+String Comma-separated list of TRES=# values to be allocated for every task
+user_id (optional)
+String User ID that owns the job
+wait_all_nodes (optional)
+Boolean If true, wait to start until after all nodes have booted
+kill_warning_flags (optional)
+array[String] Flags related to job signals
+Enum:
+kill_warning_signal (optional)
+String Signal to send when approaching end time (e.g. "10" or "USR1")
+kill_warning_delay (optional)
+v0.0.43_uint16_no_val_struct
+current_working_directory (optional)
+String Working directory to use for the job
+cpus_per_task (optional)
+Integer Number of CPUs required by each task format: int32
+minimum_cpus (optional)
+Integer Minimum number of CPUs required format: int32
+maximum_cpus (optional)
+Integer Maximum number of CPUs required format: int32
+nodes (optional)
+String Node count range specification (e.g. 1-15:4)
+minimum_nodes (optional)
+Integer Minimum node count format: int32
+maximum_nodes (optional)
+Integer Maximum node count format: int32
+minimum_boards_per_node (optional)
+Integer Boards per node required format: int32
+minimum_sockets_per_board (optional)
+Integer Sockets per board required format: int32
+sockets_per_node (optional)
+Integer Sockets per node required format: int32
+threads_per_core (optional)
+Integer Threads per core required format: int32
+tasks_per_node (optional)
+Integer Number of tasks to invoke on each node format: int32
+tasks_per_socket (optional)
+Integer Number of tasks to invoke on each socket format: int32
+tasks_per_core (optional)
+Integer Number of tasks to invoke on each core format: int32
+tasks_per_board (optional)
+Integer Number of tasks to invoke on each board format: int32
+ntasks_per_tres (optional)
+Integer Number of tasks that can access each GPU format: int32
+minimum_cpus_per_node (optional)
+Integer Minimum number of CPUs per node format: int32
+memory_per_cpu (optional)
+v0.0.43_uint64_no_val_struct
+memory_per_node (optional)
+v0.0.43_uint64_no_val_struct
+temporary_disk_per_node (optional)
+Integer Minimum tmp disk space required per node format: int32
+selinux_context (optional)
+String SELinux context
+required_switches (optional)
+v0.0.43_uint32_no_val_struct
+segment_size (optional)
+v0.0.43_uint16_no_val_struct
+standard_error (optional)
+String Path to stderr file
+standard_input (optional)
+String Path to stdin file
+standard_output (optional)
+String Path to stdout file
+wait_for_switch (optional)
+Integer Maximum time to wait for switches in seconds format: int32
+wckey (optional)
+String Workload characterization key
+x11 (optional)
+array[String] X11 forwarding options
+Enum:
+x11_magic_cookie (optional)
+String Magic cookie for X11 forwarding
+x11_target_host (optional)
+String Hostname or UNIX socket if x11_target_port=0
+x11_target_port (optional)
+Integer TCP port format: int32

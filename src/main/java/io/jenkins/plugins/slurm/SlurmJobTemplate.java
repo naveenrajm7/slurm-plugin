@@ -1,5 +1,7 @@
 package io.jenkins.plugins.slurm;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import hudson.Extension;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
@@ -44,69 +46,155 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private boolean keepJobOnFailure;  // If true, don't cancel SLURM job when build fails (for debugging)
     
     // Core SLURM job submission fields (maps to v0.0.42_job_desc_msg)
+    @JsonProperty("partition")
     private String partition;                    // partition: which SLURM partition to use
+    
+    @JsonProperty("current_working_directory")
     private String currentWorkingDirectory;      // current_working_directory: where to run the job
+    
+    @JsonProperty("cpus_per_task")
     private Integer cpusPerTask;                 // cpus_per_task: CPUs per task
+    
+    @JsonProperty("memory_per_node")
     private Long memoryPerNode;                  // memory_per_node: memory in MB per node
+    
+    @JsonProperty("script")
     private String script;                       // script: batch script content (will contain Jenkins agent launcher)
+    
+    @JsonProperty("time_limit")
     private Integer timeLimit;                   // time_limit: max runtime in minutes
     
     // TRES (Trackable RESources) - for GPUs and other resources
+    @JsonProperty("tres_per_job")
     private String tresPerJob;                   // tres_per_job: e.g., "gres/gpu:gfx942:1"
+    
+    @JsonProperty("tres_per_node")
     private String tresPerNode;                  // tres_per_node: TRES per node
+    
+    @JsonProperty("tres_per_task")
     private String tresPerTask;                  // tres_per_task: TRES per task
     
     // Additional optional fields
+    @JsonProperty("minimum_nodes")
     private Integer minimumNodes;                // minimum_nodes: minimum node count (default 1)
+    
+    @JsonProperty("tasks")
     private Integer tasks;                       // tasks: number of tasks (default 1)
+    
+    @JsonProperty("account")
     private String account;                      // account: SLURM account to charge
+    
+    @JsonProperty("qos")
     private String qos;                          // qos: Quality of Service
-    private String constraints;                  // constraints: required features
+    
+    @JsonProperty("constraints")
+    private String constraints;                  // constraints: required features (comma-separated)
+    
+    @JsonProperty("required_nodes")
+    private String requiredNodes;                // required_nodes: specific nodes required (comma-separated)
+    
+    @JsonProperty("excluded_nodes")
+    private String excludedNodes;                // excluded_nodes: nodes to exclude (comma-separated)
+    
+    @JsonProperty("environment")
     private String environment;                  // environment: environment variables (as JSON array string)
     
     // Phase 1: Essential fields for pipeline support
     // Job identification and features
+    @JsonProperty("name")
     private String jobName;                      // name: SLURM job name (different from template name)
+    
+    @JsonProperty("comment")
     private String comment;                      // comment: user comment for the job
+    
+    @JsonProperty("prefer")
     private String prefer;                       // prefer: preferred but not required features
+    
+    @JsonProperty("reservation")
     private String reservation;                  // reservation: name of reservation to use
+    
+    @JsonProperty("network")
     private String network;                      // network: network specifications for job
+    
+    @JsonProperty("nice")
     private Integer nice;                        // nice: requested job priority change
+    
+    @JsonProperty("reboot")
     private Boolean reboot;                      // reboot: node reboot requested before start
     
     // Extended TRES fields
+    @JsonProperty("tres_per_socket")
     private String tresPerSocket;                // tres_per_socket: TRES per socket
+    
+    @JsonProperty("tres_bind")
     private String tresBind;                     // tres_bind: task to TRES binding directives
+    
+    @JsonProperty("tres_freq")
     private String tresFreq;                     // tres_freq: TRES frequency directives
     
     // Time limits
+    @JsonProperty("time_minimum")
     private Integer timeMinimum;                 // time_minimum: minimum time limit in minutes
     
     // Resource allocation - node specs
+    @JsonProperty("nodes")
     private String nodes;                        // nodes: node count range (e.g., "1-15:4")
+    
+    @JsonProperty("maximum_nodes")
     private Integer maximumNodes;                // maximum_nodes: maximum node count
+    
+    @JsonProperty("minimum_cpus")
     private Integer minimumCpus;                 // minimum_cpus: minimum CPU count
+    
+    @JsonProperty("maximum_cpus")
     private Integer maximumCpus;                 // maximum_cpus: maximum CPU count
     
     // Resource allocation - per-node specs
+    @JsonProperty("sockets_per_node")
     private Integer socketsPerNode;              // sockets_per_node: sockets per node
+    
+    @JsonProperty("threads_per_core")
     private Integer threadsPerCore;              // threads_per_core: threads per core
+    
+    @JsonProperty("tasks_per_node")
     private Integer tasksPerNode;                // tasks_per_node: tasks per node
+    
+    @JsonProperty("tasks_per_socket")
     private Integer tasksPerSocket;              // tasks_per_socket: tasks per socket
+    
+    @JsonProperty("tasks_per_core")
     private Integer tasksPerCore;                // tasks_per_core: tasks per core
+    
+    @JsonProperty("tasks_per_board")
     private Integer tasksPerBoard;               // tasks_per_board: tasks per board
+    
+    @JsonProperty("ntasks_per_tres")
     private Integer ntasksPerTres;               // ntasks_per_tres: tasks per TRES (e.g., per GPU)
+    
+    @JsonProperty("minimum_cpus_per_node")
     private Integer minimumCpusPerNode;          // minimum_cpus_per_node: min CPUs per node
+    
+    @JsonProperty("minimum_boards_per_node")
     private Integer minimumBoardsPerNode;        // minimum_boards_per_node: boards per node
+    
+    @JsonProperty("minimum_sockets_per_board")
     private Integer minimumSocketsPerBoard;      // minimum_sockets_per_board: sockets per board
     
     // Memory allocation
+    @JsonProperty("memory_per_cpu")
     private Long memoryPerCpu;                   // memory_per_cpu: memory in MB per CPU
+    
+    @JsonProperty("temporary_disk_per_node")
     private Integer temporaryDiskPerNode;        // temporary_disk_per_node: tmp disk per node in MB
     
     // I/O redirection
+    @JsonProperty("standard_output")
     private String standardOutput;               // standard_output: path to stdout file
+    
+    @JsonProperty("standard_error")
     private String standardError;                // standard_error: path to stderr file
+    
+    @JsonProperty("standard_input")
     private String standardInput;                // standard_input: path to stdin file
     
     // Container support (Pyxis/Enroot)
@@ -188,10 +276,12 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return id;
     }
     
+    @JsonIgnore  // This is the template name (UI), not the SLURM job name (REST API)
     public String getName() {
         return name;
     }
     
+    @JsonIgnore  // This is the template name (UI), not the SLURM job name (REST API)
     @DataBoundSetter
     public void setName(String name) {
         this.name = name != null ? name : "default";
@@ -381,6 +471,24 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setConstraints(String constraints) {
         this.constraints = constraints != null ? constraints : "";
+    }
+    
+    public String getRequiredNodes() {
+        return requiredNodes;
+    }
+    
+    @DataBoundSetter
+    public void setRequiredNodes(String requiredNodes) {
+        this.requiredNodes = requiredNodes != null ? requiredNodes : "";
+    }
+    
+    public String getExcludedNodes() {
+        return excludedNodes;
+    }
+    
+    @DataBoundSetter
+    public void setExcludedNodes(String excludedNodes) {
+        this.excludedNodes = excludedNodes != null ? excludedNodes : "";
     }
     
     public String getEnvironment() {

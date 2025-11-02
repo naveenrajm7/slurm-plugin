@@ -1,5 +1,6 @@
 package io.jenkins.plugins.slurm;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import hudson.Extension;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
@@ -19,21 +20,46 @@ import java.io.Serializable;
  * These settings map to Pyxis command-line arguments and are translated to
  * SLURM environment variables or script directives during job submission.
  * 
+ * Supports both JSON API format (container_image) and Jenkins UI format (containerImage).
+ * 
  * @see <a href="https://github.com/NVIDIA/pyxis">Pyxis Documentation</a>
  */
 public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements Serializable {
     
     private static final long serialVersionUID = 1L;
     
+    @JsonProperty("container_image")  // REST API style
     private String containerImage;
+    
+    @JsonProperty("container_mounts")
     private String containerMounts;
+    
+    @JsonProperty("container_mount_home")
     private Boolean containerMountHome;
+    
+    @JsonProperty("container_workdir")
     private String containerWorkdir;
+    
+    @JsonProperty("container_name")
     private String containerName;
+    
+    @JsonProperty("container_remap_root")
     private Boolean containerRemap;
+    
+    @JsonProperty("container_save")
     private String containerSave;
+    
+    @JsonProperty("container_writable")
     private Boolean containerWritable;
+    
+    @JsonProperty("container_entrypoint")
     private String containerEntrypoint;
+    
+    @JsonProperty("container_env")
+    private String containerEnv;
+    
+    @JsonProperty("container_readonly")
+    private Boolean containerReadonly;
     
     @DataBoundConstructor
     public PyxisConfig() {
@@ -46,6 +72,8 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
         this.containerSave = "";
         this.containerWritable = false;
         this.containerEntrypoint = "";
+        this.containerEnv = "";
+        this.containerReadonly = false;
     }
     
     // Container Image
@@ -102,7 +130,7 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
         this.containerName = containerName != null ? containerName : "";
     }
     
-    // Container Remap
+    // Container Remap Root
     public boolean getContainerRemap() {
         return containerRemap != null ? containerRemap : false;
     }
@@ -133,6 +161,16 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
         this.containerWritable = containerWritable != null ? containerWritable : false;
     }
     
+    // Container Readonly
+    public boolean getContainerReadonly() {
+        return containerReadonly != null ? containerReadonly : false;
+    }
+    
+    @DataBoundSetter
+    public void setContainerReadonly(Boolean containerReadonly) {
+        this.containerReadonly = containerReadonly != null ? containerReadonly : false;
+    }
+    
     // Container Entrypoint
     @CheckForNull
     public String getContainerEntrypoint() {
@@ -142,6 +180,17 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
     @DataBoundSetter
     public void setContainerEntrypoint(String containerEntrypoint) {
         this.containerEntrypoint = containerEntrypoint != null ? containerEntrypoint : "";
+    }
+    
+    // Container Environment Variables
+    @CheckForNull
+    public String getContainerEnv() {
+        return containerEnv;
+    }
+    
+    @DataBoundSetter
+    public void setContainerEnv(String containerEnv) {
+        this.containerEnv = containerEnv != null ? containerEnv : "";
     }
     
     /**
@@ -164,7 +213,9 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
                equals(this.containerRemap, other.containerRemap) &&
                equals(this.containerSave, other.containerSave) &&
                equals(this.containerWritable, other.containerWritable) &&
-               equals(this.containerEntrypoint, other.containerEntrypoint);
+               equals(this.containerReadonly, other.containerReadonly) &&
+               equals(this.containerEntrypoint, other.containerEntrypoint) &&
+               equals(this.containerEnv, other.containerEnv);
     }
     
     private boolean equals(Object a, Object b) {

@@ -97,6 +97,16 @@
       <f:textbox/>
     </f:entry>
 
+    <f:entry field="requiredNodes" title="Required Nodes" 
+             description="Comma-separated list of specific nodes required for the job (equivalent to --nodelist, e.g., 'node001,node002')">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="excludedNodes" title="Excluded Nodes" 
+             description="Comma-separated list of nodes to exclude from job allocation (equivalent to --exclude, e.g., 'node003,node004')">
+      <f:textbox/>
+    </f:entry>
+
     <f:entry field="environment" title="Environment Variables" 
              description="Environment variables as JSON array string (optional, advanced usage)">
       <f:textarea/>

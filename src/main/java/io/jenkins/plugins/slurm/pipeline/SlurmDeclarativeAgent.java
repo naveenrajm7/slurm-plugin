@@ -26,54 +26,52 @@ import java.util.stream.Collectors;
 /**
  * Declarative Pipeline agent for SLURM.
  * 
- * Supports three modes:
- * 1. Property-based configuration (similar to Kubernetes plugin)
- * 2. Inline JSON configuration for complete SLURM REST API flexibility
- * 3. JSON file from workspace (requires SCM checkout)
+ * Supports two modes:
+ * 1. Property-based configuration (for simple use cases)
+ * 2. JSON configuration using SLURM REST API format
  * 
- * Example 1: Property-based
+ * Example 1: Property-based (simple fields)
  * <pre>
  * agent {
  *   slurm {
  *     cloud 'my-slurm-cluster'
  *     partition 'gpu'
- *     gres 'gpu:gfx1030:1'
  *     cpus 16
  *     memory '32G'
- *     time '02:00:00'
- *     workingDir '/scratch/jenkins'
  *   }
  * }
  * </pre>
  * 
- * Example 2: Inline JSON
+ * Example 2: JSON using REST API format (full control)
  * <pre>
  * agent {
  *   slurm {
  *     cloud 'my-slurm-cluster'
  *     json '''
  *       {
- *         "partition": "gpu",
- *         "gres": "gpu:gfx1030:1",
- *         "cpus": 16,
- *         "memory": "32G",
- *         "time": "02:00:00",
- *         "containerImage": "/path/to/image.sqsh"
+ *         "job": {
+ *           "partition": "gpu",
+ *           "cpus_per_task": 16,
+ *           "memory_per_node": {"set": true, "number": 32768},
+ *           "tres_per_job": "gres/gpu:gfx1030:1",
+ *           "required_nodes": ["node1", "node2"],
+ *           "excluded_nodes": ["node3"],
+ *           "constraints": "avx2"
+ *         },
+ *         "pyxis": {
+ *           "containerImage": "/path/to/image.sqsh",
+ *           "containerMountHome": true,
+ *           "containerWritable": false,
+ *           "containerRemap": true
+ *         }
  *       }
  *     '''
  *   }
  * }
  * </pre>
  * 
- * Example 3: JSON from file (requires SCM)
- * <pre>
- * agent {
- *   slurm {
- *     cloud 'my-slurm-cluster'
- *     jsonFile '.jenkins/slurm-gpu-config.json'
- *   }
- * }
- * </pre>
+ * The JSON format matches SLURM REST API job_desc_msg structure,
+ * allowing users to copy configurations from working REST API calls.
  */
 public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclarativeAgent> {
     

@@ -123,9 +123,39 @@ public class SlurmJobBuilder {
             jobDesc.setQos(template.getQos());
         }
         
-        // Set constraints if specified
+        // Set constraints (features) if specified
         if (template.getConstraints() != null && !template.getConstraints().trim().isEmpty()) {
             jobDesc.setConstraints(template.getConstraints());
+        }
+        
+        // Set required nodes (REST API: required_nodes array)
+        if (template.getRequiredNodes() != null && !template.getRequiredNodes().trim().isEmpty()) {
+            List<String> requiredNodesList = new ArrayList<>();
+            for (String node : template.getRequiredNodes().split(",")) {
+                String trimmed = node.trim();
+                if (!trimmed.isEmpty()) {
+                    requiredNodesList.add(trimmed);
+                }
+            }
+            if (!requiredNodesList.isEmpty()) {
+                jobDesc.setRequiredNodes(requiredNodesList);
+                LOGGER.fine("Set required_nodes: " + requiredNodesList);
+            }
+        }
+        
+        // Set excluded nodes (REST API: excluded_nodes array)
+        if (template.getExcludedNodes() != null && !template.getExcludedNodes().trim().isEmpty()) {
+            List<String> excludedNodesList = new ArrayList<>();
+            for (String node : template.getExcludedNodes().split(",")) {
+                String trimmed = node.trim();
+                if (!trimmed.isEmpty()) {
+                    excludedNodesList.add(trimmed);
+                }
+            }
+            if (!excludedNodesList.isEmpty()) {
+                jobDesc.setExcludedNodes(excludedNodesList);
+                LOGGER.fine("Set excluded_nodes: " + excludedNodesList);
+            }
         }
         
         // Build environment variables
@@ -148,16 +178,53 @@ public class SlurmJobBuilder {
     
     /**
      * Builds the environment variables for the job.
-     * Uses static environment suitable for containerized agents.
+     * Ensures our required environment variables (PATH, LD_LIBRARY_PATH) are always present,
+     * while also including any additional variables specified by the user in the template.
      * 
      * @return List of environment variable strings in "KEY=value" format
      */
     private List<String> buildEnvironment() {
         List<String> env = new ArrayList<>();
         
-        // Static environment for container-based agents
+        // REQUIRED: These environment variables are always set for job submission through REST
         env.add("PATH=/usr/local/bin:/usr/bin:/bin");
         env.add("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib");
+        
+        // Add user-specified environment variables from template (if any)
+        if (template.getEnvironment() != null && !template.getEnvironment().trim().isEmpty()) {
+            try {
+                // Parse the JSON array string from template
+                String envJson = template.getEnvironment().trim();
+                
+                // Simple parsing for JSON array format: ["VAR1=value1", "VAR2=value2"]
+                if (envJson.startsWith("[") && envJson.endsWith("]")) {
+                    String content = envJson.substring(1, envJson.length() - 1);
+                    
+                    // Split by comma, handling quoted strings
+                    String[] entries = content.split(",");
+                    for (String entry : entries) {
+                        String trimmed = entry.trim();
+                        // Remove surrounding quotes if present
+                        if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+                            trimmed = trimmed.substring(1, trimmed.length() - 1);
+                        }
+                        
+                        if (!trimmed.isEmpty() && trimmed.contains("=")) {
+                            // Don't override our required PATH and LD_LIBRARY_PATH
+                            String varName = trimmed.substring(0, trimmed.indexOf("="));
+                            if (!varName.equals("PATH") && !varName.equals("LD_LIBRARY_PATH")) {
+                                env.add(trimmed);
+                                LOGGER.fine("Added user environment variable: " + varName);
+                            } else {
+                                LOGGER.warning("Ignoring user override of required variable: " + varName);
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                LOGGER.warning("Failed to parse environment variables from template: " + e.getMessage());
+            }
+        }
         
         return env;
     }
@@ -174,11 +241,6 @@ public class SlurmJobBuilder {
         StringBuilder script = new StringBuilder();
         
         script.append("#!/bin/bash\n");
-        
-        // Add SBATCH directives if nodelist is specified in template constraints
-        if (template.getConstraints() != null && !template.getConstraints().trim().isEmpty()) {
-            script.append("#SBATCH --nodelist=").append(template.getConstraints()).append("\n");
-        }
         
         // Launch Jenkins agent using srun with container
         script.append("srun");

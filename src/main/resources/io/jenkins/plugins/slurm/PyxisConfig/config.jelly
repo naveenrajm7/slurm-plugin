@@ -47,4 +47,14 @@
     <f:textbox/>
   </f:entry>
 
+  <f:entry field="containerEnv" title="Container Environment Variables" 
+           description="Comma-separated list of host environment variables to preserve in container (e.g., 'PATH,LD_LIBRARY_PATH,CUDA_VISIBLE_DEVICES')">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="containerReadonly" title="Read-only Container" 
+           description="Make the container filesystem read-only (prevents modifications, enhances security)">
+    <f:checkbox/>
+  </f:entry>
+
 </j:jelly>

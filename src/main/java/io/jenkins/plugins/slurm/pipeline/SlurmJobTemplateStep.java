@@ -1,5 +1,7 @@
 package io.jenkins.plugins.slurm.pipeline;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.google.common.collect.ImmutableSet;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -32,14 +34,25 @@ import java.util.logging.Logger;
  * This step creates a temporary SLURM job template from declarative configuration
  * and provides it as context for nested pipeline steps.
  * 
- * Example usage:
+ * Example usage with REST API format:
  * <pre>
  * slurmJobTemplate(
  *   cloud: 'my-cluster',
- *   partition: 'gpu',
- *   cpus: 16,
- *   memory: '32G',
- *   gres: 'gpu:gfx1030:1'
+ *   json: '''
+ *   {
+ *     "job": {
+ *       "partition": "gpu",
+ *       "cpus_per_task": 16,
+ *       "memory_per_node": {"set": true, "number": 32768},
+ *       "tres_per_job": "gres/gpu:gfx1030:1",
+ *       "required_nodes": ["node1", "node2"]
+ *     },
+ *     "pyxis": {
+ *       "containerImage": "/path/to/image.sqsh",
+ *       "containerMountHome": true
+ *     }
+ *   }
+ *   '''
  * ) {
  *   node(POD_LABEL) {
  *     sh 'nvidia-smi'
@@ -51,6 +64,11 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     
     private static final long serialVersionUID = 1L;
     private static final Logger LOGGER = Logger.getLogger(SlurmJobTemplateStep.class.getName());
+    
+    // ObjectMapper for JSON deserialization
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true);
     
     // Cloud configuration
     @CheckForNull
@@ -162,9 +180,10 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         }
         
         // Apply JSON configuration first (if provided)
+        boolean hasAgentSettings = false;
         if (!StringUtils.isEmpty(json)) {
             LOGGER.fine("Applying JSON configuration");
-            applyJsonConfiguration(template, json);
+            hasAgentSettings = applyJsonConfiguration(template, json);
         }
         
         // Then apply individual properties (which override JSON if both specified)
@@ -234,112 +253,192 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             template.setStandardError(standardError);
         }
         
-        // Agent configuration
-        template.setIdleMinutes(idleMinutes);
-        template.setRunOnce(runOnce);
-        template.setKeepJobOnFailure(keepJobOnFailure);
+        // Agent configuration - only apply if not set by JSON agent_settings
+        // (JSON agent_settings takes precedence over step defaults)
+        if (!hasAgentSettings) {
+            // No agent_settings in JSON, use step's defaults
+            template.setIdleMinutes(idleMinutes);
+            template.setRunOnce(runOnce);
+            template.setKeepJobOnFailure(keepJobOnFailure);
+        }
+        
+        // CRITICAL: For pipeline temporary templates, ALWAYS enforce instanceCap = 1
+        // This prevents Jenkins from provisioning multiple agents for a single pipeline stage
+        // regardless of what user specifies in agent_settings.instance_cap
+        // (instance_cap in JSON is meant for permanent cloud templates, not pipeline templates)
+        template.setInstanceCap(1);
         
         return template;
     }
     
     /**
      * Apply JSON configuration to template.
-     * Supports property names matching SlurmJobTemplate setters.
+     * 
+     * Uses REST API format matching SLURM REST API job_desc_msg structure:
+     * {
+     *   "agent_settings": {
+     *     "idle_minutes": 1,
+     *     "run_once": true,
+     *     ...
+     *   },
+     *   "job": {
+     *     "partition": "gpu",
+     *     "cpus_per_task": 16,
+     *     "memory_per_node": {"set": true, "number": 32768},
+     *     "required_nodes": ["node1", "node2"],
+     *     ...
+     *   },
+     *   "pyxis": {
+     *     "container_image": "/path/to/image.sqsh",
+     *     "container_mount_home": true,
+     *     ...
+     *   }
+     * }
+     * 
+     * @return true if agent_settings was provided in JSON, false otherwise
      */
-    private void applyJsonConfiguration(@NonNull SlurmJobTemplate template, @NonNull String jsonString) {
+    private boolean applyJsonConfiguration(@NonNull SlurmJobTemplate template, @NonNull String jsonString) {
+        boolean hasAgentSettings = false;
         try {
             net.sf.json.JSONObject jsonConfig = net.sf.json.JSONObject.fromObject(jsonString);
             
-            // Core SLURM fields
-            if (jsonConfig.has("partition")) {
-                template.setPartition(jsonConfig.getString("partition"));
-            }
-            if (jsonConfig.has("workingDir")) {
-                template.setCurrentWorkingDirectory(jsonConfig.getString("workingDir"));
-            }
-            if (jsonConfig.has("cpus")) {
-                template.setCpusPerTask(jsonConfig.getInt("cpus"));
-            }
-            if (jsonConfig.has("memory")) {
-                template.setMemoryPerNode(parseMemoryToMB(jsonConfig.getString("memory")));
-            }
-            if (jsonConfig.has("time")) {
-                template.setTimeLimit(parseTimeToMinutes(jsonConfig.getString("time")));
-            }
-            if (jsonConfig.has("gres")) {
-                template.setTresPerJob(jsonConfig.getString("gres"));
-            }
-            if (jsonConfig.has("account")) {
-                template.setAccount(jsonConfig.getString("account"));
-            }
-            if (jsonConfig.has("qos")) {
-                template.setQos(jsonConfig.getString("qos"));
-            }
-            if (jsonConfig.has("reservation")) {
-                template.setReservation(jsonConfig.getString("reservation"));
-            }
-            if (jsonConfig.has("constraints")) {
-                template.setConstraints(jsonConfig.getString("constraints"));
-            }
-            if (jsonConfig.has("prefer")) {
-                template.setPrefer(jsonConfig.getString("prefer"));
-            }
-            if (jsonConfig.has("nodes")) {
-                template.setNodes(jsonConfig.getString("nodes"));
-            }
-            if (jsonConfig.has("tasks")) {
-                template.setTasks(jsonConfig.getInt("tasks"));
-            }
-            if (jsonConfig.has("tasksPerNode")) {
-                template.setTasksPerNode(jsonConfig.getInt("tasksPerNode"));
-            }
-            if (jsonConfig.has("ntasksPerTres")) {
-                template.setNtasksPerTres(jsonConfig.getInt("ntasksPerTres"));
+            // REST API format requires "job" key
+            if (!jsonConfig.has("job")) {
+                throw new IllegalArgumentException(
+                    "JSON must have 'job' key matching SLURM REST API format. " +
+                    "Example: {\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 16}, \"pyxis\": {...}}"
+                );
             }
             
-            // Container support - pyxis object
+            LOGGER.fine("Parsing REST API format (job_desc_msg structure)");
+            net.sf.json.JSONObject jobConfig = jsonConfig.getJSONObject("job");
+            
+            // Use ObjectMapper to deserialize job config into a temporary template
+            // This handles type conversions and field mapping automatically
+            String jobJsonString = jobConfig.toString();
+            SlurmJobTemplate tempTemplate = OBJECT_MAPPER.readValue(jobJsonString, SlurmJobTemplate.class);
+            
+            // Copy non-null fields from temp template to actual template
+            copyNonNullFields(tempTemplate, template);
+            
+            // Parse agent_settings (Jenkins-specific agent management)
+            if (jsonConfig.has("agent_settings")) {
+                hasAgentSettings = true;
+                net.sf.json.JSONObject agentSettings = jsonConfig.getJSONObject("agent_settings");
+                
+                if (agentSettings.has("idle_minutes")) {
+                    template.setIdleMinutes(agentSettings.getInt("idle_minutes"));
+                    LOGGER.fine("Set idle_minutes: " + agentSettings.getInt("idle_minutes"));
+                }
+                if (agentSettings.has("run_once")) {
+                    template.setRunOnce(agentSettings.getBoolean("run_once"));
+                    LOGGER.fine("Set run_once: " + agentSettings.getBoolean("run_once"));
+                }
+                if (agentSettings.has("keep_job_on_failure")) {
+                    template.setKeepJobOnFailure(agentSettings.getBoolean("keep_job_on_failure"));
+                    LOGGER.fine("Set keep_job_on_failure: " + agentSettings.getBoolean("keep_job_on_failure"));
+                }
+                if (agentSettings.has("instance_cap")) {
+                    template.setInstanceCap(agentSettings.getInt("instance_cap"));
+                    LOGGER.fine("Set instance_cap: " + agentSettings.getInt("instance_cap"));
+                }
+            }
+            
+            // Parse pyxis configuration (plugin-specific, not part of SLURM REST API)
             if (jsonConfig.has("pyxis")) {
-                LOGGER.fine("Found nested 'pyxis' object in JSON configuration");
-                net.sf.json.JSONObject pyxisJson = jsonConfig.getJSONObject("pyxis");
-                PyxisConfig pyxisConfig = new PyxisConfig();
-                
-                if (pyxisJson.has("containerImage")) {
-                    pyxisConfig.setContainerImage(pyxisJson.getString("containerImage"));
-                    LOGGER.fine("Set container image: " + pyxisJson.getString("containerImage"));
-                }
-                if (pyxisJson.has("containerMounts")) {
-                    pyxisConfig.setContainerMounts(pyxisJson.getString("containerMounts"));
-                }
-                if (pyxisJson.has("containerWorkdir")) {
-                    pyxisConfig.setContainerWorkdir(pyxisJson.getString("containerWorkdir"));
-                }
-                if (pyxisJson.has("containerMountHome")) {
-                    pyxisConfig.setContainerMountHome(pyxisJson.getBoolean("containerMountHome"));
-                }
-                if (pyxisJson.has("containerWritable")) {
-                    pyxisConfig.setContainerWritable(pyxisJson.getBoolean("containerWritable"));
-                }
-                if (pyxisJson.has("containerRemap")) {
-                    pyxisConfig.setContainerRemap(pyxisJson.getBoolean("containerRemap"));
-                }
-                
+                String pyxisJsonString = jsonConfig.getJSONObject("pyxis").toString();
+                PyxisConfig pyxisConfig = OBJECT_MAPPER.readValue(pyxisJsonString, PyxisConfig.class);
                 template.setPyxis(pyxisConfig);
-                LOGGER.fine("Applied PyxisConfig to template");
-            }
-            
-            // I/O
-            if (jsonConfig.has("standardOutput")) {
-                template.setStandardOutput(jsonConfig.getString("standardOutput"));
-            }
-            if (jsonConfig.has("standardError")) {
-                template.setStandardError(jsonConfig.getString("standardError"));
+                LOGGER.fine("Applied PyxisConfig using ObjectMapper");
             }
             
             LOGGER.fine("Successfully applied JSON configuration to template");
             
         } catch (Exception e) {
             LOGGER.warning("Failed to parse JSON configuration: " + e.getMessage());
+            e.printStackTrace();
             // Continue with other configuration - don't fail the build
+        }
+        
+        return hasAgentSettings;
+    }
+    
+    /**
+     * Copy non-null fields from source template to destination template.
+     * This allows JSON configuration to override only specified fields.
+     */
+    private void copyNonNullFields(SlurmJobTemplate source, SlurmJobTemplate dest) {
+        if (source.getPartition() != null && !source.getPartition().isEmpty()) {
+            dest.setPartition(source.getPartition());
+            LOGGER.fine("Set partition: " + source.getPartition());
+        }
+        if (source.getCurrentWorkingDirectory() != null && !source.getCurrentWorkingDirectory().isEmpty()) {
+            dest.setCurrentWorkingDirectory(source.getCurrentWorkingDirectory());
+        }
+        if (source.getCpusPerTask() != null) {
+            dest.setCpusPerTask(source.getCpusPerTask());
+        }
+        if (source.getMemoryPerNode() != null) {
+            dest.setMemoryPerNode(source.getMemoryPerNode());
+        }
+        if (source.getTimeLimit() != null) {
+            dest.setTimeLimit(source.getTimeLimit());
+        }
+        if (source.getTresPerJob() != null && !source.getTresPerJob().isEmpty()) {
+            dest.setTresPerJob(source.getTresPerJob());
+        }
+        if (source.getTresPerNode() != null && !source.getTresPerNode().isEmpty()) {
+            dest.setTresPerNode(source.getTresPerNode());
+        }
+        if (source.getTresPerTask() != null && !source.getTresPerTask().isEmpty()) {
+            dest.setTresPerTask(source.getTresPerTask());
+        }
+        if (source.getAccount() != null && !source.getAccount().isEmpty()) {
+            dest.setAccount(source.getAccount());
+        }
+        if (source.getQos() != null && !source.getQos().isEmpty()) {
+            dest.setQos(source.getQos());
+        }
+        if (source.getReservation() != null && !source.getReservation().isEmpty()) {
+            dest.setReservation(source.getReservation());
+        }
+        if (source.getConstraints() != null && !source.getConstraints().isEmpty()) {
+            dest.setConstraints(source.getConstraints());
+        }
+        if (source.getRequiredNodes() != null && !source.getRequiredNodes().isEmpty()) {
+            dest.setRequiredNodes(source.getRequiredNodes());
+            LOGGER.fine("Set required_nodes: " + source.getRequiredNodes());
+        }
+        if (source.getExcludedNodes() != null && !source.getExcludedNodes().isEmpty()) {
+            dest.setExcludedNodes(source.getExcludedNodes());
+            LOGGER.fine("Set excluded_nodes: " + source.getExcludedNodes());
+        }
+        if (source.getPrefer() != null && !source.getPrefer().isEmpty()) {
+            dest.setPrefer(source.getPrefer());
+        }
+        if (source.getNodes() != null && !source.getNodes().isEmpty()) {
+            dest.setNodes(source.getNodes());
+        }
+        if (source.getMinimumNodes() != null) {
+            dest.setMinimumNodes(source.getMinimumNodes());
+        }
+        if (source.getMaximumNodes() != null) {
+            dest.setMaximumNodes(source.getMaximumNodes());
+        }
+        if (source.getTasks() != null) {
+            dest.setTasks(source.getTasks());
+        }
+        if (source.getTasksPerNode() != null) {
+            dest.setTasksPerNode(source.getTasksPerNode());
+        }
+        if (source.getNtasksPerTres() != null) {
+            dest.setNtasksPerTres(source.getNtasksPerTres());
+        }
+        if (source.getStandardOutput() != null && !source.getStandardOutput().isEmpty()) {
+            dest.setStandardOutput(source.getStandardOutput());
+        }
+        if (source.getStandardError() != null && !source.getStandardError().isEmpty()) {
+            dest.setStandardError(source.getStandardError());
         }
     }
     
