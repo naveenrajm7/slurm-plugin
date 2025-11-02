@@ -142,7 +142,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     private String standardError;
     
     // Agent configuration
-    private int idleMinutes = 5;
+    private int idleMinutes = 1;
     private boolean runOnce = true;
     private boolean keepJobOnFailure = false;
     

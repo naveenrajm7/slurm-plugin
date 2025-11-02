@@ -207,7 +207,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.label = "";
         this.nodeUsageMode = Node.Mode.EXCLUSIVE;
         this.instanceCap = 1;
-        this.idleMinutes = 5;
+        this.idleMinutes = 1;
         this.runOnce = true;  // Default: terminate after one build
         this.keepJobOnFailure = false;  // Default: always cancel job on termination
         
@@ -320,7 +320,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     @DataBoundSetter
     public void setIdleMinutes(int idleMinutes) {
-        this.idleMinutes = idleMinutes >= 0 ? idleMinutes : 5;
+        this.idleMinutes = idleMinutes >= 0 ? idleMinutes : 1;
     }
     
     public boolean isRunOnce() {
