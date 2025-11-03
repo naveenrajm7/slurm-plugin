@@ -235,6 +235,17 @@ public class SlurmJobBuilder {
      * Uses container image from Pyxis configuration with pre-baked Jenkins agent.
      * The script format matches the actual working SLURM job submission.
      * 
+     * IMPORTANT: The Jenkins agent always runs on exactly 1 node with 1 task (-N1 -n1),
+     * regardless of the user's resource request. This allows:
+     * 1. Single agent connection to Jenkins (not multiple agents per node)
+     * 2. User's pipeline commands inherit the full SLURM job allocation
+     * 3. Support for multi-node MPI jobs where srun commands use all allocated nodes
+     * 
+     * Example: User requests 4 nodes with 64 CPUs each
+     * - SLURM allocates 4 nodes to the job
+     * - Agent runs on node 0 only (srun -N1 -n1)
+     * - User's commands can use all nodes: sh 'srun --nodes=4 ./mpi_app'
+     * 
      * @return The complete batch script content
      */
     private String generateBatchScript() {
@@ -242,8 +253,20 @@ public class SlurmJobBuilder {
         
         script.append("#!/bin/bash\n");
         
+        // Log multi-node allocation if requested
+        if (template.getMinimumNodes() != null && template.getMinimumNodes() > 1) {
+            LOGGER.info(String.format(
+                "Multi-node job allocation: %d nodes requested. " +
+                "Jenkins agent will run on head node (srun -N1 -n1). " +
+                "User's pipeline commands can access all %d nodes via srun.",
+                template.getMinimumNodes(), template.getMinimumNodes()
+            ));
+        }
+        
         // Launch Jenkins agent using srun with container
-        script.append("srun");
+        // CRITICAL: Always use -N1 -n1 to run agent on exactly one node with one task
+        // This ensures single agent connection regardless of multi-node allocation
+        script.append("srun -N1 -n1");
         
         // Add Pyxis/container arguments if configured
         PyxisConfig pyxis = template.getPyxis();
