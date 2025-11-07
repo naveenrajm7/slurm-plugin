@@ -13,12 +13,12 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import java.io.Serializable;
 
 /**
- * Configuration for Pyxis/Enroot container support in SLURM.
- * Pyxis is a SLURM plugin that allows running containers (Docker, Singularity, etc.)
- * within SLURM jobs using Enroot as the container runtime.
+ * Configuration for Pyxis/Enroot container support in Slurm.
+ * Pyxis is a Slurm plugin that allows running containers (Docker, Singularity, etc.)
+ * within Slurm jobs using Enroot as the container runtime.
  * 
  * These settings map to Pyxis command-line arguments and are translated to
- * SLURM environment variables or script directives during job submission.
+ * Slurm environment variables or script directives during job submission.
  * 
  * Supports both JSON API format (container_image) and Jenkins UI format (containerImage).
  * 
