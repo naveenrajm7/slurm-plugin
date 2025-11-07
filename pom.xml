@@ -13,15 +13,25 @@
   <artifactId>slurm</artifactId>
   <version>${revision}${changelist}</version>
   <packaging>hpi</packaging>
-
   <name>Slurm Plugin</name>
+  <description>Jenkins plugin to run dynamic agents in a Slurm cluster</description>
   <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
+  
   <licenses>
     <license>
       <name>MIT License</name>
       <url>https://opensource.org/license/mit/</url>
     </license>
   </licenses>
+
+  <developers>
+    <developer>
+      <id>naveenrajm7</id>
+      <name>Naveenraj Muthuraj</name>
+      <email>22456988+naveenrajm7@users.noreply.github.com</email>
+    </developer>
+  </developers>
+
   <scm child.scm.connection.inherit.append.path="false" child.scm.developerConnection.inherit.append.path="false" child.scm.url.inherit.append.path="false">
     <connection>scm:git:https://github.com/${gitHubRepo}</connection>
     <developerConnection>scm:git:https://github.com/${gitHubRepo}</developerConnection>
