@@ -254,7 +254,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
                                                  " with template " + jobTemplate.getName());
                                       
-                                      // 1. Create the SLURM launcher (no-arg constructor)
+                                      // 1. Create the Slurm launcher (no-arg constructor)
                                       SlurmLauncher launcher = new SlurmLauncher();
                                       
                                       // 2. Create retention strategy based on template configuration
@@ -275,10 +275,10 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           LOGGER.info("Agent can be reused for multiple builds within " + jobTemplate.getIdleMinutes() + " minute(s) idle period");
                                       }
                                       
-                                      // 3. Create the SLURM agent with proper constructor parameters
+                                      // 3. Create the Slurm agent with proper constructor parameters
                                       SlurmAgent agent = new SlurmAgent(
                                           agentName,                                    // name
-                                          "SLURM agent from template " + jobTemplate.getName(),  // description
+                                          "Slurm agent from template " + jobTemplate.getName(),  // description
                                           jobTemplate.getCurrentWorkingDirectory(),      // remoteFS
                                           jobTemplate.getCpusPerTask(),                 // numExecutors
                                           jobTemplate.getNodeUsageMode(),               // mode
@@ -297,7 +297,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       
                                       LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
                                       
-                                      // 5. Get the computer and trigger the launcher to submit SLURM job
+                                      // 5. Get the computer and trigger the launcher to submit Slurm job
                                       hudson.model.Computer computer = agent.toComputer();
                                       if (computer != null) {
                                           LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
@@ -392,23 +392,23 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     /**
-     * Submits a SLURM job via the REST API.
+     * Submits a Slurm job via the REST API.
      * 
      * @param jobDesc The job description to submit
      * @param listener The task listener for logging
-     * @return The SLURM job ID, or null if submission failed
+     * @return The Slurm job ID, or null if submission failed
      * @throws Exception if submission fails
      */
     public String submitJob(io.jenkins.plugins.slurm.client.model.JobDescMsg jobDesc,
                            hudson.model.TaskListener listener) throws Exception {
         
-        LOGGER.info("Submitting SLURM job with name: " + jobDesc.getName());
+        LOGGER.info("Submitting Slurm job with name: " + jobDesc.getName());
         
-        // Get the SLURM client for this cloud
+        // Get the Slurm client for this cloud
         SlurmClient client = SlurmClientProvider.createClient(this);
         
         if (client == null) {
-            throw new Exception("Failed to create SLURM client - check cloud configuration");
+            throw new Exception("Failed to create Slurm client - check cloud configuration");
         }
         
         try {
@@ -428,7 +428,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             String jobId = extractJobId(response);
             
             if (jobId != null && !jobId.isEmpty()) {
-                LOGGER.info("SLURM job submitted successfully: " + jobId);
+                LOGGER.info("Slurm job submitted successfully: " + jobId);
                 listener.getLogger().println("Job submitted with ID: " + jobId);
                 return jobId;
             } else {
@@ -436,7 +436,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
             
         } catch (Exception e) {
-            LOGGER.severe("Failed to submit SLURM job: " + e.getMessage());
+            LOGGER.severe("Failed to submit Slurm job: " + e.getMessage());
             listener.error("Failed to submit job: " + e.getMessage());
             throw e;
         }
@@ -463,9 +463,9 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
     
     /**
-     * Cancels a SLURM job.
+     * Cancels a Slurm job.
      * 
-     * @param jobId The SLURM job ID to cancel
+     * @param jobId The Slurm job ID to cancel
      * @param listener Optional task listener for logging
      */
     public void cancelJob(String jobId, @CheckForNull hudson.model.TaskListener listener) {
@@ -474,25 +474,25 @@ public class SlurmCloud extends AbstractCloudImpl {
             return;
         }
         
-        LOGGER.info("Canceling SLURM job: " + jobId);
+        LOGGER.info("Canceling Slurm job: " + jobId);
         
         try {
             SlurmClient client = SlurmClientProvider.createClient(this);
             
             if (client == null) {
-                LOGGER.warning("Failed to get SLURM client for job cancellation");
+                LOGGER.warning("Failed to get Slurm client for job cancellation");
                 return;
             }
             
             client.cancelJob(jobId);
             
-            LOGGER.info("SLURM job canceled: " + jobId);
+            LOGGER.info("Slurm job canceled: " + jobId);
             if (listener != null) {
-                listener.getLogger().println("Canceled SLURM job: " + jobId);
+                listener.getLogger().println("Canceled Slurm job: " + jobId);
             }
             
         } catch (Exception e) {
-            LOGGER.warning("Failed to cancel SLURM job " + jobId + ": " + e.getMessage());
+            LOGGER.warning("Failed to cancel Slurm job " + jobId + ": " + e.getMessage());
             if (listener != null) {
                 listener.error("Failed to cancel job: " + e.getMessage());
             }
@@ -727,14 +727,14 @@ public class SlurmCloud extends AbstractCloudImpl {
                 SlurmPingInfo slurmInfo = client.getSlurmInfo();
                 
                 if (slurmInfo == null) {
-                    throw new Exception("Ping failed - no response from SLURM REST API. Check if slurmrestd is running.");
+                    throw new Exception("Ping failed - no response from Slurm REST API. Check if slurmrestd is running.");
                 }
                 
                 // Check if controller is actually responding
                 if (slurmInfo.getResponding() == null || !slurmInfo.getResponding()) {
                     // REST API is up but controller is not responding - likely auth issue
                     StringBuilder errorMsg = new StringBuilder();
-                    errorMsg.append("SLURM REST API is reachable but controller is not responding.\n\n");
+                    errorMsg.append("Slurm REST API is reachable but controller is not responding.\n\n");
                     
                     if (slurmInfo.getPinged() != null && !slurmInfo.getPinged().isEmpty()) {
                         errorMsg.append("Pinged: ").append(slurmInfo.getPinged()).append("\n\n");
@@ -752,7 +752,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 
                 // Successfully connected - build detailed status message
                 StringBuilder statusMsg = new StringBuilder();
-                statusMsg.append("✓ Successfully connected to SLURM controller\n\n");
+                statusMsg.append("✓ Successfully connected to Slurm controller\n\n");
                 
                 // Controller information
                 if (slurmInfo.getHostname() != null) {
@@ -794,12 +794,12 @@ public class SlurmCloud extends AbstractCloudImpl {
                 
                 // Re-throw with better context if not already formatted
                 if (e.getMessage().contains("controller is not responding") || 
-                    e.getMessage().contains("no response from SLURM REST API") ||
+                    e.getMessage().contains("no response from Slurm REST API") ||
                     e.getMessage().contains("No authentication token")) {
                     throw e;
                 }
                 
-                throw new Exception("Failed to connect to SLURM REST API at " + baseUrl + 
+                throw new Exception("Failed to connect to Slurm REST API at " + baseUrl + 
                                   ".\n\nError: " + e.getMessage() + 
                                   "\n\nTroubleshooting:\n" +
                                   "• Verify slurmrestd is running and accessible\n" +

@@ -20,10 +20,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Manages SLURM client creation and lifecycle per cloud.
+ * Manages Slurm client creation and lifecycle per cloud.
  * 
  * Similar to Kubernetes plugin's KubernetesClientProvider, this class caches
- * SLURM clients and invalidates them when cloud configuration changes.
+ * Slurm clients and invalidates them when cloud configuration changes.
  */
 public class SlurmClientProvider {
     
@@ -42,7 +42,7 @@ public class SlurmClientProvider {
             .removalListener((key, value, cause) -> {
                 Client client = (Client) value;
                 if (client != null) {
-                    LOGGER.log(Level.FINE, () -> "Expiring SLURM client " + key + ": " + cause);
+                    LOGGER.log(Level.FINE, () -> "Expiring Slurm client " + key + ": " + cause);
                 }
             })
             .build();
@@ -50,10 +50,10 @@ public class SlurmClientProvider {
     private SlurmClientProvider() {}
     
     /**
-     * Creates or retrieves a cached SLURM client for the given cloud.
+     * Creates or retrieves a cached Slurm client for the given cloud.
      * 
-     * @param cloud The SLURM cloud instance
-     * @return SLURM client for the cloud
+     * @param cloud The Slurm cloud instance
+     * @return Slurm client for the cloud
      * @throws Exception if client creation fails
      */
     static SlurmClient createClient(SlurmCloud cloud) throws Exception {
@@ -66,7 +66,7 @@ public class SlurmClientProvider {
             SlurmClient client = new SlurmClient(cloud.getSlurmRestApiUrl(), authToken);
             
             clients.put(displayName, new Client(getValidity(cloud), client));
-            LOGGER.log(Level.FINE, "Created new SLURM client: {0}", displayName);
+            LOGGER.log(Level.FINE, "Created new Slurm client: {0}", displayName);
             return client;
         }
         
@@ -76,13 +76,13 @@ public class SlurmClientProvider {
     /**
      * Retrieves authentication token from Jenkins credentials.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @return JWT token string
      */
     private static String getAuthToken(SlurmCloud cloud) {
         String credentialsId = cloud.getCredentialsId();
         if (credentialsId == null || credentialsId.trim().isEmpty()) {
-            LOGGER.warning("No credentials configured for SLURM cloud: " + cloud.getDisplayName());
+            LOGGER.warning("No credentials configured for Slurm cloud: " + cloud.getDisplayName());
             return null;
         }
         
@@ -180,7 +180,7 @@ public class SlurmClientProvider {
                 
                 // Remove missing / invalid clients
                 for (String displayName : cloudDisplayNames) {
-                    LOGGER.log(Level.INFO, "Invalidating SLURM client: " + displayName);
+                    LOGGER.log(Level.INFO, "Invalidating Slurm client: " + displayName);
                     invalidate(displayName);
                 }
             }

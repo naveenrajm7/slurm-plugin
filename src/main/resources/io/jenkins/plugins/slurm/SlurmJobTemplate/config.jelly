@@ -19,11 +19,11 @@
      <f:enum default="EXCLUSIVE">${it.description}</f:enum>
   </f:entry>
 
-  <!-- Core SLURM Job Parameters (maps to v0.0.42_job_desc_msg) -->
-  <f:section title="SLURM Job Configuration">
+  <!-- Core Slurm Job Parameters (maps to v0.0.42_job_desc_msg) -->
+  <f:section title="Slurm Job Configuration">
     
     <f:entry field="partition" title="Partition" 
-             description="SLURM partition to submit jobs to (e.g., 'gpu', 'compute', 'highmem')">
+             description="Slurm partition to submit jobs to (e.g., 'gpu', 'compute', 'highmem')">
       <f:textbox/>
     </f:entry>
 
@@ -69,8 +69,8 @@
 
   </f:section>
 
-  <!-- Additional SLURM Options -->
-  <f:section title="Additional SLURM Options">
+  <!-- Additional Slurm Options -->
+  <f:section title="Additional Slurm Options">
     
     <f:entry field="minimumNodes" title="Minimum Nodes" 
              description="Minimum number of nodes (default: 1 - Jenkins agents typically use single node)">
@@ -83,12 +83,12 @@
     </f:entry>
 
     <f:entry field="account" title="Account" 
-             description="SLURM account to charge for resource usage (optional)">
+             description="Slurm account to charge for resource usage (optional)">
       <f:textbox/>
     </f:entry>
 
     <f:entry field="qos" title="Quality of Service (QOS)" 
-             description="SLURM Quality of Service to use (optional)">
+             description="Slurm Quality of Service to use (optional)">
       <f:textbox/>
     </f:entry>
 
@@ -117,7 +117,7 @@
   <!-- Custom Job Script -->
   <f:section title="Custom Job Script">
     
-    <f:entry field="script" title="Custom SLURM Batch Script" 
+    <f:entry field="script" title="Custom Slurm Batch Script" 
              description="Custom batch script content (optional - if empty, a default agent launcher script will be generated)">
       <f:textarea/>
     </f:entry>
@@ -150,7 +150,7 @@
     </f:entry>
     
     <f:entry field="keepJobOnFailure" title="Keep Job on Failure" 
-             description="If checked, SLURM job will not be cancelled when build fails (useful for debugging failed builds)">
+             description="If checked, Slurm job will not be cancelled when build fails (useful for debugging failed builds)">
       <f:checkbox default="false"/>
     </f:entry>
 

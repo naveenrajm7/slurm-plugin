@@ -1,4 +1,4 @@
 <?jelly escape-by-default='true'?>
 <div>
-    Jenkins plugin for SLURM workload manager. Allows Jenkins to dynamically provision build agents by submitting jobs to SLURM clusters via REST API.
+    Jenkins plugin for Slurm workload manager. Allows Jenkins to dynamically provision build agents by submitting jobs to Slurm clusters via REST API.
 </div>

@@ -20,7 +20,7 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * Represents a Jenkins agent running as a SLURM job.
+ * Represents a Jenkins agent running as a Slurm job.
  * 
  * This class extends AbstractCloudSlave to provide integration with
  * Jenkins' cloud agent lifecycle management and implements TrackedItem
@@ -42,7 +42,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     private final Id cloudStatsId;
     
     /**
-     * Creates a new SLURM agent.
+     * Creates a new Slurm agent.
      * 
      * @param name Agent name (unique identifier)
      * @param description Human-readable description
@@ -53,9 +53,9 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
      * @param launcher Launcher that will connect this agent
      * @param retentionStrategy Strategy for keeping/terminating the agent
      * @param nodeProperties Additional node properties
-     * @param cloudName Name of the SLURM cloud that created this agent
+     * @param cloudName Name of the Slurm cloud that created this agent
      * @param templateId ID of the job template used
-     * @param partition SLURM partition for this agent
+     * @param partition Slurm partition for this agent
      * @param cloudStatsId Cloud-stats tracking ID (for lifecycle tracking)
      */
     public SlurmAgent(@NonNull String name,
@@ -85,7 +85,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         this.cloudStatsId = cloudStatsId != null ? cloudStatsId : 
                            new Id(cloudName, templateId, name);
         
-        LOGGER.log(Level.INFO, "Created SLURM agent: {0} (cloud={1}, template={2}, partition={3})", 
+        LOGGER.log(Level.INFO, "Created Slurm agent: {0} (cloud={1}, template={2}, partition={3})", 
                   new Object[]{name, cloudName, templateId, partition});
     }
     
@@ -116,7 +116,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Gets the SLURM job ID for this agent.
+     * Gets the Slurm job ID for this agent.
      * May be null if job hasn't been submitted yet.
      */
     @CheckForNull
@@ -125,16 +125,16 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Sets the SLURM job ID after job submission.
+     * Sets the Slurm job ID after job submission.
      */
     public void setSlurmJobId(@NonNull String slurmJobId) {
         this.slurmJobId = slurmJobId;
-        LOGGER.log(Level.FINE, "Set SLURM job ID for agent {0}: {1}", 
+        LOGGER.log(Level.FINE, "Set Slurm job ID for agent {0}: {1}", 
                   new Object[]{getNodeName(), slurmJobId});
     }
     
     /**
-     * Gets the SLURM partition this agent is running in.
+     * Gets the Slurm partition this agent is running in.
      */
     @CheckForNull
     public String getPartition() {
@@ -142,7 +142,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Gets the SLURM node list assigned to this job.
+     * Gets the Slurm node list assigned to this job.
      * May be null if job hasn't started yet.
      */
     @CheckForNull
@@ -151,7 +151,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Sets the SLURM node list after job starts.
+     * Sets the Slurm node list after job starts.
      */
     public void setNodeList(@NonNull String nodeList) {
         this.nodeList = nodeList;
@@ -160,9 +160,9 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Gets the SLURM cloud instance that created this agent.
+     * Gets the Slurm cloud instance that created this agent.
      * 
-     * @return SLURM cloud instance
+     * @return Slurm cloud instance
      * @throws IllegalStateException if cloud no longer exists
      */
     @NonNull
@@ -191,18 +191,18 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Terminates this SLURM agent.
+     * Terminates this Slurm agent.
      * This method is called by Jenkins when the agent should be shut down.
      */
     @Override
     protected void _terminate(@NonNull TaskListener listener) throws IOException, InterruptedException {
-        LOGGER.log(Level.INFO, "Terminating SLURM agent: {0} (job={1})", 
+        LOGGER.log(Level.INFO, "Terminating Slurm agent: {0} (job={1})", 
                   new Object[]{getNodeName(), slurmJobId});
         
-        listener.getLogger().println("Terminating SLURM agent: " + getNodeName());
+        listener.getLogger().println("Terminating Slurm agent: " + getNodeName());
         
         if (slurmJobId == null) {
-            listener.getLogger().println("No SLURM job ID - agent may not have been started");
+            listener.getLogger().println("No Slurm job ID - agent may not have been started");
             return;
         }
         
@@ -216,26 +216,26 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
             if (template != null && template.isKeepJobOnFailure()) {
                 // User wants to keep jobs for debugging - just log and skip cancellation
                 shouldCancel = false;
-                listener.getLogger().println("Keeping SLURM job running for debugging (job ID: " + slurmJobId + ")");
+                listener.getLogger().println("Keeping Slurm job running for debugging (job ID: " + slurmJobId + ")");
                 listener.getLogger().println("You can manually cancel it with: scancel " + slurmJobId);
-                LOGGER.info("Keeping SLURM job " + slurmJobId + " running due to keepJobOnFailure=true");
+                LOGGER.info("Keeping Slurm job " + slurmJobId + " running due to keepJobOnFailure=true");
             }
             
             if (shouldCancel) {
-                // Cancel the SLURM job
-                listener.getLogger().println("Cancelling SLURM job: " + slurmJobId);
+                // Cancel the Slurm job
+                listener.getLogger().println("Cancelling Slurm job: " + slurmJobId);
                 cloud.cancelJob(slurmJobId, listener);
-                listener.getLogger().println("SLURM job cancelled successfully");
+                listener.getLogger().println("Slurm job cancelled successfully");
             }
             
         } catch (IllegalStateException e) {
             // Cloud no longer exists - log but don't fail
             LOGGER.log(Level.WARNING, "Cloud no longer exists, cannot cancel job: " + e.getMessage());
-            listener.getLogger().println("Warning: Cloud no longer exists, SLURM job may still be running");
+            listener.getLogger().println("Warning: Cloud no longer exists, Slurm job may still be running");
             
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to cancel SLURM job " + slurmJobId, e);
-            listener.getLogger().println("Warning: Failed to cancel SLURM job: " + e.getMessage());
+            LOGGER.log(Level.WARNING, "Failed to cancel Slurm job " + slurmJobId, e);
+            listener.getLogger().println("Warning: Failed to cancel Slurm job: " + e.getMessage());
             // Don't throw - we want termination to succeed even if job cancellation fails
         }
     }
@@ -251,7 +251,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         @Override
         @NonNull
         public String getDisplayName() {
-            return "SLURM Agent";
+            return "Slurm Agent";
         }
         
         @Override

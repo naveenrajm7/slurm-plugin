@@ -11,9 +11,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * A source of SLURM job templates.
+ * A source of Slurm job templates.
  * 
- * This extension point allows plugins to contribute SLURM job templates from various sources,
+ * This extension point allows plugins to contribute Slurm job templates from various sources,
  * such as cloud configuration, Jenkins configuration as code (JCasC), or external systems.
  * 
  * Similar to Kubernetes plugin's PodTemplateSource.
@@ -21,9 +21,9 @@ import java.util.stream.Collectors;
 public abstract class SlurmJobTemplateSource implements ExtensionPoint {
     
     /**
-     * Returns all SLURM job templates from all registered sources for the given cloud.
+     * Returns all Slurm job templates from all registered sources for the given cloud.
      * 
-     * @param cloud The SLURM cloud instance to get templates for
+     * @param cloud The Slurm cloud instance to get templates for
      * @return Combined list of all templates from all sources
      */
     public static List<SlurmJobTemplate> getAll(@NonNull SlurmCloud cloud) {
@@ -36,7 +36,7 @@ public abstract class SlurmJobTemplateSource implements ExtensionPoint {
     /**
      * The list of {@link SlurmJobTemplate} contributed by this implementation.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @return The list of job templates provided by this source
      */
     @NonNull

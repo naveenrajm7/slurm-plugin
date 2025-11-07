@@ -15,9 +15,9 @@ import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
 
 /**
- * Computer implementation for SLURM agents.
+ * Computer implementation for Slurm agents.
  * 
- * This class manages the execution state and lifecycle of a SLURM-based
+ * This class manages the execution state and lifecycle of a Slurm-based
  * Jenkins agent, including handling connection status and job execution.
  * Implements TrackedItem for cloud-stats plugin integration.
  */
@@ -29,11 +29,11 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     
     public SlurmComputer(@NonNull SlurmAgent agent) {
         super(agent);
-        LOGGER.log(Level.FINE, "Created SLURM computer for agent: {0}", agent.getNodeName());
+        LOGGER.log(Level.FINE, "Created Slurm computer for agent: {0}", agent.getNodeName());
     }
     
     /**
-     * Gets the SLURM agent associated with this computer.
+     * Gets the Slurm agent associated with this computer.
      */
     @Override
     @CheckForNull
@@ -44,7 +44,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     /**
      * Indicates if this computer is currently in the process of being launched.
      * 
-     * @return true if SLURM job has been submitted and agent is waiting to connect
+     * @return true if Slurm job has been submitted and agent is waiting to connect
      */
     public boolean isLaunching() {
         return launching;
@@ -92,7 +92,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     }
     
     /**
-     * Gets display information about the SLURM job for the UI.
+     * Gets display information about the Slurm job for the UI.
      */
     @NonNull
     public String getSlurmJobInfo() {
@@ -134,7 +134,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     
     /**
      * Gets the cloud-stats tracking ID for this computer.
-     * Returns the ID from the associated SLURM agent.
+     * Returns the ID from the associated Slurm agent.
      * 
      * @return the cloud-stats tracking ID, or null if agent not available
      */

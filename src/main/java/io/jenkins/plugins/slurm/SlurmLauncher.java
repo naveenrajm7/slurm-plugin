@@ -15,7 +15,7 @@ import jenkins.model.Jenkins;
 import jenkins.model.JenkinsLocationConfiguration;
 
 /**
- * Launcher for SLURM agents that submits jobs via the SLURM REST API.
+ * Launcher for Slurm agents that submits jobs via the Slurm REST API.
  * The agent connects back to Jenkins using JNLP.
  */
 public class SlurmLauncher extends JNLPLauncher {
@@ -23,7 +23,7 @@ public class SlurmLauncher extends JNLPLauncher {
     
     @Override
     public void launch(SlaveComputer computer, TaskListener listener) {
-        LOGGER.info("=== SLURM Launcher: launch() called for computer: " + computer.getName() + " ===");
+        LOGGER.info("=== Slurm Launcher: launch() called for computer: " + computer.getName() + " ===");
         
         if (!(computer instanceof SlurmComputer)) {
             throw new IllegalArgumentException("Computer must be an instance of SlurmComputer");
@@ -37,8 +37,8 @@ public class SlurmLauncher extends JNLPLauncher {
             throw new IllegalStateException("Agent is null");
         }
         
-        LOGGER.info("Launching SLURM agent: " + agent.getNodeName());
-        listener.getLogger().println("Launching SLURM agent: " + agent.getNodeName());
+        LOGGER.info("Launching Slurm agent: " + agent.getNodeName());
+        listener.getLogger().println("Launching Slurm agent: " + agent.getNodeName());
         
         try {
             // Get the cloud
@@ -61,7 +61,7 @@ public class SlurmLauncher extends JNLPLauncher {
             
             try {
                 // Build the job description
-                LOGGER.info("Building SLURM job description...");
+                LOGGER.info("Building Slurm job description...");
                 SlurmJobBuilder builder = new SlurmJobBuilder(
                     template,
                     agent.getNodeName(),
@@ -72,14 +72,14 @@ public class SlurmLauncher extends JNLPLauncher {
                 LOGGER.info("Job description built successfully");
                 
                 // Submit the job
-                LOGGER.info("Submitting job to SLURM...");
-                listener.getLogger().println("Submitting job to SLURM...");
+                LOGGER.info("Submitting job to Slurm...");
+                listener.getLogger().println("Submitting job to Slurm...");
                 String jobId = cloud.submitJob(jobDesc, listener);
                 
                 // Store the job ID in the agent
                 agent.setSlurmJobId(jobId);
-                LOGGER.info("SLURM job submitted with ID: " + jobId);
-                listener.getLogger().println("SLURM job submitted with ID: " + jobId);
+                LOGGER.info("Slurm job submitted with ID: " + jobId);
+                listener.getLogger().println("Slurm job submitted with ID: " + jobId);
                 
                 // Wait for the agent to connect via JNLP
                 LOGGER.info("Waiting for agent to connect via WebSocket/JNLP...");
@@ -92,14 +92,14 @@ public class SlurmLauncher extends JNLPLauncher {
             }
             
         } catch (InterruptedException e) {
-            LOGGER.log(Level.WARNING, "Interrupted while launching SLURM agent: " + agent.getNodeName(), e);
+            LOGGER.log(Level.WARNING, "Interrupted while launching Slurm agent: " + agent.getNodeName(), e);
             listener.error("Launch interrupted: " + e.getMessage());
             Thread.currentThread().interrupt();
             throw new RuntimeException("Launch interrupted", e);
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to launch SLURM agent: " + agent.getNodeName(), e);
-            listener.error("Failed to launch SLURM agent: " + e.getMessage());
-            throw new RuntimeException("Failed to launch SLURM agent", e);
+            LOGGER.log(Level.WARNING, "Failed to launch Slurm agent: " + agent.getNodeName(), e);
+            listener.error("Failed to launch Slurm agent: " + e.getMessage());
+            throw new RuntimeException("Failed to launch Slurm agent", e);
         }
     }
     
@@ -139,7 +139,7 @@ public class SlurmLauncher extends JNLPLauncher {
         // 4. Development fallback - use localhost with default port
         String fallbackUrl = "http://localhost:8080/jenkins/";
         LOGGER.warning("Jenkins URL not configured anywhere - using fallback: " + fallbackUrl);
-        LOGGER.warning("Please configure Jenkins URL in: Manage Jenkins > System > Jenkins Location OR in the SLURM Cloud configuration");
+        LOGGER.warning("Please configure Jenkins URL in: Manage Jenkins > System > Jenkins Location OR in the Slurm Cloud configuration");
         return fallbackUrl;
     }
     
@@ -158,7 +158,7 @@ public class SlurmLauncher extends JNLPLauncher {
     public static final class DescriptorImpl extends Descriptor<ComputerLauncher> {
         @Override
         public String getDisplayName() {
-            return "Launch SLURM agent";
+            return "Launch Slurm agent";
         }
     }
 }

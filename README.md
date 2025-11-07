@@ -25,7 +25,8 @@ see the [Docker image source code](https://github.com/jenkinsci/docker-agent).
 * A running Slurm cluster 24.11 or later
 * A Jenkins instance installed
 * The Jenkins Slurm plugin installed
-* A token with sufficient privileges ([Slurm REST Basic usage](https://slurm.schedmd.com/rest_quickstart.html#basic_usage))
+* slurmrestd enabled with a token of sufficient privileges ([Slurm REST Basic usage](https://slurm.schedmd.com/rest_quickstart.html#basic_usage))
+* (Optional) pyxis and enroot
 
 ## Configuration
 
@@ -55,7 +56,7 @@ Within these jobs, there is always one process running the Jenkins inbound agent
 
 The agent process runs either directly on the compute node or inside a Pyxis container if container support is configured.
 
-When multi-node allocations are requested (`minimum_nodes > 1`), the Jenkins agent runs on the first node only, while your pipeline commands can utilize the full SLURM job allocation using `srun` or MPI launchers.
+When multi-node allocations are requested (`minimum_nodes > 1`), the Jenkins agent runs on the first node only, while your pipeline commands can utilize the full Slurm job allocation using `srun` or MPI launchers.
 
 ## Using a label
 

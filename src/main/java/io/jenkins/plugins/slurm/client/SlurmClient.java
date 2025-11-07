@@ -16,7 +16,7 @@ import java.util.logging.Logger;
 import java.util.logging.Level;
 
 /**
- * Simplified SLURM REST API client for v0.0.42
+ * Simplified Slurm REST API client for v0.0.42
  * This replaces the multi-version factory pattern with a direct client approach
  */
 public class SlurmClient {
@@ -27,7 +27,7 @@ public class SlurmClient {
     
     public SlurmClient(String slurmRestApiUrl, String authToken) throws MalformedURLException {
         if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
-            throw new IllegalArgumentException("SLURM REST API URL cannot be null or empty");
+            throw new IllegalArgumentException("Slurm REST API URL cannot be null or empty");
         }
         
         // Validate URL format
@@ -37,7 +37,7 @@ public class SlurmClient {
         // Remove trailing slash if present for consistency
         this.baseUrl = slurmRestApiUrl.endsWith("/") ? slurmRestApiUrl.substring(0, slurmRestApiUrl.length() - 1) : slurmRestApiUrl;
         
-        // Create custom HttpClient to handle SLURM server response parsing
+        // Create custom HttpClient to handle Slurm server response parsing
         HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)  // More lenient HTTP parsing
             .connectTimeout(Duration.ofSeconds(30))
@@ -52,9 +52,9 @@ public class SlurmClient {
         
         if (authToken != null && !authToken.trim().isEmpty()) {
             apiClient.setRequestInterceptor(builder -> {
-                // builder.header("X-SLURM-USER-NAME", "jenkins");
-                builder.header("X-SLURM-USER-TOKEN", authToken);
-                LOGGER.fine("Added authentication headers for SLURM REST API request");
+                // builder.header("X-Slurm-USER-NAME", "jenkins");
+                builder.header("X-Slurm-USER-TOKEN", authToken);
+                LOGGER.fine("Added authentication headers for Slurm REST API request");
             });
         }
         
@@ -63,12 +63,12 @@ public class SlurmClient {
     }
     
     /**
-     * Test connectivity by pinging the SLURM controller and return detailed info
-     * @return SLURM controller information from v0.0.43_controller_ping response or null if failed
+     * Test connectivity by pinging the Slurm controller and return detailed info
+     * @return Slurm controller information from v0.0.43_controller_ping response or null if failed
      */
     public SlurmPingInfo getSlurmInfo() {
         try {
-            LOGGER.info("Attempting to ping SLURM controller at: " + baseUrl);
+            LOGGER.info("Attempting to ping Slurm controller at: " + baseUrl);
             LOGGER.info("Full expected URL will be: " + baseUrl + "/slurm/v0.0.42/ping/");
             
             OpenapiPingArrayResp response = api.slurmGetPing();
@@ -97,26 +97,26 @@ public class SlurmClient {
                     }
                 }
                 
-                LOGGER.info(String.format("SLURM ping - hostname: %s, pinged: %s, responding: %s, latency: %d μs, mode: %s, primary: %s, version: %s, cluster: %s", 
+                LOGGER.info(String.format("Slurm ping - hostname: %s, pinged: %s, responding: %s, latency: %d μs, mode: %s, primary: %s, version: %s, cluster: %s", 
                            hostname, pinged, responding, latency, mode, primary, version, cluster));
                 
                 return new SlurmPingInfo(hostname, pinged, responding, latency, mode, primary, version, cluster);
             } else {
-                LOGGER.warning("SLURM ping response received but no ping data found");
+                LOGGER.warning("Slurm ping response received but no ping data found");
                 return null;
             }
         } catch (ApiException e) {
-            LOGGER.log(Level.SEVERE, "SLURM ping failed with API error: HTTP " + e.getCode() + 
+            LOGGER.log(Level.SEVERE, "Slurm ping failed with API error: HTTP " + e.getCode() + 
                       " - " + e.getMessage() + " (Response: " + e.getResponseBody() + ")", e);
             return null;
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "SLURM ping failed with unexpected error: " + e.getMessage(), e);
+            LOGGER.log(Level.SEVERE, "Slurm ping failed with unexpected error: " + e.getMessage(), e);
             return null;
         }
     }
     
     /**
-     * Test connectivity by pinging the SLURM controller
+     * Test connectivity by pinging the Slurm controller
      * @return true if ping is successful, false otherwise
      */
     public boolean ping() {
@@ -132,7 +132,7 @@ public class SlurmClient {
     }
     
     /**
-     * Get the underlying SLURM API instance for advanced operations
+     * Get the underlying Slurm API instance for advanced operations
      * @return the SlurmApi instance
      */
     public SlurmApi getApi() {
@@ -140,7 +140,7 @@ public class SlurmClient {
     }
     
     /**
-     * Submit a job to SLURM
+     * Submit a job to Slurm
      * @param submitReq The job submission request containing job description
      * @return The job submission response with job ID
      * @throws ApiException if submission fails
@@ -152,7 +152,7 @@ public class SlurmClient {
             throw new IllegalArgumentException("Job submission request and job description cannot be null");
         }
         
-        LOGGER.info("Submitting job to SLURM: " + submitReq.getJob().getName());
+        LOGGER.info("Submitting job to Slurm: " + submitReq.getJob().getName());
         LOGGER.fine("Job details - partition: " + submitReq.getJob().getPartition() + 
                    ", CPUs: " + submitReq.getJob().getCpusPerTask());
         
@@ -183,8 +183,8 @@ public class SlurmClient {
     }
     
     /**
-     * Cancel a SLURM job by job ID
-     * @param jobId The SLURM job ID to cancel
+     * Cancel a Slurm job by job ID
+     * @param jobId The Slurm job ID to cancel
      * @throws ApiException if cancellation fails
      */
     public void cancelJob(String jobId) throws ApiException {
@@ -192,7 +192,7 @@ public class SlurmClient {
             throw new IllegalArgumentException("Job ID cannot be null or empty");
         }
         
-        LOGGER.info("Canceling SLURM job: " + jobId);
+        LOGGER.info("Canceling Slurm job: " + jobId);
         
         try {
             // The API expects job ID as a string

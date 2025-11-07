@@ -10,7 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Filters SLURM job templates according to criteria.
+ * Filters Slurm job templates according to criteria.
  * 
  * This extension point allows filtering of job templates based on various criteria
  * such as labels, permissions, or custom business logic.
@@ -31,7 +31,7 @@ public abstract class SlurmJobTemplateFilter implements ExtensionPoint {
     /**
      * Pass the given job templates list through all filter implementations.
      * 
-     * @param cloud The SLURM cloud instance the templates are being considered for
+     * @param cloud The Slurm cloud instance the templates are being considered for
      * @param jobTemplates The initial list of job templates
      * @param label The label that was requested for provisioning
      * @return The filtered list of job templates

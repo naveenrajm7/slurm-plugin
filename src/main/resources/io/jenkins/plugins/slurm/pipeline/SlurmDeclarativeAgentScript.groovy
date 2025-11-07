@@ -28,14 +28,14 @@ import org.jenkinsci.plugins.pipeline.modeldefinition.agent.DeclarativeAgentScri
 import org.jenkinsci.plugins.workflow.cps.CpsScript
 
 /**
- * Script execution for SLURM declarative agents.
+ * Script execution for Slurm declarative agents.
  * 
  * This script:
- * 1. Creates a SLURM job template step with the specified configuration
- * 2. Launches a SLURM agent within that template
+ * 1. Creates a Slurm job template step with the specified configuration
+ * 2. Launches a Slurm agent within that template
  * 3. Performs SCM checkout if needed
  * 4. Executes the pipeline body
- * 5. Cleans up the SLURM job
+ * 5. Cleans up the Slurm job
  */
 public class SlurmDeclarativeAgentScript extends DeclarativeAgentScript2<SlurmDeclarativeAgent> {
     
@@ -60,7 +60,7 @@ public class SlurmDeclarativeAgentScript extends DeclarativeAgentScript2<SlurmDe
         // Use slurmJobTemplate step to create the agent environment
         script.slurmJobTemplate(args) {
             // Request a node with the specific label
-            // This will trigger the SLURM cloud to provision an agent
+            // This will trigger the Slurm cloud to provision an agent
             script.node(agentLabel) {
                 // Use doCheckout2 for declarative pipelines - this properly executes the body
                 CheckoutScript.doCheckout2(script, describable, describable.customWorkspace) {

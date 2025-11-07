@@ -29,9 +29,9 @@ import java.util.Set;
 import java.util.logging.Logger;
 
 /**
- * Pipeline step to create a SLURM job template context.
+ * Pipeline step to create a Slurm job template context.
  * 
- * This step creates a temporary SLURM job template from declarative configuration
+ * This step creates a temporary Slurm job template from declarative configuration
  * and provides it as context for nested pipeline steps.
  * 
  * Example usage with REST API format:
@@ -84,7 +84,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     @CheckForNull
     private String json;
     
-    // Core SLURM fields (mirroring SlurmJobTemplate)
+    // Core Slurm fields (mirroring SlurmJobTemplate)
     @CheckForNull
     private String partition;
     
@@ -191,7 +191,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             template.setLabel(label);
         }
         
-        // Core SLURM fields
+        // Core Slurm fields
         if (!StringUtils.isEmpty(partition)) {
             template.setPartition(partition);
         }
@@ -274,7 +274,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     /**
      * Apply JSON configuration to template.
      * 
-     * Uses REST API format matching SLURM REST API job_desc_msg structure:
+     * Uses REST API format matching Slurm REST API job_desc_msg structure:
      * {
      *   "agent_settings": {
      *     "idle_minutes": 1,
@@ -305,7 +305,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             // REST API format requires "job" key
             if (!jsonConfig.has("job")) {
                 throw new IllegalArgumentException(
-                    "JSON must have 'job' key matching SLURM REST API format. " +
+                    "JSON must have 'job' key matching Slurm REST API format. " +
                     "Example: {\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 16}, \"pyxis\": {...}}"
                 );
             }
@@ -344,7 +344,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 }
             }
             
-            // Parse pyxis configuration (plugin-specific, not part of SLURM REST API)
+            // Parse pyxis configuration (plugin-specific, not part of Slurm REST API)
             if (jsonConfig.has("pyxis")) {
                 String pyxisJsonString = jsonConfig.getJSONObject("pyxis").toString();
                 PyxisConfig pyxisConfig = OBJECT_MAPPER.readValue(pyxisJsonString, PyxisConfig.class);
@@ -791,7 +791,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         @NonNull
         @Override
         public String getDisplayName() {
-            return "SLURM Job Template";
+            return "Slurm Job Template";
         }
         
         @Override

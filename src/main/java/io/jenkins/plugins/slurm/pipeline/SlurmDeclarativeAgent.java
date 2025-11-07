@@ -24,11 +24,11 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Declarative Pipeline agent for SLURM.
+ * Declarative Pipeline agent for Slurm.
  * 
  * Supports two modes:
  * 1. Property-based configuration (for simple use cases)
- * 2. JSON configuration using SLURM REST API format
+ * 2. JSON configuration using Slurm REST API format
  * 
  * Example 1: Property-based (simple fields)
  * <pre>
@@ -70,7 +70,7 @@ import java.util.stream.Collectors;
  * }
  * </pre>
  * 
- * The JSON format matches SLURM REST API job_desc_msg structure,
+ * The JSON format matches Slurm REST API job_desc_msg structure,
  * allowing users to copy configurations from working REST API calls.
  */
 public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclarativeAgent> {
@@ -97,7 +97,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     @CheckForNull
     private String jsonFile;  // Path to JSON file in SCM
     
-    // Core SLURM job submission fields
+    // Core Slurm job submission fields
     @CheckForNull
     private String partition;
     
@@ -117,7 +117,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     private String gres;  // Generic resources (e.g., "gpu:gfx1030:1") - maps to tres_per_job
     
     @CheckForNull
-    private String account;  // SLURM account
+    private String account;  // Slurm account
     
     @CheckForNull
     private String qos;  // Quality of Service
@@ -169,7 +169,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     
     private boolean runOnce = true;  // Terminate after one build
     
-    private boolean keepJobOnFailure = false;  // Keep SLURM job on failure for debugging
+    private boolean keepJobOnFailure = false;  // Keep Slurm job on failure for debugging
     
     @DataBoundConstructor
     public SlurmDeclarativeAgent() {}
@@ -266,7 +266,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     }
     
     // ====================
-    // Core SLURM Fields
+    // Core Slurm Fields
     // ====================
     
     @CheckForNull
@@ -637,7 +637,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         @NonNull
         @Override
         public String getDisplayName() {
-            return "SLURM";
+            return "Slurm";
         }
         
         @SuppressWarnings("unused") // used by stapler/jelly

@@ -1,8 +1,8 @@
 package io.jenkins.plugins.slurm.client;
 
 /**
- * Simple data class to hold SLURM controller information from v0.0.43_controller_ping response.
- * This provides a clean interface for SLURM controller data without exposing OpenAPI-specific types.
+ * Simple data class to hold Slurm controller information from v0.0.43_controller_ping response.
+ * This provides a clean interface for Slurm controller data without exposing OpenAPI-specific types.
  */
 public class SlurmPingInfo {
     private final String hostname;      // Target for ping
@@ -11,7 +11,7 @@ public class SlurmPingInfo {
     private final Long latency;         // Number of microseconds it took to successfully ping or timeout
     private final String mode;          // The operating mode of the responding slurmctld
     private final Boolean primary;      // Is responding slurmctld the primary controller
-    private final String version;       // SLURM version
+    private final String version;       // Slurm version
     private final String cluster;       // Cluster name
     
     public SlurmPingInfo(String hostname, String pinged, Boolean responding, Long latency, 

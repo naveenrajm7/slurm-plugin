@@ -1,23 +1,23 @@
 <?jelly escape-by-default='true'?>
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout" xmlns:t="/lib/hudson" xmlns:f="/lib/form">
-  <f:section title="SLURM Cloud Configuration">
+  <f:section title="Slurm Cloud Configuration">
     
-    <f:entry title="Name" field="name" description="A unique name for this SLURM cloud configuration">
+    <f:entry title="Name" field="name" description="A unique name for this Slurm cloud configuration">
       <f:textbox />
     </f:entry>
     
-    <f:entry title="SLURM REST API URL" field="slurmRestApiUrl" 
-             description="The URL of the SLURM REST API server. Example: http://slurm-controller:6820 (default port: 6820)">
+    <f:entry title="Slurm REST API URL" field="slurmRestApiUrl" 
+             description="The URL of the Slurm REST API server. Example: http://slurm-controller:6820 (default port: 6820)">
       <f:textbox default="http://localhost:6820" />
     </f:entry>
     
     <f:entry title="Credentials" field="credentialsId"
-             description="Authentication token for SLURM REST API (JWT token or similar)">
+             description="Authentication token for Slurm REST API (JWT token or similar)">
       <f:select />
     </f:entry>
     
     <f:entry title="Default Partition" field="defaultPartition"
-             description="Default SLURM partition to submit jobs to (optional)">
+             description="Default Slurm partition to submit jobs to (optional)">
       <f:textbox />
     </f:entry>
     

@@ -20,7 +20,7 @@ import java.util.logging.Logger;
 /**
  * Execution for {@link SlurmJobTemplateStep}.
  * 
- * Creates a temporary SLURM job template from the step configuration
+ * Creates a temporary Slurm job template from the step configuration
  * and makes it available to nested pipeline steps.
  */
 public class SlurmJobTemplateStepExecution extends StepExecution implements Serializable {
@@ -37,16 +37,16 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
     
     @Override
     public boolean start() throws Exception {
-        // Resolve the SLURM cloud
+        // Resolve the Slurm cloud
         SlurmCloud cloud = resolveSlurmCloud();
         if (cloud == null) {
             getContext().onFailure(new AbortException(
-                "No SLURM cloud found. Either specify a cloud name or configure a default SLURM cloud."
+                "No Slurm cloud found. Either specify a cloud name or configure a default Slurm cloud."
             ));
             return false;
         }
         
-        LOGGER.log(Level.INFO, "Using SLURM cloud: {0}", cloud.name);
+        LOGGER.log(Level.INFO, "Using Slurm cloud: {0}", cloud.name);
         
         // Build the job template from step configuration
         SlurmJobTemplate template = step.buildJobTemplate(cloud);
@@ -92,7 +92,7 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
     }
     
     /**
-     * Resolve which SLURM cloud to use for this template.
+     * Resolve which Slurm cloud to use for this template.
      */
     private SlurmCloud resolveSlurmCloud() throws AbortException {
         Jenkins jenkins = Jenkins.get();
@@ -104,10 +104,10 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
                     return cloud;
                 }
             }
-            throw new AbortException("SLURM cloud not found: " + step.getCloud());
+            throw new AbortException("Slurm cloud not found: " + step.getCloud());
         }
         
-        // Otherwise use the first available SLURM cloud
+        // Otherwise use the first available Slurm cloud
         for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
             return cloud;
         }

@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.logging.Logger;
 
 /**
- * Utility methods for working with SLURM job templates.
+ * Utility methods for working with Slurm job templates.
  * 
  * Provides helper methods for finding, filtering, and selecting templates.
  * Similar to Kubernetes plugin's PodTemplateUtils.
@@ -21,7 +21,7 @@ public class SlurmJobTemplateUtils {
     /**
      * Gets all available job templates for a cloud, including templates from all sources.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @return All available templates from all registered sources
      */
     @NonNull
@@ -35,7 +35,7 @@ public class SlurmJobTemplateUtils {
      * This method retrieves all templates and filters them through all registered filters,
      * considering the requested label.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @param label The label to match (can be null for unlabeled jobs)
      * @return Filtered list of templates suitable for the label
      */
@@ -59,7 +59,7 @@ public class SlurmJobTemplateUtils {
      * 
      * Returns the first template that matches the label, or null if no match is found.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @param label The label to match
      * @return The best matching template, or null if none found
      */
@@ -83,7 +83,7 @@ public class SlurmJobTemplateUtils {
     /**
      * Gets a job template by name from the cloud's configured templates.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @param name The template name to search for
      * @return The template with matching name, or null if not found
      */
@@ -109,7 +109,7 @@ public class SlurmJobTemplateUtils {
     /**
      * Validates that a template name is unique within the cloud.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @param templateName The name to check
      * @param excludeTemplate Template to exclude from check (when renaming)
      * @return true if name is unique, false otherwise
@@ -136,7 +136,7 @@ public class SlurmJobTemplateUtils {
     /**
      * Counts the number of templates with a specific label.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @param label The label to count
      * @return Number of templates matching the label
      */
@@ -148,7 +148,7 @@ public class SlurmJobTemplateUtils {
     /**
      * Checks if the cloud has any templates configured.
      * 
-     * @param cloud The SLURM cloud instance
+     * @param cloud The Slurm cloud instance
      * @return true if at least one template exists
      */
     public static boolean hasTemplates(@NonNull SlurmCloud cloud) {
@@ -160,7 +160,7 @@ public class SlurmJobTemplateUtils {
      * Creates a default template with basic settings.
      * Used as fallback when no templates are configured.
      * 
-     * @param cloud The SLURM cloud instance to get defaults from
+     * @param cloud The Slurm cloud instance to get defaults from
      * @return A default job template
      */
     @NonNull

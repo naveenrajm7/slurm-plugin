@@ -23,19 +23,19 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 /**
- * Represents a SLURM job template that defines the parameters for submitting
- * jobs to a SLURM cluster. This template maps directly to SLURM's job_desc_msg structure
+ * Represents a Slurm job template that defines the parameters for submitting
+ * jobs to a Slurm cluster. This template maps directly to Slurm's job_desc_msg structure
  * from the REST API, allowing users to define different job configurations for different
  * build requirements.
  * 
- * The template structure follows SLURM's v0.0.42_job_desc_msg to minimize processing
+ * The template structure follows Slurm's v0.0.42_job_desc_msg to minimize processing
  * and allow future code-based template definitions to match the API structure.
  */
 public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmJobTemplate.class.getName());
     
-    // Template metadata (not part of SLURM job submission)
+    // Template metadata (not part of Slurm job submission)
     private final String id;
     private String name;
     private String label;
@@ -43,11 +43,11 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private int instanceCap;
     private int idleMinutes;
     private boolean runOnce;  // If true, agent terminates after one build (default: true)
-    private boolean keepJobOnFailure;  // If true, don't cancel SLURM job when build fails (for debugging)
+    private boolean keepJobOnFailure;  // If true, don't cancel Slurm job when build fails (for debugging)
     
-    // Core SLURM job submission fields (maps to v0.0.42_job_desc_msg)
+    // Core Slurm job submission fields (maps to v0.0.42_job_desc_msg)
     @JsonProperty("partition")
-    private String partition;                    // partition: which SLURM partition to use
+    private String partition;                    // partition: which Slurm partition to use
     
     @JsonProperty("current_working_directory")
     private String currentWorkingDirectory;      // current_working_directory: where to run the job
@@ -82,7 +82,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private Integer tasks;                       // tasks: number of tasks (default 1)
     
     @JsonProperty("account")
-    private String account;                      // account: SLURM account to charge
+    private String account;                      // account: Slurm account to charge
     
     @JsonProperty("qos")
     private String qos;                          // qos: Quality of Service
@@ -102,7 +102,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     // Phase 1: Essential fields for pipeline support
     // Job identification and features
     @JsonProperty("name")
-    private String jobName;                      // name: SLURM job name (different from template name)
+    private String jobName;                      // name: Slurm job name (different from template name)
     
     @JsonProperty("comment")
     private String comment;                      // comment: user comment for the job
@@ -211,7 +211,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.runOnce = true;  // Default: terminate after one build
         this.keepJobOnFailure = false;  // Default: always cancel job on termination
         
-        // SLURM defaults (keeping 1 node, 1 task for Jenkins agent)
+        // Slurm defaults (keeping 1 node, 1 task for Jenkins agent)
         this.partition = "";
         this.currentWorkingDirectory = "/tmp/jenkins";
         this.cpusPerTask = 1;
@@ -276,12 +276,12 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return id;
     }
     
-    @JsonIgnore  // This is the template name (UI), not the SLURM job name (REST API)
+    @JsonIgnore  // This is the template name (UI), not the Slurm job name (REST API)
     public String getName() {
         return name;
     }
     
-    @JsonIgnore  // This is the template name (UI), not the SLURM job name (REST API)
+    @JsonIgnore  // This is the template name (UI), not the Slurm job name (REST API)
     @DataBoundSetter
     public void setName(String name) {
         this.name = name != null ? name : "default";
@@ -342,7 +342,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
     
     // ====================
-    // SLURM Job Submission Fields (maps to v0.0.42_job_desc_msg)
+    // Slurm Job Submission Fields (maps to v0.0.42_job_desc_msg)
     // ====================
     
     public String getPartition() {
@@ -942,7 +942,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         
         @Override
         public String getDisplayName() {
-            return "SLURM Job Template";
+            return "Slurm Job Template";
         }
         
         public FormValidation doCheckName(@QueryParameter String value) {

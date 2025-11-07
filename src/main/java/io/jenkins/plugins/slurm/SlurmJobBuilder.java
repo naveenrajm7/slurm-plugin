@@ -11,10 +11,10 @@ import java.util.Map;
 import java.util.logging.Logger;
 
 /**
- * Builder class for creating SLURM job descriptions.
+ * Builder class for creating Slurm job descriptions.
  * 
  * This class takes a {@link SlurmJobTemplate} and converts it into a
- * {@link JobDescMsg} suitable for submission to the SLURM REST API.
+ * {@link JobDescMsg} suitable for submission to the Slurm REST API.
  *
  * Similar to Kubernetes plugin's PodTemplateBuilder.
  */
@@ -46,13 +46,13 @@ public class SlurmJobBuilder {
     }
     
     /**
-     * Builds the JobDescMsg for submission to SLURM.
+     * Builds the JobDescMsg for submission to Slurm.
      * 
      * @return The job description message ready for submission
      */
     @NonNull
     public JobDescMsg build() {
-        LOGGER.info("Building SLURM job for agent: " + agentName);
+        LOGGER.info("Building Slurm job for agent: " + agentName);
         
         JobDescMsg jobDesc = new JobDescMsg();
         
@@ -168,7 +168,7 @@ public class SlurmJobBuilder {
         String script = generateBatchScript();
         jobDesc.setScript(script);
         
-        LOGGER.info("Built SLURM job: " + jobDesc.getName() + 
+        LOGGER.info("Built Slurm job: " + jobDesc.getName() + 
                    " (partition=" + jobDesc.getPartition() + 
                    ", cpus=" + jobDesc.getCpusPerTask() + 
                    ", memory=" + jobDesc.getMemoryPerNode() + "MB)");
@@ -233,16 +233,16 @@ public class SlurmJobBuilder {
      * Generates the batch script for running the Jenkins agent in a container.
      * 
      * Uses container image from Pyxis configuration with pre-baked Jenkins agent.
-     * The script format matches the actual working SLURM job submission.
+     * The script format matches the actual working Slurm job submission.
      * 
      * IMPORTANT: The Jenkins agent always runs on exactly 1 node with 1 task (-N1 -n1),
      * regardless of the user's resource request. This allows:
      * 1. Single agent connection to Jenkins (not multiple agents per node)
-     * 2. User's pipeline commands inherit the full SLURM job allocation
+     * 2. User's pipeline commands inherit the full Slurm job allocation
      * 3. Support for multi-node MPI jobs where srun commands use all allocated nodes
      * 
      * Example: User requests 4 nodes with 64 CPUs each
-     * - SLURM allocates 4 nodes to the job
+     * - Slurm allocates 4 nodes to the job
      * - Agent runs on node 0 only (srun -N1 -n1)
      * - User's commands can use all nodes: sh 'srun --nodes=4 ./mpi_app'
      * 

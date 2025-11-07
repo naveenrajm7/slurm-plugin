@@ -14,7 +14,7 @@
   <version>${revision}${changelist}</version>
   <packaging>hpi</packaging>
 
-  <name>SLURM Plugin</name>
+  <name>Slurm Plugin</name>
   <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
   <licenses>
     <license>
@@ -66,7 +66,7 @@
       <artifactId>cloud-stats</artifactId>
     </dependency>
     
-    <!-- SSH launcher for connecting to SLURM nodes -->
+    <!-- SSH launcher for connecting to Slurm nodes -->
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>ssh-slaves</artifactId>
@@ -203,7 +203,7 @@
         </executions>
       </plugin>
       
-      <!-- OpenAPI Generator for SLURM (Version-Independent) -->
+      <!-- OpenAPI Generator for Slurm (Version-Independent) -->
       <plugin>
         <groupId>org.openapitools</groupId>
         <artifactId>openapi-generator-maven-plugin</artifactId>
