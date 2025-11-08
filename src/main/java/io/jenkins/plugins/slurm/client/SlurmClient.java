@@ -236,8 +236,9 @@ public class SlurmClient {
             
             if (response != null && response.getJobs() != null && !response.getJobs().isEmpty()) {
                 io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = response.getJobs().get(0);
-                if (jobInfo.getJobState() != null) {
-                    String state = jobInfo.getJobState().toString();
+                if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
+                    // getJobState() returns a List, get the first element and convert to String
+                    String state = jobInfo.getJobState().get(0).toString();
                     Integer exitCode = getExitCode(jobInfo);
                     
                     LOGGER.info("Job " + jobId + " state: " + state + 
