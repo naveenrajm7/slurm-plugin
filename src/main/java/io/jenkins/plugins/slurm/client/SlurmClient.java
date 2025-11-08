@@ -217,4 +217,120 @@ public class SlurmClient {
             throw e;
         }
     }
+    
+    /**
+     * Get the state of a Slurm job, checking both state and exit code
+     * @param jobId The Slurm job ID to check
+     * @return The job state as a string (PENDING, RUNNING, COMPLETED, FAILED, etc.), or null if job not found
+     * @throws ApiException if the API call fails
+     */
+    public String getJobState(String jobId) throws ApiException {
+        if (jobId == null || jobId.isEmpty()) {
+            throw new IllegalArgumentException("Job ID cannot be null or empty");
+        }
+        
+        try {
+            // Call the API to get job info
+            io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response = 
+                api.slurmGetJob(jobId, null, null);
+            
+            if (response != null && response.getJobs() != null && !response.getJobs().isEmpty()) {
+                io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = response.getJobs().get(0);
+                if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
+                    // getJobState() returns a List, get the first element and convert to String
+                    String state = jobInfo.getJobState().get(0).toString();
+                    Integer exitCode = getExitCode(jobInfo);
+                    
+                    LOGGER.info("Job " + jobId + " state: " + state + 
+                        (exitCode != null ? " (exit code: " + exitCode + ")" : ""));
+                    
+                    // CRITICAL: Check exit code for COMPLETED jobs
+                    // Slurm marks jobs as COMPLETED even if they exit with non-zero code
+                    // We need to treat non-zero exit as FAILED for Jenkins
+                    if ("COMPLETED".equals(state) && exitCode != null && exitCode != 0) {
+                        LOGGER.warning("Job " + jobId + " COMPLETED with non-zero exit code " + 
+                            exitCode + " - treating as FAILED");
+                        return "FAILED";
+                    }
+                    
+                    return state;
+                }
+            }
+            
+            LOGGER.warning("Job " + jobId + " not found in response");
+            return null;
+            
+        } catch (ApiException e) {
+            if (e.getCode() == 404) {
+                LOGGER.info("Job " + jobId + " not found (404) - may have been cleaned up");
+                return null;
+            }
+            LOGGER.log(Level.WARNING, 
+                      "Failed to get job state for " + jobId + ": HTTP " + e.getCode() + 
+                      " - " + e.getMessage(), e);
+            throw e;
+        }
+    }
+    
+    /**
+     * Extract exit code from JobInfo
+     * Slurm stores exit codes in the exit_code field which contains return_code with the actual exit code number
+     * @param jobInfo The job info object
+     * @return The exit code, or null if not available
+     */
+    private Integer getExitCode(io.jenkins.plugins.slurm.client.model.JobInfo jobInfo) {
+        try {
+            if (jobInfo.getExitCode() != null && 
+                jobInfo.getExitCode().getReturnCode() != null &&
+                jobInfo.getExitCode().getReturnCode().getNumber() != null) {
+                Integer exitCode = jobInfo.getExitCode().getReturnCode().getNumber();
+                LOGGER.info("Job exit code extracted: " + exitCode);
+                return exitCode;
+            }
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Could not extract exit code from job info", e);
+        }
+        return null;
+    }
+    
+    /**
+     * Check if a job is in a terminal (finished) state
+     * @param jobState The job state to check
+     * @return true if the job is in a terminal state (COMPLETED, FAILED, CANCELLED, TIMEOUT, etc.)
+     */
+    public static boolean isTerminalState(String jobState) {
+        if (jobState == null) {
+            return false;
+        }
+        
+        // Terminal states indicate the job has finished (successfully or not)
+        return jobState.equals("COMPLETED") ||
+               jobState.equals("FAILED") ||
+               jobState.equals("CANCELLED") ||
+               jobState.equals("TIMEOUT") ||
+               jobState.equals("NODE_FAIL") ||
+               jobState.equals("BOOT_FAIL") ||
+               jobState.equals("DEADLINE") ||
+               jobState.equals("OUT_OF_MEMORY");
+    }
+    
+    /**
+     * Check if a job is in a failed state (not successful completion)
+     * @param jobState The job state to check
+     * @return true if the job failed (FAILED, CANCELLED, TIMEOUT, NODE_FAIL, etc.)
+     */
+    public static boolean isFailedState(String jobState) {
+        if (jobState == null) {
+            return false;
+        }
+        
+        // Failed states indicate the job did not complete successfully
+        return jobState.equals("FAILED") ||
+               jobState.equals("CANCELLED") ||
+               jobState.equals("TIMEOUT") ||
+               jobState.equals("NODE_FAIL") ||
+               jobState.equals("BOOT_FAIL") ||
+               jobState.equals("DEADLINE") ||
+               jobState.equals("OUT_OF_MEMORY");
+    }
 }

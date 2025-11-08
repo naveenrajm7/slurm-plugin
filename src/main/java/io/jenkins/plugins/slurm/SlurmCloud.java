@@ -32,10 +32,13 @@ import io.jenkins.plugins.slurm.client.SlurmPingInfo;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
@@ -182,54 +185,135 @@ public class SlurmCloud extends AbstractCloudImpl {
         // Extract label from state
         Label label = state.getLabel();
         
-        LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
-                   ", excessWorkload=" + excessWorkload);
+        // Get currently provisioning agents for this label
+        Set<String> allInProvisioning = InProvisioning.getAllInProvisioning(label);
+        LOGGER.log(Level.FINE, "In provisioning for label {0}: {1}", 
+            new Object[]{label, allInProvisioning});
         
-        // Find appropriate job template for this label
-        SlurmJobTemplate jobTemplate = getJobTemplateFor(label);
-        if (jobTemplate == null) {
+        // Calculate how many we actually need to provision
+        // Subtract agents already being provisioned from excess workload
+        int toBeProvisioned = Math.max(0, excessWorkload - allInProvisioning.size());
+        
+        LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
+                   ", excessWorkload=" + excessWorkload + 
+                   ", inProvisioning=" + allInProvisioning.size() +
+                   ", toBeProvisioned=" + toBeProvisioned);
+        
+        if (toBeProvisioned <= 0) {
+            LOGGER.fine("Slurm Cloud: Nothing to provision - agents already being provisioned");
+            return Collections.emptyList();
+        }
+        
+        // Get templates that match this label
+        List<SlurmJobTemplate> templates = getTemplatesFor(label);
+        if (templates.isEmpty()) {
             LOGGER.warning("Slurm Cloud: No template configured for label: " + 
                          (label != null ? label.getName() : "none"));
             return Collections.emptyList();
         }
         
-        LOGGER.info("Slurm Cloud: Using job template: " + jobTemplate.getName() + 
-                   " for label: " + (label != null ? label.getName() : "none"));
-        
-        // Check if we can provision more agents
-        int currentAgents = getCurrentAgentCount();
-        if (currentAgents >= maxAgents) {
-            LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
-            return Collections.emptyList();
-        }
-        
-        // Check template-specific instance capacity
-        int templateAgents = getCurrentTemplateAgentCount(jobTemplate);
-        if (templateAgents >= jobTemplate.getInstanceCapStr()) {
-            LOGGER.info("Slurm Cloud: Cannot provision - template '" + jobTemplate.getName() + 
-                       "' at capacity limit (" + jobTemplate.getInstanceCapStr() + ")");
-            return Collections.emptyList();
-        }
-        
-        // Provision up to the requested excess workload, but respect limits
-        int maxToProvision = Math.min(excessWorkload, 
-                                    Math.min(maxAgents - currentAgents, 
-                                           jobTemplate.getInstanceCapStr() - templateAgents));
-        
         List<PlannedNode> plannedNodes = new ArrayList<>();
-        for (int i = 0; i < maxToProvision; i++) {
-            try {
-                PlannedNode plannedNode = createPlannedNode(jobTemplate, label);
-                if (plannedNode != null) {
-                    plannedNodes.add(plannedNode);
+        
+        // Try each template until we satisfy the workload or run out of capacity
+        for (SlurmJobTemplate jobTemplate : templates) {
+            LOGGER.log(Level.FINE, "Template for label \"{0}\": {1}", 
+                new Object[]{label, jobTemplate.getName()});
+            
+            // Check cloud-wide capacity
+            int currentAgents = getCurrentAgentCount();
+            if (currentAgents >= maxAgents) {
+                LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
+                break;  // Can't provision from any template
+            }
+            
+            // Check template-specific capacity
+            // Count: online agents + in-provisioning agents for this template
+            int templateOnlineCount = getCurrentTemplateAgentCount(jobTemplate);
+            int templateInProvisioningCount = countInProvisioningForTemplate(jobTemplate, allInProvisioning);
+            int templateCurrentTotal = templateOnlineCount + templateInProvisioningCount;
+            int templateCapacity = jobTemplate.getInstanceCapStr();
+            
+            if (templateCurrentTotal >= templateCapacity) {
+                LOGGER.fine("Slurm Cloud: Template '" + jobTemplate.getName() + 
+                           "' at capacity (" + templateCurrentTotal + "/" + templateCapacity + ")");
+                continue;  // Try next template
+            }
+            
+            // Calculate how many we can provision with this template
+            int templateAvailable = templateCapacity - templateCurrentTotal;
+            int cloudAvailable = maxAgents - currentAgents;
+            int maxFromThisTemplate = Math.min(toBeProvisioned, 
+                                              Math.min(templateAvailable, cloudAvailable));
+            
+            // Provision agents from this template
+            for (int i = 0; i < maxFromThisTemplate; i++) {
+                try {
+                    PlannedNode plannedNode = createPlannedNode(jobTemplate, label);
+                    if (plannedNode != null) {
+                        plannedNodes.add(plannedNode);
+                        toBeProvisioned--;
+                    }
+                } catch (Exception e) {
+                    LOGGER.warning("Failed to create planned node for template " + 
+                        jobTemplate.getName() + ": " + e.getMessage());
                 }
-            } catch (Exception e) {
-                LOGGER.warning("Failed to create planned node for template " + jobTemplate.getName() + ": " + e.getMessage());
+            }
+            
+            // Early return if we've satisfied the workload
+            if (!plannedNodes.isEmpty()) {
+                LOGGER.log(Level.FINE, "Planned {0} Slurm agents with template \"{1}\"", 
+                    new Object[]{plannedNodes.size(), jobTemplate.getName()});
+                return plannedNodes;
             }
         }
         
-        LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents using template: " + jobTemplate.getName());
+        LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents");
         return plannedNodes;
+    }
+    
+    /**
+     * Get all templates that can handle the given label.
+     * Similar to K8s plugin's getTemplatesFor().
+     */
+    @NonNull
+    private List<SlurmJobTemplate> getTemplatesFor(@CheckForNull Label label) {
+        List<SlurmJobTemplate> matchingTemplates = new ArrayList<>();
+        List<SlurmJobTemplate> allTemplates = getJobTemplates();
+        
+        if (allTemplates == null || allTemplates.isEmpty()) {
+            return matchingTemplates;
+        }
+        
+        for (SlurmJobTemplate template : allTemplates) {
+            if (template.canTake(label != null ? label.getName() : null)) {
+                matchingTemplates.add(template);
+            }
+        }
+        
+        return matchingTemplates;
+    }
+    
+    /**
+     * Count how many agents for this template are currently in provisioning.
+     * This checks the in-provisioning set to see how many agent names match
+     * the pattern for this template.
+     */
+    private int countInProvisioningForTemplate(SlurmJobTemplate template, Set<String> inProvisioning) {
+        if (inProvisioning.isEmpty()) {
+            return 0;
+        }
+        
+        // Agent names follow pattern: cloudName-templateName-timestamp
+        String templatePrefix = name + "-" + template.getName() + "-";
+        int count = 0;
+        
+        for (String agentName : inProvisioning) {
+            if (agentName.startsWith(templatePrefix)) {
+                count++;
+            }
+        }
+        
+        return count;
     }
     
     /**
@@ -299,13 +383,26 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       
                                       // 5. Get the computer and trigger the launcher to submit Slurm job
                                       hudson.model.Computer computer = agent.toComputer();
-                                      if (computer != null) {
-                                          LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
-                                          computer.connect(false);  // Trigger the launcher
-                                      } else {
-                                          LOGGER.warning("Slurm Cloud: Computer is null for agent " + agentName);
+                                      if (computer == null) {
+                                          LOGGER.severe("Slurm Cloud: Computer is null for agent " + agentName);
+                                          // Remove the node since we can't launch it
+                                          Jenkins.get().removeNode(agent);
+                                          throw new IOException("Computer is null for agent " + agentName);
                                       }
                                       
+                                      LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
+                                      
+                                      // Trigger the launcher asynchronously (Kubernetes plugin pattern)
+                                      // The launcher will:
+                                      // 1. Submit Slurm job
+                                      // 2. Poll job status (RUNNING/FAILED)  
+                                      // 3. Wait for agent JNLP connection
+                                      // 4. On failure: cancel job, set offline, throw → removes from capacity
+                                      computer.connect(false);  // Starts async LaunchThread
+                                      
+                                      // Return immediately - don't block the provisioning thread
+                                      // The launcher handles all waiting and failure scenarios
+                                      LOGGER.info("Agent " + agentName + " created, launcher triggered");
                                       return agent;
                                       
                                   } catch (Exception e) {
