@@ -1,7 +1,10 @@
 package io.jenkins.plugins.slurm;
 
 import hudson.Extension;
+import hudson.model.Computer;
 import hudson.model.Descriptor;
+import hudson.model.Executor;
+import hudson.model.Queue;
 import hudson.model.TaskListener;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.NodeProperty;
@@ -11,6 +14,7 @@ import hudson.slaves.Cloud;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity.Id;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -40,6 +44,9 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     
     // Cloud-stats tracking ID
     private final Id cloudStatsId;
+    
+    // Pipeline build context (transient - not persisted)
+    private transient TaskListener runListener;  // Build's TaskListener for pipeline error reporting
     
     /**
      * Creates a new Slurm agent.
@@ -179,6 +186,60 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         }
         
         return (SlurmCloud) cloud;
+    }
+    
+    /**
+     * Makes a best effort to find the build log corresponding to this agent.
+     * This allows error messages from the launcher to appear in the pipeline build console.
+     * 
+     * Following K8s pattern: First checks cached listener (set during provisioning),
+     * then falls back to scanning executors.
+     * 
+     * @return TaskListener for the build that is using this agent, or TaskListener.NULL if not found
+     */
+    @NonNull
+    public TaskListener getRunListener() {
+        // FIRST: Check if we have a cached listener from provisioning (K8s pattern)
+        if (runListener != null) {
+            return runListener;
+        }
+        
+        // SECOND: Fall back to scanning active executors
+        Computer c = toComputer();
+        if (c != null) {
+            for (Executor executor : c.getExecutors()) {
+                Queue.Executable executable = executor.getCurrentExecutable();
+                // If this executor hosts a PlaceholderExecutable, send to the owning build log.
+                if (executable != null) {
+                    Queue.Executable parentExecutable = executable.getParentExecutable();
+                    if (parentExecutable instanceof FlowExecutionOwner.Executable) {
+                        FlowExecutionOwner flowExecutionOwner =
+                                ((FlowExecutionOwner.Executable) parentExecutable).asFlowExecutionOwner();
+                        if (flowExecutionOwner != null) {
+                            try {
+                                return flowExecutionOwner.getListener();
+                            } catch (IOException x) {
+                                LOGGER.log(Level.WARNING, null, x);
+                            }
+                        }
+                    }
+                }
+                // TODO handle freestyle and similar if executable instanceof Run, by capturing a TaskListener from
+                // RunListener.onStarted
+            }
+        }
+        return TaskListener.NULL;
+    }
+    
+    /**
+     * Sets the build's TaskListener for this agent.
+     * This should be called during provisioning to enable error messages
+     * to appear in the build console even before an executor is assigned.
+     * 
+     * @param runListener The TaskListener from the pipeline build
+     */
+    public void setRunListener(TaskListener runListener) {
+        this.runListener = runListener;
     }
     
     /**

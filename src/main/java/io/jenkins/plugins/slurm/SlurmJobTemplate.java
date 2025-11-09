@@ -19,6 +19,7 @@ import jenkins.model.Jenkins;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.model.TaskListener;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -199,6 +200,9 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     // Container support (Pyxis/Enroot)
     private PyxisConfig pyxis;                   // Pyxis container configuration
+    
+    // Pipeline build context (transient - not persisted)
+    private transient TaskListener listener;     // Build's TaskListener for pipeline error reporting
     
     @DataBoundConstructor
     public SlurmJobTemplate() {
@@ -820,6 +824,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setPyxis(PyxisConfig pyxis) {
         this.pyxis = pyxis;
+    }
+    
+    // Pipeline build context (listener for error reporting)
+    @CheckForNull
+    public TaskListener getListenerOrNull() {
+        return listener;
+    }
+    
+    public void setListener(TaskListener listener) {
+        this.listener = listener;
     }
     
     // ====================

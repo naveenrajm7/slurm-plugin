@@ -386,7 +386,15 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           cloudStatsId                                  // cloud-stats tracking ID
                                       );
                                       
-                                      // 4. Add agent to Jenkins
+                                      // 4. Set the TaskListener from template to agent (K8s pattern)
+                                      // This enables error messages to appear in build console even before executor assignment
+                                      hudson.model.TaskListener templateListener = jobTemplate.getListenerOrNull();
+                                      if (templateListener != null) {
+                                          agent.setRunListener(templateListener);
+                                          LOGGER.fine("Set build TaskListener on agent for error reporting");
+                                      }
+                                      
+                                      // 5. Add agent to Jenkins
                                       Jenkins.get().addNode(agent);
                                       
                                       LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
@@ -408,6 +416,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       // 2. Poll job status (RUNNING/FAILED)  
                                       // 3. Wait for agent JNLP connection
                                       // 4. On failure: cancel job, set offline, throw → removes from capacity
+                                      // 5. Write errors to build console via agent.getRunListener()
                                       computer.connect(false);  // Starts async LaunchThread
                                       
                                       // Return immediately - don't block the provisioning thread

@@ -6,6 +6,7 @@ import hudson.model.ItemGroup;
 import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Run;
+import hudson.model.TaskListener;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmFolderProperty;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
@@ -62,6 +63,11 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
         
         // Build the job template from step configuration
         SlurmJobTemplate template = step.buildJobTemplate(cloud);
+        
+        // Capture the build's TaskListener and store it on the template
+        // This allows error messages to appear in the build console even if provisioning fails
+        TaskListener stepListener = getContext().get(TaskListener.class);
+        template.setListener(stepListener);
         
         // Temporarily add template to cloud if it has a label
         // This allows the cloud to provision agents based on this template
