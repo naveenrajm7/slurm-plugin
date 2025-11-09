@@ -1,0 +1,23 @@
+<div>
+  <p>
+    When enabled, this Slurm cloud will only be available to jobs in folders that have been explicitly granted permission to use it.
+  </p>
+  <p>
+    This provides fine-grained access control, allowing administrators to restrict which teams or projects can use specific Slurm clusters.
+  </p>
+  <p>
+    To grant permissions:
+  </p>
+  <ol>
+    <li>Enable this option on the Slurm cloud</li>
+    <li>Go to a folder's configuration</li>
+    <li>Add the "Slurm" folder property</li>
+    <li>Select which clouds are permitted for that folder</li>
+  </ol>
+  <p>
+    Permissions are inherited by subfolders, so you can configure access at any level of the folder hierarchy.
+  </p>
+  <p>
+    <strong>Note:</strong> When this option is disabled, the cloud is available to all jobs without restriction.
+  </p>
+</div>

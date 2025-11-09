@@ -62,6 +62,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     private final int agentTimeoutMinutes;
     private String jenkinsUrl;  // Optional - if not set, will auto-detect
     private List<SlurmJobTemplate> jobTemplates;
+    private boolean usageRestricted = false;
     
     @DataBoundConstructor
     public SlurmCloud(String name,
@@ -118,6 +119,15 @@ public class SlurmCloud extends AbstractCloudImpl {
     @DataBoundSetter
     public void setJobTemplates(List<SlurmJobTemplate> jobTemplates) {
         this.jobTemplates = jobTemplates != null ? jobTemplates : new ArrayList<>();
+    }
+    
+    public boolean isUsageRestricted() {
+        return usageRestricted;
+    }
+    
+    @DataBoundSetter
+    public void setUsageRestricted(boolean usageRestricted) {
+        this.usageRestricted = usageRestricted;
     }
     
     /**

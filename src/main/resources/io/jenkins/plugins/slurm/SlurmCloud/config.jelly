@@ -36,6 +36,10 @@
       <f:textbox />
     </f:entry>
     
+    <f:entry title="Restrict pipeline support to authorized folders" field="usageRestricted">
+      <f:checkbox />
+    </f:entry>
+    
     <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId" />
     
   </f:section>

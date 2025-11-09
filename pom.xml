@@ -76,6 +76,12 @@
       <artifactId>cloud-stats</artifactId>
     </dependency>
     
+    <!-- Folder plugin for access control -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloudbees-folder</artifactId>
+    </dependency>
+    
     <!-- SSH launcher for connecting to Slurm nodes -->
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>

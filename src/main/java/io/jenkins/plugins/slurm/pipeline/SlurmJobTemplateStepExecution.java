@@ -2,8 +2,12 @@ package io.jenkins.plugins.slurm.pipeline;
 
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.AbortException;
+import hudson.model.ItemGroup;
+import hudson.model.Job;
 import hudson.model.Label;
+import hudson.model.Run;
 import io.jenkins.plugins.slurm.SlurmCloud;
+import io.jenkins.plugins.slurm.SlurmFolderProperty;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
 import io.jenkins.plugins.slurm.SlurmJobTemplateUtils;
 import jenkins.model.Jenkins;
@@ -14,6 +18,8 @@ import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
 
 import java.io.Serializable;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -47,6 +53,12 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
         }
         
         LOGGER.log(Level.INFO, "Using Slurm cloud: {0}", cloud.name);
+        
+        // Check access if cloud is usage restricted
+        Run<?, ?> run = getContext().get(Run.class);
+        if (cloud.isUsageRestricted()) {
+            checkAccess(run, cloud);
+        }
         
         // Build the job template from step configuration
         SlurmJobTemplate template = step.buildJobTemplate(cloud);
@@ -113,6 +125,24 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
         }
         
         return null;
+    }
+    
+    /**
+     * Check if the current Job is permitted to use the cloud.
+     *
+     * @param run The current build run
+     * @param slurmCloud The Slurm cloud to check access for
+     * @throws AbortException if the Job has not been authorized to use the slurmCloud
+     */
+    private void checkAccess(Run<?, ?> run, SlurmCloud slurmCloud) throws AbortException {
+        Job<?, ?> job = run.getParent(); // Return the associated Job for this Build
+        ItemGroup<?> parent = job.getParent(); // Get the Parent of the Job (which might be a Folder)
+
+        Set<String> allowedClouds = new HashSet<>();
+        SlurmFolderProperty.collectAllowedClouds(allowedClouds, parent);
+        if (!allowedClouds.contains(slurmCloud.name)) {
+            throw new AbortException(String.format("Not authorized to use Slurm cloud: %s", step.getCloud()));
+        }
     }
     
     /**

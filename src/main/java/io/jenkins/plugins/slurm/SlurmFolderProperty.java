@@ -1,0 +1,218 @@
+package io.jenkins.plugins.slurm;
+
+import com.cloudbees.hudson.plugins.folder.AbstractFolder;
+import com.cloudbees.hudson.plugins.folder.AbstractFolderProperty;
+import com.cloudbees.hudson.plugins.folder.AbstractFolderPropertyDescriptor;
+import edu.umd.cs.findbugs.annotations.NonNull;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import hudson.Extension;
+import hudson.model.Descriptor.FormException;
+import hudson.model.ItemGroup;
+import hudson.model.Job;
+import hudson.slaves.Cloud;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+import jenkins.model.Jenkins;
+import net.sf.json.JSONArray;
+import net.sf.json.JSONObject;
+import org.jenkinsci.Symbol;
+import org.kohsuke.accmod.Restricted;
+import org.kohsuke.accmod.restrictions.DoNotUse;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest2;
+
+/**
+ * Provides folder level Slurm configuration.
+ */
+public class SlurmFolderProperty extends AbstractFolderProperty<AbstractFolder<?>> {
+
+    private static final String PREFIX_USAGE_PERMISSION = "usage-permission-";
+
+    private List<String> permittedClouds = new ArrayList<>();
+
+    /**
+     * Constructor.
+     */
+    @DataBoundConstructor
+    public SlurmFolderProperty() {}
+
+    @DataBoundSetter
+    public void setPermittedClouds(Collection<String> permittedClouds) {
+        this.permittedClouds = permittedClouds == null ? Collections.emptyList() : new ArrayList<>(permittedClouds);
+    }
+
+    public Collection<String> getPermittedClouds() {
+        return permittedClouds == null ? Collections.emptyList() : Collections.unmodifiableList(permittedClouds);
+    }
+
+    private static Set<String> getInheritedClouds(ItemGroup parent) {
+        Set<String> inheritedPermissions = new HashSet<>();
+        collectAllowedClouds(inheritedPermissions, parent);
+        return inheritedPermissions;
+    }
+
+    @SuppressWarnings({"rawtypes"})
+    public static boolean isAllowed(SlurmAgent agent, Job job) {
+        ItemGroup parent = job.getParent();
+        Set<String> allowedClouds = new HashSet<>();
+
+        SlurmCloud targetCloud = agent.getSlurmCloud();
+        if (targetCloud.isUsageRestricted()) {
+            SlurmFolderProperty.collectAllowedClouds(allowedClouds, parent);
+            return allowedClouds.contains(targetCloud.name);
+        }
+        return true;
+    }
+
+    @Override
+    public AbstractFolderProperty<?> reconfigure(StaplerRequest2 req, JSONObject form) throws FormException {
+        // ignore modifications silently and return the unmodified object if the user
+        // does not have the ADMINISTER Permission
+        if (!userHasAdministerPermission()) {
+            return this;
+        }
+
+        if (form == null) {
+            return null;
+        }
+
+        // Backwards compatibility: this method was expecting a set of entries PREFIX_USAGE_PERMISSION+cloudName -->
+        // true | false
+        // Now we're getting a set of permitted cloud names inside permittedClouds entry
+        Set<String> formCloudNames = new HashSet<>();
+        if (!form.has("permittedClouds")) {
+            form.names().stream()
+                    .filter(x -> form.getBoolean(x.toString()))
+                    .forEach(x -> formCloudNames.add(x.toString().replace(PREFIX_USAGE_PERMISSION, "")));
+        } else {
+            JSONArray clouds = form.optJSONArray("permittedClouds");
+            if (clouds != null) {
+                formCloudNames.addAll(clouds.stream().map(x -> x.toString()).collect(Collectors.toSet()));
+            } else {
+                formCloudNames.add(form.getString("permittedClouds")); // arrays with 1 element are considered objects
+            }
+        }
+        setPermittedClouds(formCloudNames);
+        return this;
+    }
+
+    /**
+     * Recursively collect all allowed clouds from this folder and its parents.
+     *
+     * @param allowedClouds
+     *            This Set contains all allowed clouds after returning.
+     * @param itemGroup
+     *            The itemGroup to inspect.
+     */
+    public static void collectAllowedClouds(Set<String> allowedClouds, ItemGroup<?> itemGroup) {
+        if (itemGroup instanceof AbstractFolder) {
+            AbstractFolder<?> folder = (AbstractFolder<?>) itemGroup;
+            SlurmFolderProperty slurmFolderProperty =
+                    folder.getProperties().get(SlurmFolderProperty.class);
+
+            if (slurmFolderProperty != null) {
+                allowedClouds.addAll(slurmFolderProperty.getPermittedClouds());
+            }
+
+            collectAllowedClouds(allowedClouds, folder.getParent());
+        }
+    }
+
+    private static List<SlurmCloud> getUsageRestrictedSlurmClouds() {
+        List<SlurmCloud> clouds = Jenkins.get().clouds.getAll(SlurmCloud.class).stream()
+                .filter(SlurmCloud::isUsageRestricted)
+                .collect(Collectors.toList());
+        clouds.sort(Comparator.<Cloud, String>comparing(o -> o.name));
+        return clouds;
+    }
+
+    public static class UsagePermission {
+
+        private boolean granted;
+
+        private boolean inherited;
+
+        private String name;
+
+        public UsagePermission(String name, boolean granted, boolean inherited) {
+            this.name = name;
+            this.granted = granted;
+            this.inherited = inherited;
+        }
+
+        public boolean isInherited() {
+            return inherited;
+        }
+
+        @SuppressWarnings("unused") // by stapler/jelly
+        public boolean isGranted() {
+            return granted;
+        }
+
+        /**
+         * Called from Jelly.
+         *
+         * @return
+         */
+        public String getName() {
+            return name;
+        }
+
+        @SuppressWarnings("unused") // by stapler/jelly
+        public boolean isReadonly() {
+            return !userHasAdministerPermission() || isInherited();
+        }
+    }
+
+    private static boolean userHasAdministerPermission() {
+        return Jenkins.get().hasPermission(Jenkins.ADMINISTER);
+    }
+
+    @SuppressFBWarnings(value = "UPM_UNCALLED_PRIVATE_METHOD")
+    private static boolean isUsageRestrictedSlurmCloud(Cloud cloud) {
+        if (cloud instanceof SlurmCloud) {
+            return ((SlurmCloud) cloud).isUsageRestricted();
+        }
+        return false;
+    }
+
+    /**
+     * Descriptor class.
+     */
+    @Extension
+    @Symbol("slurm")
+    public static class DescriptorImpl extends AbstractFolderPropertyDescriptor {
+
+        @NonNull
+        @Override
+        public String getDisplayName() {
+            return Messages.SlurmFolderProperty_displayName();
+        }
+
+        @SuppressWarnings("unused") // Used by jelly
+        @Restricted(DoNotUse.class)
+        public List<UsagePermission> getEffectivePermissions() {
+            Set<String> inheritedClouds = getInheritedClouds(Stapler.getCurrentRequest2()
+                    .findAncestorObject(AbstractFolder.class)
+                    .getParent());
+            List<UsagePermission> ps = getUsageRestrictedSlurmClouds().stream()
+                    .map(cloud -> new UsagePermission(
+                            cloud.name, inheritedClouds.contains(cloud.name), inheritedClouds.contains(cloud.name)))
+                    .collect(Collectors.toList());
+            // a non-admin User is only allowed to see granted clouds
+            if (!userHasAdministerPermission()) {
+                ps = ps.stream().filter(UsagePermission::isGranted).collect(Collectors.toList());
+            }
+
+            return ps;
+        }
+    }
+}
