@@ -1,10 +1,10 @@
 package io.jenkins.plugins.slurm;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 import hudson.util.FormValidation;
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * Tests for {@link SlurmCloud}.

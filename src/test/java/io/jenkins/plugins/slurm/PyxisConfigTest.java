@@ -1,12 +1,12 @@
 package io.jenkins.plugins.slurm;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
-import org.junit.jupiter.api.Test;
+import org.junit.Test;
 
 /**
  * Tests for {@link PyxisConfig}.
@@ -22,7 +22,7 @@ public class PyxisConfigTest {
         assertEquals(Boolean.TRUE, config.getContainerMountHome());
         assertEquals("", config.getContainerWorkdir());
         assertEquals("", config.getContainerName());
-        assertNull(config.getContainerRemap());
+        assertEquals(Boolean.FALSE, config.getContainerRemap());
         assertEquals("", config.getContainerSave());
         assertEquals(Boolean.FALSE, config.getContainerWritable());
         assertEquals("", config.getContainerEntrypoint());
