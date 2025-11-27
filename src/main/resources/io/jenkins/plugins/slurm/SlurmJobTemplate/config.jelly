@@ -29,7 +29,7 @@
 
     <f:entry field="currentWorkingDirectory" title="Working Directory" 
              description="Working directory for the job (will contain Jenkins agent files)">
-      <f:textbox default="/tmp/jenkins"/>
+      <f:textbox default="/var/jenkins_home"/>
     </f:entry>
 
     <f:entry field="cpusPerTask" title="CPUs per Task" 
