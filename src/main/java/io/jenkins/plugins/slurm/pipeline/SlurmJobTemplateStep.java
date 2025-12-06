@@ -2,6 +2,8 @@ package io.jenkins.plugins.slurm.pipeline;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException;
 import com.google.common.collect.ImmutableSet;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
@@ -67,7 +69,7 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     
     // ObjectMapper for JSON deserialization
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true)
             .configure(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT, true);
     
     // Cloud configuration
@@ -354,10 +356,21 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             
             LOGGER.fine("Successfully applied JSON configuration to template");
             
+        } catch (UnrecognizedPropertyException e) {
+            String errorMsg = String.format(
+                "Unknown field '%s' in JSON configuration. Check spelling and refer to Slurm REST API documentation.",
+                e.getPropertyName()
+            );
+            LOGGER.severe(errorMsg);
+            throw new IllegalArgumentException(errorMsg, e);
+        } catch (JsonMappingException e) {
+            String errorMsg = "Invalid JSON configuration: " + e.getOriginalMessage();
+            LOGGER.severe(errorMsg);
+            throw new IllegalArgumentException(errorMsg, e);
         } catch (Exception e) {
-            LOGGER.warning("Failed to parse JSON configuration: " + e.getMessage());
-            e.printStackTrace();
-            // Continue with other configuration - don't fail the build
+            String errorMsg = "Failed to parse JSON configuration: " + e.getMessage();
+            LOGGER.severe(errorMsg);
+            throw new IllegalArgumentException(errorMsg, e);
         }
         
         return hasAgentSettings;
