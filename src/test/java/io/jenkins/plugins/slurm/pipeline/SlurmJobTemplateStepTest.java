@@ -2,6 +2,7 @@ package io.jenkins.plugins.slurm.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
@@ -34,45 +35,47 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testJsonConfiguration() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"partition\": \"gpu\", \"cpus\": 16, \"memory\": \"32G\", \"time\": \"02:00:00\", \"gres\": \"gpu:gfx1030:1\"}";
+        String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 16, \"memory_per_node\": 32768, \"time_limit\": 120, \"tres_per_job\": \"gres/gpu:gfx1030:1\"}}";
         step.setJson(json);
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
         assertEquals("gpu", template.getPartition());
-        // Note: JSON parsing in buildJobTemplate will set these fields
+        assertEquals(Integer.valueOf(16), template.getCpusPerTask());
+        assertEquals(Long.valueOf(32768), template.getMemoryPerNode());
     }
 
     @Test
     public void testJsonWithContainers() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"partition\": \"gpu\", \"cpus\": 8, \"containerImage\": \"nvcr.io/nvidia/pytorch:latest\", \"containerMounts\": \"/data:/data\", \"containerWorkdir\": \"/workspace\", \"containerMountHome\": true}";
+        String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 8}, \"pyxis\": {\"container_image\": \"nvcr.io/nvidia/pytorch:latest\", \"container_mounts\": \"/data:/data\", \"container_workdir\": \"/workspace\", \"container_mount_home\": true}}";
         step.setJson(json);
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
         assertEquals("gpu", template.getPartition());
-        // Container configuration will be parsed from JSON
+        assertEquals(Integer.valueOf(8), template.getCpusPerTask());
+        assertNotNull(template.getPyxis());
+        assertEquals("nvcr.io/nvidia/pytorch:latest", template.getPyxis().getContainerImage());
     }
 
     @Test
     public void testPropertiesOverrideJson() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        
+
         // Set JSON configuration
-        String json = "{\"partition\": \"gpu\", \"cpus\": 8, \"memory\": \"16G\"}";
+        String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 8, \"memory_per_node\": 16384}}";
         step.setJson(json);
-        
+
         // Set properties that should override JSON
-        step.setCpus(16); // Should override JSON value of 8
-        step.setPartition("cpu"); // Should override JSON value of "gpu"
-        
+        step.setCpus(16);        // overrides JSON value of 8
+        step.setPartition("cpu"); // overrides JSON value of "gpu"
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
-        // Properties override JSON values
         assertEquals("cpu", template.getPartition());
         assertEquals(Integer.valueOf(16), template.getCpusPerTask());
     }
@@ -80,13 +83,17 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testAdvancedJsonFields() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"account\": \"project123\", \"qos\": \"high\", \"reservation\": \"gpu_res\", \"constraints\": \"volta\", \"nodes\": \"2\", \"tasks\": 4}";
+        String json = "{\"job\": {\"account\": \"project123\", \"qos\": \"high\", \"reservation\": \"gpu_res\", \"constraints\": \"volta\", \"minimum_nodes\": 2, \"tasks\": 4}}";
         step.setJson(json);
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
-        // These advanced fields should be parsed from JSON
+        assertEquals("project123", template.getAccount());
+        assertEquals("high", template.getQos());
+        assertEquals("gpu_res", template.getReservation());
+        assertEquals("volta", template.getConstraints());
+        assertEquals(Integer.valueOf(4), template.getTasks());
     }
 
     @Test
@@ -114,18 +121,20 @@ public class SlurmJobTemplateStepTest {
     }
 
     @Test
-    public void testInvalidJsonFallsBackToProperties() {
+    public void testInvalidJsonThrows() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
         step.setJson("{invalid json");
-        step.setCpus(8);
-        step.setPartition("gpu");
-        
-        // Even with invalid JSON, properties should work
-        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
-        assertNotNull(template);
-        assertEquals("gpu", template.getPartition());
-        assertEquals(Integer.valueOf(8), template.getCpusPerTask());
+
+        assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
+    }
+
+    @Test
+    public void testJsonMissingJobKeyThrows() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        // Flat format without the required "job" wrapper key
+        step.setJson("{\"partition\": \"gpu\", \"cpus_per_task\": 8}");
+
+        assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
     }
 
     @Test
