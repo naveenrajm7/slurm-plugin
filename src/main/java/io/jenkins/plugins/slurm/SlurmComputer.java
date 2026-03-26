@@ -66,7 +66,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     @Override
     public void taskAccepted(Executor executor, Queue.Task task) {
         super.taskAccepted(executor, task);
-        LOGGER.log(Level.FINE, "Computer {0} accepted task {1}", 
+        LOGGER.log(Level.FINE, "Computer {0} accepted task {1}",
                   new Object[]{this, task.getFullDisplayName()});
     }
     

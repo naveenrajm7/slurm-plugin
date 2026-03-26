@@ -50,18 +50,20 @@ public class SlurmDeclarativeAgentScript extends DeclarativeAgentScript2<SlurmDe
             describable.json = script.readTrusted(describable.jsonFile)
         }
         
-        // Convert declarative agent configuration to slurmJobTemplate arguments
+        // Convert declarative agent configuration to slurmJobTemplate arguments.
+        // args.label is already a unique per-invocation label (set by
+        // SlurmDeclarativeAgent.getLabel() which appends a nanoTime suffix).
+        // Do NOT overwrite it here — two concurrent builds with the same
+        // user-specified label must get different unique labels so they each
+        // get their own Slurm agent.
         def args = describable.asArgs
-        
-        // Get or generate a label for this agent
-        def agentLabel = describable.label ?: "slurm-${UUID.randomUUID().toString()}"
-        args.label = agentLabel
-        
+
         // Use slurmJobTemplate step to create the agent environment
         script.slurmJobTemplate(args) {
-            // Request a node with the specific label
-            // This will trigger the Slurm cloud to provision an agent
-            script.node(agentLabel) {
+            // Request a node with the unique label baked into args.
+            // The template registered by slurmJobTemplate uses this same label,
+            // so the provisioned agent will match exactly this build's request.
+            script.node(args.label) {
                 // Use doCheckout2 for declarative pipelines - this properly executes the body
                 CheckoutScript.doCheckout2(script, describable, describable.customWorkspace) {
                     body.call()

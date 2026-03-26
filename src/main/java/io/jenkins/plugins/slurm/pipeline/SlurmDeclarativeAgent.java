@@ -80,9 +80,17 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     // Cloud and label configuration
     @CheckForNull
     private String cloud;
-    
+
     @CheckForNull
     private String label;
+
+    /**
+     * Unique label generated per declarative agent invocation.
+     * Stable across getLabel()/getAsArgs() calls within one pipeline execution.
+     * Ensures concurrent builds each get their own dedicated agent (no sharing).
+     */
+    @CheckForNull
+    private String uniqueLabel;
     
     @CheckForNull
     private String customWorkspace;
@@ -188,9 +196,22 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         this.cloud = Util.fixEmpty(cloud);
     }
     
+    /**
+     * Returns a stable unique label for this declarative agent invocation.
+     * Appends a nanoTime hex suffix to the user-specified label so that two
+     * concurrent builds with the same label never compete for the same agent.
+     * The value is generated once and cached so getLabel() and getAsArgs()
+     * always agree on the same label.
+     */
     @CheckForNull
     public String getLabel() {
-        return label;
+        if (label == null) {
+            return null;
+        }
+        if (uniqueLabel == null) {
+            uniqueLabel = label + "-" + Long.toHexString(System.nanoTime());
+        }
+        return uniqueLabel;
     }
     
     public String getLabelExpression() {
@@ -537,7 +558,8 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
             argMap.put("cloud", cloud);
         }
         if (label != null) {
-            argMap.put("label", label);
+            // Use the unique per-invocation label (same value as getLabel())
+            argMap.put("label", getLabel());
         }
         if (!StringUtils.isEmpty(inheritFrom)) {
             argMap.put("inheritFrom", inheritFrom);
