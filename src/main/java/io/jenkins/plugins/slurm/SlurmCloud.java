@@ -171,12 +171,21 @@ public class SlurmCloud extends AbstractCloudImpl {
      * @param template The template to remove
      */
     public synchronized void removeDynamicTemplate(@NonNull SlurmJobTemplate template) {
-        if (jobTemplates != null) {
-            LOGGER.fine("Removing dynamic template: " + template.getLabel());
-            jobTemplates.removeIf(t -> 
-                template.getLabel() != null && template.getLabel().equals(t.getLabel())
-            );
-        }
+        removeDynamicTemplateById(template.getId());
+    }
+
+    /**
+     * Removes a dynamic template by its unique ID.
+     * Preferred over {@link #removeDynamicTemplate} for concurrent use because
+     * two pipeline runs with the same label won't remove each other's templates.
+     *
+     * @param id the template UUID
+     * @return true if a template was found and removed
+     */
+    public synchronized boolean removeDynamicTemplateById(@NonNull String id) {
+        if (jobTemplates == null) return false;
+        LOGGER.fine("Removing dynamic template by id: " + id);
+        return jobTemplates.removeIf(t -> id.equals(t.getId()));
     }
     
     /**
@@ -360,9 +369,15 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
                                       hudson.slaves.RetentionStrategy<?> retentionStrategy;
                                       if (jobTemplate.isRunOnce()) {
+                                          // OnceRetentionStrategy(0) fires immediately when the agent goes online
+                                          // (idle, not yet connecting) — before Jenkins assigns a build — killing
+                                          // the agent before it can do any work. Use a minimum of 1 minute so
+                                          // the agent has time to receive its first build. Mirrors the Kubernetes
+                                          // plugin's retentionTimeout pattern.
+                                          int idleMinutes = Math.max(1, jobTemplate.getIdleMinutes());
                                           retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
-                                              .OnceRetentionStrategy(jobTemplate.getIdleMinutes());
-                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
+                                              .OnceRetentionStrategy(idleMinutes);
+                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + idleMinutes + ") for agent: " + agentName
                                               + " — agent will not be reused after first build");
                                       } else {
                                           retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());

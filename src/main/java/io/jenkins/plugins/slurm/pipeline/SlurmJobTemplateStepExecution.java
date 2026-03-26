@@ -4,13 +4,11 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.AbortException;
 import hudson.model.ItemGroup;
 import hudson.model.Job;
-import hudson.model.Label;
 import hudson.model.Run;
 import hudson.model.TaskListener;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmFolderProperty;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
-import io.jenkins.plugins.slurm.SlurmJobTemplateUtils;
 import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
@@ -164,51 +162,50 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
      * Callback to clean up the temporary template after execution.
      */
     private static class TemplateCleanupCallback extends BodyExecutionCallback {
-        
+
         private static final long serialVersionUID = 1L;
-        
+
         private final String cloudName;
-        private final String templateLabel;
+        private final String templateId;   // UUID — unique per template instance, avoids label collisions
+        private final String templateLabel; // for logging only
         private final boolean wasAdded;
-        
+
         TemplateCleanupCallback(SlurmCloud cloud, SlurmJobTemplate template, boolean wasAdded) {
             this.cloudName = cloud.name;
+            this.templateId = template.getId();
             this.templateLabel = template.getLabel();
             this.wasAdded = wasAdded;
         }
-        
+
         @Override
         public void onSuccess(StepContext context, Object result) {
             cleanup();
             context.onSuccess(result);
         }
-        
+
         @Override
         public void onFailure(StepContext context, Throwable t) {
             cleanup();
             context.onFailure(t);
         }
-        
+
         private void cleanup() {
-            if (wasAdded && templateLabel != null && cloudName != null) {
-                LOGGER.log(Level.FINE, "Removing temporary template with label: {0} from cloud: {1}", 
-                          new Object[]{templateLabel, cloudName});
-                
-                // Look up the cloud by name
+            if (wasAdded && templateId != null && cloudName != null) {
+                LOGGER.log(Level.FINE, "Removing temporary template id={0} (label={1}) from cloud: {2}",
+                          new Object[]{templateId, templateLabel, cloudName});
+
                 Jenkins jenkins = Jenkins.get();
                 for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
                     if (cloudName.equals(cloud.name)) {
-                        // Find the template by label and remove it
-                        // Convert the label string back to a Label object
-                        hudson.model.Label label = hudson.model.Label.get(templateLabel);
-                        SlurmJobTemplate template = SlurmJobTemplateUtils.getTemplateByLabel(cloud, label);
-                        if (template != null) {
-                            cloud.removeDynamicTemplate(template);
-                            LOGGER.log(Level.INFO, "Successfully removed temporary template with label: {0} from cloud: {1}", 
-                                      new Object[]{templateLabel, cloudName});
+                        // Remove by ID — not by label — so concurrent runs with the same
+                        // label don't remove each other's templates.
+                        boolean removed = cloud.removeDynamicTemplateById(templateId);
+                        if (removed) {
+                            LOGGER.log(Level.INFO, "Removed temporary template id={0} (label={1}) from cloud: {2}",
+                                      new Object[]{templateId, templateLabel, cloudName});
                         } else {
-                            LOGGER.log(Level.WARNING, "Could not find template with label: {0} in cloud: {1} for cleanup", 
-                                      new Object[]{templateLabel, cloudName});
+                            LOGGER.log(Level.WARNING, "Could not find template id={0} (label={1}) in cloud: {2} for cleanup",
+                                      new Object[]{templateId, templateLabel, cloudName});
                         }
                         break;
                     }
