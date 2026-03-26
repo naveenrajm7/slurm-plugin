@@ -827,13 +827,13 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         public ListBoxModel doFillInheritFromItems(@QueryParameter("cloud") String cloudName) {
             ListBoxModel model = new ListBoxModel();
             model.add("", "");
-            
+
             if (!StringUtils.isEmpty(cloudName)) {
                 Jenkins jenkins = Jenkins.get();
                 for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
                     if (cloudName.equals(cloud.name)) {
                         if (cloud.getTemplates() != null) {
-                            cloud.getTemplates().forEach(template -> 
+                            cloud.getTemplates().forEach(template ->
                                 model.add(template.getName(), template.getId())
                             );
                         }
@@ -841,8 +841,45 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                     }
                 }
             }
-            
+
             return model;
+        }
+
+        /**
+         * Validates the JSON field at form-save time so users get immediate feedback
+         * in the Jenkins UI rather than discovering errors only at pipeline runtime.
+         */
+        @SuppressWarnings("unused") // used by stapler
+        public hudson.util.FormValidation doCheckJson(@QueryParameter String value) {
+            if (StringUtils.isEmpty(value)) {
+                return hudson.util.FormValidation.ok();
+            }
+            try {
+                net.sf.json.JSONObject parsed = net.sf.json.JSONObject.fromObject(value);
+                if (!parsed.has("job")) {
+                    return hudson.util.FormValidation.error(
+                        "JSON must contain a \"job\" key matching the Slurm REST API format. "
+                        + "Example: {\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 4}, \"pyxis\": {...}}");
+                }
+                // Validate "job" section fields via Jackson (catches unknown field names)
+                String jobJson = parsed.getJSONObject("job").toString();
+                OBJECT_MAPPER.readValue(jobJson, io.jenkins.plugins.slurm.SlurmJobTemplate.class);
+                // Validate "pyxis" section fields if present
+                if (parsed.has("pyxis")) {
+                    String pyxisJson = parsed.getJSONObject("pyxis").toString();
+                    OBJECT_MAPPER.readValue(pyxisJson, io.jenkins.plugins.slurm.PyxisConfig.class);
+                }
+                return hudson.util.FormValidation.ok();
+            } catch (com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException e) {
+                return hudson.util.FormValidation.error(
+                    "Unknown field \"" + e.getPropertyName() + "\". Check spelling — "
+                    + "field names use snake_case matching the Slurm REST API "
+                    + "(e.g. \"cpus_per_task\", \"memory_per_node\", \"container_mount_home\").");
+            } catch (com.fasterxml.jackson.databind.JsonMappingException e) {
+                return hudson.util.FormValidation.error("Invalid value in JSON: " + e.getOriginalMessage());
+            } catch (Exception e) {
+                return hudson.util.FormValidation.error("Invalid JSON: " + e.getMessage());
+            }
         }
     }
 }

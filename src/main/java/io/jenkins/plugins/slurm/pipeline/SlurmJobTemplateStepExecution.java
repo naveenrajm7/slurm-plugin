@@ -61,12 +61,21 @@ public class SlurmJobTemplateStepExecution extends StepExecution implements Seri
             checkAccess(run, cloud);
         }
         
-        // Build the job template from step configuration
-        SlurmJobTemplate template = step.buildJobTemplate(cloud);
-        
-        // Capture the build's TaskListener and store it on the template
-        // This allows error messages to appear in the build console even if provisioning fails
+        // Get the build's TaskListener first so JSON parse errors appear in the build console
         TaskListener stepListener = getContext().get(TaskListener.class);
+
+        // Build the job template from step configuration.
+        // Catch IllegalArgumentException here (e.g. unknown JSON field, missing "job" key)
+        // and route the message to the build console instead of the server log.
+        SlurmJobTemplate template;
+        try {
+            template = step.buildJobTemplate(cloud);
+        } catch (IllegalArgumentException e) {
+            stepListener.error("Invalid Slurm job template configuration: " + e.getMessage());
+            getContext().onFailure(new AbortException(e.getMessage()));
+            return false;
+        }
+
         template.setListener(stepListener);
         
         // Temporarily add template to cloud if it has a label
