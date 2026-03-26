@@ -278,14 +278,12 @@ public class SlurmCloud extends AbstractCloudImpl {
                 }
             }
             
-            // Early return if we've satisfied the workload
-            if (!plannedNodes.isEmpty()) {
-                LOGGER.log(Level.FINE, "Planned {0} Slurm agents with template \"{1}\"", 
-                    new Object[]{plannedNodes.size(), jobTemplate.getName()});
-                return plannedNodes;
+            // Stop iterating if we've satisfied the full workload
+            if (toBeProvisioned <= 0) {
+                break;
             }
         }
-        
+
         LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents");
         return plannedNodes;
     }
