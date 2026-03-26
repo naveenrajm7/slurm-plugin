@@ -369,9 +369,14 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
                                       hudson.slaves.RetentionStrategy<?> retentionStrategy;
                                       if (jobTemplate.isRunOnce()) {
+                                          // Kubernetes plugin uses a minimum of 5 minutes (DEFAULT_RETENTION_TIMEOUT_MINUTES).
+                                          // OnceRetentionStrategy(0) fires check() immediately when the agent goes online
+                                          // (NodeProvisioner.update() triggers it before any build is scheduled), so
+                                          // we enforce a minimum of 1 minute to give Jenkins time to assign the build.
+                                          int retentionTimeout = Math.max(1, jobTemplate.getIdleMinutes());
                                           retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
-                                              .OnceRetentionStrategy(jobTemplate.getIdleMinutes());
-                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
+                                              .OnceRetentionStrategy(retentionTimeout);
+                                          LOGGER.info("Using OnceRetentionStrategy (retentionTimeout=" + retentionTimeout + ") for agent: " + agentName
                                               + " — agent will not be reused after first build");
                                       } else {
                                           retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());

@@ -257,11 +257,25 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
      */
     @Override
     protected void _terminate(@NonNull TaskListener listener) throws IOException, InterruptedException {
-        LOGGER.log(Level.INFO, "Terminating Slurm agent: {0} (job={1})", 
+        LOGGER.log(Level.INFO, "Terminating Slurm agent: {0} (job={1})",
                   new Object[]{getNodeName(), slurmJobId});
-        
+
         listener.getLogger().println("Terminating Slurm agent: " + getNodeName());
-        
+
+        // Mark the launcher as permanently failed so that Jenkins does not resubmit a
+        // new Slurm job when JNLP disconnects after the job is cancelled.  Without this,
+        // OnceRetentionStrategy.done() → _terminate() → Slurm job cancelled → JNLP
+        // disconnects → Jenkins calls launch() again → a second Slurm job is submitted.
+        hudson.model.Computer computer = toComputer();
+        if (computer instanceof hudson.slaves.SlaveComputer) {
+            hudson.slaves.ComputerLauncher rawLauncher = ((hudson.slaves.SlaveComputer) computer).getLauncher();
+            if (rawLauncher instanceof SlurmLauncher) {
+                ((SlurmLauncher) rawLauncher).setProblem(
+                        new java.io.IOException("Agent terminated by retention strategy"));
+                LOGGER.log(Level.FINE, "Marked launcher as terminated for agent: {0}", getNodeName());
+            }
+        }
+
         if (slurmJobId == null) {
             listener.getLogger().println("No Slurm job ID - agent may not have been started");
             return;
