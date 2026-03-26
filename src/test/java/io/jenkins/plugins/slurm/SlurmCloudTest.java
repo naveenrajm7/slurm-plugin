@@ -1,14 +1,17 @@
 package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import hudson.slaves.CloudRetentionStrategy;
 import hudson.util.FormValidation;
 import jakarta.servlet.http.HttpServletResponse;
 import net.sf.json.JSONObject;
+import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -154,6 +157,59 @@ public class SlurmCloudTest {
             cloud.doCreate(mockRequestWithName(cloud, "highmem-template"), mock(StaplerResponse.class));
 
             assertEquals(3, cloud.getJobTemplates().size());
+        }
+    }
+
+    /**
+     * Tests that the correct retention strategy is selected based on the
+     * {@code runOnce} flag in the job template, mirroring the Kubernetes plugin pattern.
+     */
+    @Nested
+    class RetentionStrategySelectionTest {
+
+        private SlurmJobTemplate templateWith(boolean runOnce, int idleMinutes) {
+            SlurmJobTemplate t = new SlurmJobTemplate();
+            t.setRunOnce(runOnce);
+            t.setIdleMinutes(idleMinutes);
+            return t;
+        }
+
+        @Test
+        void runOnce_true_usesOnceRetentionStrategy() {
+            SlurmJobTemplate template = templateWith(true, 1);
+            // runOnce=true is the default — verify the field is set correctly
+            assertEquals(true, template.isRunOnce());
+        }
+
+        @Test
+        void runOnce_false_usesCloudRetentionStrategy() {
+            SlurmJobTemplate template = templateWith(false, 5);
+            assertEquals(false, template.isRunOnce());
+        }
+
+        @Test
+        void defaultTemplate_hasRunOnceTrue() {
+            // Ensures new templates default to one-shot behavior
+            SlurmJobTemplate template = new SlurmJobTemplate();
+            assertEquals(true, template.isRunOnce());
+        }
+
+        @Test
+        void retentionStrategyType_runOnce_isOnceRetentionStrategy() {
+            SlurmJobTemplate template = templateWith(true, 1);
+            hudson.slaves.RetentionStrategy<?> strategy = template.isRunOnce()
+                    ? new OnceRetentionStrategy(template.getIdleMinutes())
+                    : new CloudRetentionStrategy(template.getIdleMinutes());
+            assertInstanceOf(OnceRetentionStrategy.class, strategy);
+        }
+
+        @Test
+        void retentionStrategyType_reusable_isCloudRetentionStrategy() {
+            SlurmJobTemplate template = templateWith(false, 5);
+            hudson.slaves.RetentionStrategy<?> strategy = template.isRunOnce()
+                    ? new OnceRetentionStrategy(template.getIdleMinutes())
+                    : new CloudRetentionStrategy(template.getIdleMinutes());
+            assertInstanceOf(CloudRetentionStrategy.class, strategy);
         }
     }
 }

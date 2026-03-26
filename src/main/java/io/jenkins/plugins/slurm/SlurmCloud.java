@@ -351,22 +351,23 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       // 1. Create the Slurm launcher (no-arg constructor)
                                       SlurmLauncher launcher = new SlurmLauncher();
                                       
-                                      // 2. Create retention strategy based on template configuration
-                                      // CloudRetentionStrategy handles idle timeout:
-                                      // - idleMinutes=0: Agent terminates immediately when idle (one-shot mode)
-                                      // - idleMinutes>0: Agent waits idle period before termination (allows reuse)
-                                      hudson.slaves.RetentionStrategy<?> retentionStrategy = 
-                                          new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
-                                      
-                                      if (jobTemplate.getIdleMinutes() == 0) {
-                                          LOGGER.info("Using CloudRetentionStrategy with idleMinutes=0 (one-shot mode) for agent: " + agentName);
-                                          LOGGER.info("Agent will terminate immediately when idle after build completes");
-                                      } else if (jobTemplate.isRunOnce()) {
-                                          LOGGER.info("Using CloudRetentionStrategy with idle minutes: " + jobTemplate.getIdleMinutes() + " (run-once mode)");
-                                          LOGGER.info("Agent will be terminated after build completes and " + jobTemplate.getIdleMinutes() + " minute(s) idle timeout");
+                                      // 2. Create retention strategy based on template configuration.
+                                      // Mirrors the Kubernetes plugin's determineRetentionStrategy():
+                                      // - runOnce=true (default): OnceRetentionStrategy — agent terminates after
+                                      //   the first build completes; idleMinutes is the grace period before
+                                      //   forced teardown. Prevents agent reuse across pipeline runs.
+                                      // - runOnce=false: CloudRetentionStrategy — agent stays alive for
+                                      //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
+                                      hudson.slaves.RetentionStrategy<?> retentionStrategy;
+                                      if (jobTemplate.isRunOnce()) {
+                                          retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
+                                              .OnceRetentionStrategy(jobTemplate.getIdleMinutes());
+                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
+                                              + " — agent will not be reused after first build");
                                       } else {
-                                          LOGGER.info("Using CloudRetentionStrategy with idle minutes: " + jobTemplate.getIdleMinutes() + " (reusable mode)");
-                                          LOGGER.info("Agent can be reused for multiple builds within " + jobTemplate.getIdleMinutes() + " minute(s) idle period");
+                                          retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
+                                          LOGGER.info("Using CloudRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
+                                              + " — agent can be reused within idle window");
                                       }
                                       
                                       // 3. Create the Slurm agent with proper constructor parameters
