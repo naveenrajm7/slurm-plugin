@@ -105,6 +105,16 @@ slurmJobTemplate(cloud: 'my-cluster', json: '...') {
 
 Jelly templates and help HTML live in `src/main/resources/io/jenkins/plugins/slurm/`. Each class with a configuration form has a matching `config.jelly`. I18n strings are in `Messages.properties`.
 
+## Reference Codebases
+
+| Alias | Path | When to use |
+|-------|------|-------------|
+| k8s / kubernetes plugin | `../kubernetes` | Bug fixes, feature inspiration, patterns — read source there when asked to "refer to k8s" |
+
+## TODO Tracking
+
+A `TODO.md` file at the repo root tracks issues and items to revisit. Always read `TODO.md` at the start of a conversation. When the user says "add a TODO" or reports an issue to revisit later, append it to the `## Open` section. When an item is resolved, move it to `## Done`.
+
 ## Source Layout
 
 ```
