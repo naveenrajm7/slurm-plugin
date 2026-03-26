@@ -644,9 +644,10 @@ public class SlurmCloud extends AbstractCloudImpl {
         SlurmJobTemplate template = req.bindJSON(SlurmJobTemplate.class, formData);
 
         // Validate template name is provided
-        if (template.getName() == null || template.getName().trim().isEmpty()) {
-            rsp.sendError(jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST,
-                    "Job template name is required");
+        String name = template.getName();
+        if (name == null || name.trim().isEmpty()) {
+            req.setAttribute("errorMessage", "Job template name is required");
+            req.getView(this, "new").forward(req, rsp);
             return;
         }
 
@@ -656,9 +657,9 @@ public class SlurmCloud extends AbstractCloudImpl {
 
         // Validate template name is unique
         for (SlurmJobTemplate existing : jobTemplates) {
-            if (existing.getName().equals(template.getName())) {
-                rsp.sendError(jakarta.servlet.http.HttpServletResponse.SC_CONFLICT,
-                        "Template name must be unique: " + template.getName());
+            if (existing.getName().equals(name)) {
+                req.setAttribute("errorMessage", "Template name must be unique: " + name);
+                req.getView(this, "new").forward(req, rsp);
                 return;
             }
         }

@@ -3,13 +3,15 @@ package io.jenkins.plugins.slurm;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import hudson.slaves.CloudRetentionStrategy;
 import hudson.util.FormValidation;
-import jakarta.servlet.http.HttpServletResponse;
+import javax.servlet.RequestDispatcher;
 import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
 import org.junit.jupiter.api.Nested;
@@ -85,9 +87,12 @@ public class SlurmCloudTest {
             SlurmJobTemplate template = new SlurmJobTemplate();
             template.setName(name);
 
+            RequestDispatcher noopDispatcher = mock(RequestDispatcher.class);
+
             StaplerRequest req = mock(StaplerRequest.class);
             when(req.getSubmittedForm()).thenReturn(formData);
             when(req.bindJSON(SlurmJobTemplate.class, formData)).thenReturn(template);
+            when(req.getView((Object) any(), eq("new"))).thenReturn(noopDispatcher);
             return req;
         }
 
@@ -105,31 +110,33 @@ public class SlurmCloudTest {
         }
 
         @Test
-        void doCreate_emptyName_sends400(JenkinsRule j) throws Exception {
+        void doCreate_emptyName_forwardsBackWithError(JenkinsRule j) throws Exception {
             SlurmCloud cloud = makeCloud();
             StaplerRequest req = mockRequestWithName(cloud, "");
             StaplerResponse rsp = mock(StaplerResponse.class);
 
             cloud.doCreate(req, rsp);
 
-            verify(rsp).sendError(HttpServletResponse.SC_BAD_REQUEST, "Job template name is required");
+            verify(req).setAttribute("errorMessage", "Job template name is required");
+            verify(req.getView(cloud, "new")).forward(req, rsp);
             assertEquals(0, cloud.getJobTemplates().size());
         }
 
         @Test
-        void doCreate_blankName_sends400(JenkinsRule j) throws Exception {
+        void doCreate_blankName_forwardsBackWithError(JenkinsRule j) throws Exception {
             SlurmCloud cloud = makeCloud();
             StaplerRequest req = mockRequestWithName(cloud, "   ");
             StaplerResponse rsp = mock(StaplerResponse.class);
 
             cloud.doCreate(req, rsp);
 
-            verify(rsp).sendError(HttpServletResponse.SC_BAD_REQUEST, "Job template name is required");
+            verify(req).setAttribute("errorMessage", "Job template name is required");
+            verify(req.getView(cloud, "new")).forward(req, rsp);
             assertEquals(0, cloud.getJobTemplates().size());
         }
 
         @Test
-        void doCreate_duplicateName_sends409(JenkinsRule j) throws Exception {
+        void doCreate_duplicateName_forwardsBackWithError(JenkinsRule j) throws Exception {
             SlurmCloud cloud = makeCloud();
 
             // Add first template
@@ -143,8 +150,8 @@ public class SlurmCloudTest {
             StaplerResponse rsp2 = mock(StaplerResponse.class);
             cloud.doCreate(req2, rsp2);
 
-            verify(rsp2).sendError(HttpServletResponse.SC_CONFLICT,
-                    "Template name must be unique: gpu-template");
+            verify(req2).setAttribute("errorMessage", "Template name must be unique: gpu-template");
+            verify(req2.getView(cloud, "new")).forward(req2, rsp2);
             assertEquals(1, cloud.getJobTemplates().size());
         }
 

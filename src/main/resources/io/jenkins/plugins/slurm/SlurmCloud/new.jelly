@@ -7,6 +7,11 @@
     <st:include page="sidepanel.jelly" it="${it}"/>
     <l:main-panel>
       <h1>${%New job template settings}</h1>
+      <j:if test="${request.getAttribute('errorMessage') != null}">
+        <div class="jenkins-alert jenkins-alert-danger" style="margin-bottom:1em">
+          ${request.getAttribute('errorMessage')}
+        </div>
+      </j:if>
       <f:form method="post" action="create" name="config" class="jenkins-form">
         <!-- main body of the configuration -->
 
