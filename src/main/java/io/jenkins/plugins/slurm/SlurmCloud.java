@@ -635,24 +635,33 @@ public class SlurmCloud extends AbstractCloudImpl {
      * Creates a new job template.
      * Called from new.jelly form submission.
      */
-    public void doCreate(org.kohsuke.stapler.StaplerRequest req, org.kohsuke.stapler.StaplerResponse rsp) 
+    public void doCreate(org.kohsuke.stapler.StaplerRequest req, org.kohsuke.stapler.StaplerResponse rsp)
             throws Exception {
         Jenkins.get().checkPermission(Jenkins.MANAGE);
-        
+
         net.sf.json.JSONObject formData = req.getSubmittedForm();
         SlurmJobTemplate template = req.bindJSON(SlurmJobTemplate.class, formData);
-        
+
+        // Validate template name is provided
+        if (template.getName() == null || template.getName().trim().isEmpty()) {
+            rsp.sendError(jakarta.servlet.http.HttpServletResponse.SC_BAD_REQUEST,
+                    "Job template name is required");
+            return;
+        }
+
         if (jobTemplates == null) {
             jobTemplates = new ArrayList<>();
         }
-        
+
         // Validate template name is unique
         for (SlurmJobTemplate existing : jobTemplates) {
             if (existing.getName().equals(template.getName())) {
-                throw new IllegalArgumentException("Template name must be unique: " + template.getName());
+                rsp.sendError(jakarta.servlet.http.HttpServletResponse.SC_CONFLICT,
+                        "Template name must be unique: " + template.getName());
+                return;
             }
         }
-        
+
         jobTemplates.add(template);
 
         rsp.sendRedirect("templates");

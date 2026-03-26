@@ -16,3 +16,6 @@ work
 
 # Cline
 .cline_storage
+
+# Claude Code local settings (machine-specific)
+.claude/
