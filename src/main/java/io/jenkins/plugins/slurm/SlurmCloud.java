@@ -350,8 +350,8 @@ public class SlurmCloud extends AbstractCloudImpl {
             );
         
         // Use cloud-stats' TrackedPlannedNode for automatic activity tracking
-        return new TrackedPlannedNode(cloudStatsId, 
-                              jobTemplate.getCpusPerTask(),  // numExecutors
+        return new TrackedPlannedNode(cloudStatsId,
+                              1,  // numExecutors — always 1 per agent; cpusPerTask is a Slurm resource, not Jenkins concurrency
                               java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                                   try {
                                       LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
@@ -369,15 +369,9 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
                                       hudson.slaves.RetentionStrategy<?> retentionStrategy;
                                       if (jobTemplate.isRunOnce()) {
-                                          // OnceRetentionStrategy(0) fires immediately when the agent goes online
-                                          // (idle, not yet connecting) — before Jenkins assigns a build — killing
-                                          // the agent before it can do any work. Use a minimum of 1 minute so
-                                          // the agent has time to receive its first build. Mirrors the Kubernetes
-                                          // plugin's retentionTimeout pattern.
-                                          int idleMinutes = Math.max(1, jobTemplate.getIdleMinutes());
                                           retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
-                                              .OnceRetentionStrategy(idleMinutes);
-                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + idleMinutes + ") for agent: " + agentName
+                                              .OnceRetentionStrategy(jobTemplate.getIdleMinutes());
+                                          LOGGER.info("Using OnceRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
                                               + " — agent will not be reused after first build");
                                       } else {
                                           retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
@@ -390,7 +384,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           agentName,                                    // name
                                           "Slurm agent from template " + jobTemplate.getName(),  // description
                                           jobTemplate.getCurrentWorkingDirectory(),      // remoteFS
-                                          jobTemplate.getCpusPerTask(),                 // numExecutors
+                                          1,                                            // numExecutors — always 1; cpusPerTask is a Slurm resource, not Jenkins concurrency
                                           jobTemplate.getNodeUsageMode(),               // mode
                                           jobTemplate.getLabel(),                       // labelString
                                           launcher,                                     // launcher

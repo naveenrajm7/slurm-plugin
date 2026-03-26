@@ -139,9 +139,9 @@
       <f:number default="1" min="1"/>
     </f:entry>
 
-    <f:entry field="idleMinutes" title="Idle Minutes" 
-             description="Minutes to retain agent when idle before terminating. Use 0 for immediate termination after build completes (one-shot mode). Recommended minimum: 1 minute to allow time for build assignment and connection stabilization.">
-      <f:number default="1" min="0"/>
+    <f:entry field="idleMinutes" title="Idle Minutes"
+             description="Minutes to retain agent when idle before terminating. 0 means terminate immediately after the build completes (one-shot mode, recommended).">
+      <f:number default="0" min="0"/>
     </f:entry>
     
     <f:entry field="runOnce" title="Run Once" 
