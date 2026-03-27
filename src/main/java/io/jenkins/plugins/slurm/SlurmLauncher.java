@@ -13,6 +13,7 @@ import io.jenkins.plugins.slurm.client.model.JobDescMsg;
 import io.jenkins.plugins.slurm.client.SlurmClient;
 import io.jenkins.plugins.slurm.client.ApiException;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -133,7 +134,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 // Wait for the agent to connect with active status checking
                 LOGGER.info("Waiting for agent to connect via WebSocket/JNLP...");
                 listener.getLogger().println("Waiting for agent to connect...");
-                waitForAgentConnection(slurmComputer, agent, cloud, jobId, listener);
+                waitForAgentConnection(slurmComputer, agent, cloud, template, jobId, listener);
                 
             } finally {
                 slurmComputer.setLaunching(false);
@@ -220,6 +221,165 @@ public class SlurmLauncher extends JNLPLauncher {
     }
     
     
+    // -------------------------------------------------------------------------
+    // Error reporting helpers (Kubernetes-style: contextual, not banner-heavy)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Logs a rich, actionable message when the Slurm job itself failed
+     * (state is FAILED, CANCELLED, TIMEOUT, NODE_FAIL, etc.).
+     */
+    private void logProvisioningFailure(TaskListener listener, String jobId,
+                                        String jobState, SlurmJobTemplate template) {
+        PrintStream log = listener.getLogger();
+        String workDir = template != null ? template.getCurrentWorkingDirectory() : null;
+
+        log.println("");
+        log.println("[Slurm] Agent provisioning failed — job " + jobId + " entered state: " + jobState);
+        log.println("");
+
+        // State-specific explanation
+        switch (jobState) {
+            case "FAILED":
+                log.println("\tThe job script exited with a non-zero status.");
+                log.println("\tThis is often caused by an error in the batch script, a missing");
+                log.println("\tcontainer image, or the working directory not existing on the node.");
+                break;
+            case "CANCELLED":
+                log.println("\tThe job was cancelled — either by Slurm policy, by the admin,");
+                log.println("\tor the Jenkins cloud cancelled it due to an earlier error.");
+                break;
+            case "TIMEOUT":
+                log.println("\tThe job exceeded its time limit. Consider increasing time_limit");
+                log.println("\tin the template, or check why the agent startup took too long.");
+                break;
+            case "NODE_FAIL":
+                log.println("\tThe node the job ran on failed (hardware or OS issue).");
+                log.println("\tCheck node health: sinfo -N -l");
+                break;
+            case "OUT_OF_MEMORY":
+                log.println("\tThe job was killed because it exceeded its memory limit.");
+                log.println("\tIncrease memory_per_node in the template.");
+                break;
+            default:
+                log.println("\tSee Slurm documentation for state: " + jobState);
+                break;
+        }
+
+        log.println("");
+        log.println("\tLogs to check:");
+        logOutputFilePaths(log, jobId, workDir);
+        log.println("\t  scontrol show job " + jobId + "  (if job still in Slurm history)");
+
+        if (workDir != null) {
+            log.println("");
+            log.println("\tNote: output files are written to the working directory configured");
+            log.println("\tin the template (" + workDir + "). If that directory does not exist");
+            log.println("\ton the compute node, the job will fail silently with no output files.");
+        }
+
+        log.println("");
+        log.println("\tCommon silent failures:");
+        log.println("\t  - Working directory does not exist on compute node → job exits immediately");
+        log.println("\t  - Container image not found / pull failure → non-zero exit");
+        log.println("\t  - Requested TRES (GPU, etc.) not available on partition");
+        log.println("");
+    }
+
+    /**
+     * Logs a rich, actionable message when the Slurm job COMPLETED successfully
+     * but the Jenkins agent never connected back (startup script failed silently).
+     */
+    private void logAgentConnectionFailure(TaskListener listener, String jobId,
+                                           SlurmJobTemplate template) {
+        PrintStream log = listener.getLogger();
+        String workDir = template != null ? template.getCurrentWorkingDirectory() : null;
+
+        log.println("");
+        log.println("[Slurm] Agent provisioning failed — job " + jobId
+                + " completed but the agent never connected to Jenkins");
+        log.println("");
+        log.println("\tThe Slurm job exited cleanly (state: COMPLETED) but no JNLP connection");
+        log.println("\twas established. The agent startup script ran and exited without error,");
+        log.println("\twhich usually means one of these silent failures occurred:");
+        log.println("");
+        log.println("\t  - Working directory does not exist on compute node");
+        log.println("\t    → Slurm silently skips to COMPLETED with exit 0");
+        log.println("\t  - Jenkins URL is not reachable from the compute node");
+        log.println("\t    → agent.jar download or WebSocket handshake fails");
+        log.println("\t  - Java is not on PATH on the compute node");
+        log.println("\t    → the launcher line in the batch script fails");
+        log.println("\t  - Firewall / proxy blocks the JNLP port (" + getJnlpPort() + ")");
+        log.println("");
+        log.println("\tLogs to check:");
+        logOutputFilePaths(log, jobId, workDir);
+
+        if (workDir != null) {
+            log.println("\t  Check that " + workDir + " exists on every compute node");
+            log.println("\t  in the target partition.");
+        }
+
+        log.println("\t  curl -v " + getJenkinsUrl() + "  (run from a compute node)");
+        log.println("\t  which java  (run from a compute node)");
+        log.println("");
+    }
+
+    /**
+     * Logs a rich, actionable message when we timed out waiting for the agent.
+     */
+    private void logLaunchTimeout(TaskListener listener, String jobId,
+                                  SlurmJobTemplate template, boolean jobReachedRunning) {
+        PrintStream log = listener.getLogger();
+        String workDir = template != null ? template.getCurrentWorkingDirectory() : null;
+
+        log.println("");
+        log.println("[Slurm] Agent provisioning timed out after "
+                + (AGENT_TIMEOUT_MS / 1000) + "s — job " + jobId);
+        log.println("");
+
+        if (!jobReachedRunning) {
+            log.println("\tThe Slurm job never reached RUNNING state within the timeout.");
+            log.println("\tThis usually means the job is stuck in the queue:");
+            log.println("");
+            log.println("\t  squeue -j " + jobId + "  (check REASON column)");
+            log.println("\t  scontrol show job " + jobId);
+            log.println("");
+            log.println("\tCommon reasons: insufficient resources, partition limits,");
+            log.println("\tQOS/account limits, or no nodes matching the job constraints.");
+        } else {
+            log.println("\tThe Slurm job was RUNNING but the agent never connected.");
+            log.println("\tThis is the same symptom as a silent startup script failure — see:");
+            log.println("");
+            log.println("\tLogs to check:");
+            logOutputFilePaths(log, jobId, workDir);
+
+            if (workDir != null) {
+                log.println("\t  Verify " + workDir + " exists on compute nodes.");
+            }
+            log.println("\t  curl from compute node to: " + getJenkinsUrl());
+            log.println("\t  JNLP port " + getJnlpPort() + " must be reachable from compute nodes");
+        }
+
+        log.println("");
+    }
+
+    /**
+     * Prints the paths of the Slurm output and error files, prefixed with the
+     * working directory when known.
+     */
+    private void logOutputFilePaths(PrintStream log, String jobId, String workDir) {
+        String prefix = (workDir != null && !workDir.isEmpty()) ? workDir + "/" : "";
+        log.println("\t  " + prefix + "slurm-" + jobId + ".out  (stdout)");
+        log.println("\t  " + prefix + "slurm-" + jobId + ".err  (stderr, if separate)");
+    }
+
+    /** Returns the Jenkins URL from cloud location config, or a placeholder. */
+    private String getJenkinsUrl() {
+        JenkinsLocationConfiguration cfg = JenkinsLocationConfiguration.get();
+        String url = cfg.getUrl();
+        return (url != null && !url.isEmpty()) ? url : "<jenkins-url>";
+    }
+
     /**
      * Wait for agent to connect with active status checking.
      * This follows the Kubernetes plugin pattern:
@@ -228,8 +388,9 @@ public class SlurmLauncher extends JNLPLauncher {
      * - Times out with clear error message
      * - Logs progress periodically
      */
-    private void waitForAgentConnection(SlurmComputer computer, SlurmAgent agent, 
-                                        SlurmCloud cloud, String jobId, 
+    private void waitForAgentConnection(SlurmComputer computer, SlurmAgent agent,
+                                        SlurmCloud cloud, SlurmJobTemplate template,
+                                        String jobId,
                                         TaskListener listener) throws IOException, InterruptedException {
         long startTime = System.currentTimeMillis();
         long timeout = startTime + AGENT_TIMEOUT_MS;
@@ -276,28 +437,12 @@ public class SlurmLauncher extends JNLPLauncher {
                             IOException exception = new IOException(errorMsg);
                             setProblem(exception);
                             
-                            // Log error details to BUILD CONSOLE using getRunListener()
+                            // Log error details to BUILD CONSOLE using getRunListener(),
+                            // falling back to the launch listener when no pipeline listener is set
+                            // (e.g. static-template provisioning without a slurmJobTemplate() step).
                             TaskListener runListener = agent.getRunListener();
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("SLURM AGENT PROVISIONING FAILED");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("Slurm Job ID: " + jobId);
-                            runListener.getLogger().println("Job State: " + jobState);
-                            runListener.getLogger().println("Reason: Slurm job failed during execution");
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("To investigate:");
-                            runListener.getLogger().println("  1. Check Slurm job logs: slurm-" + jobId + ".out");
-                            runListener.getLogger().println("  2. Check Slurm job error logs: slurm-" + jobId + ".err (if exists)");
-                            runListener.getLogger().println("  3. Run: scontrol show job " + jobId + " (if job still in history)");
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("Common causes:");
-                            runListener.getLogger().println("  - Bad container image specified in template");
-                            runListener.getLogger().println("  - Insufficient resources (memory/CPU)");
-                            runListener.getLogger().println("  - Node allocation failure");
-                            runListener.getLogger().println("  - Job time limit exceeded");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("");
+                            TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
+                            logProvisioningFailure(errorTarget, jobId, jobState, template);
                             
                             // Cancel the job immediately
                             try {
@@ -344,29 +489,9 @@ public class SlurmLauncher extends JNLPLauncher {
                             IOException exception = new IOException(errorMsg);
                             setProblem(exception);
                             
-                            // Log error details to BUILD CONSOLE using getRunListener()
                             TaskListener runListener = agent.getRunListener();
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("SLURM AGENT CONNECTION FAILED");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("Slurm Job ID: " + jobId);
-                            runListener.getLogger().println("Job State: COMPLETED");
-                            runListener.getLogger().println("Problem: Job completed but agent never connected to Jenkins");
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("To investigate:");
-                            runListener.getLogger().println("  1. Check Slurm job output: slurm-" + jobId + ".out");
-                            runListener.getLogger().println("  2. Look for agent startup errors in the output");
-                            runListener.getLogger().println("  3. Verify Jenkins URL is accessible from Slurm nodes");
-                            runListener.getLogger().println("");
-                            runListener.getLogger().println("Common causes:");
-                            runListener.getLogger().println("  - Incorrect Jenkins URL in cloud configuration");
-                            runListener.getLogger().println("  - Network connectivity issues from Slurm nodes to Jenkins");
-                            runListener.getLogger().println("  - Firewall blocking JNLP port (default: " + getJnlpPort() + ")");
-                            runListener.getLogger().println("  - Failed to download agent.jar");
-                            runListener.getLogger().println("  - Java not available on Slurm node");
-                            runListener.getLogger().println("========================================");
-                            runListener.getLogger().println("");
+                            TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
+                            logAgentConnectionFailure(errorTarget, jobId, template);
                             
                             // Job already completed, no need to cancel
                             
@@ -466,35 +591,9 @@ public class SlurmLauncher extends JNLPLauncher {
         IOException exception = new IOException(errorMsg);
         setProblem(exception);
         
-        // Log error details to BUILD CONSOLE using getRunListener()
         TaskListener runListener = agent.getRunListener();
-        runListener.getLogger().println("");
-        runListener.getLogger().println("========================================");
-        runListener.getLogger().println("SLURM AGENT LAUNCH TIMEOUT");
-        runListener.getLogger().println("========================================");
-        runListener.getLogger().println("Slurm Job ID: " + jobId);
-        runListener.getLogger().println("Timeout: " + (AGENT_TIMEOUT_MS / 1000) + " seconds");
-        runListener.getLogger().println("Reason: " + timeoutReason);
-        runListener.getLogger().println("");
-        if (!jobRunning) {
-            runListener.getLogger().println("The Slurm job never reached RUNNING state.");
-            runListener.getLogger().println("This usually means:");
-            runListener.getLogger().println("  - Job is queued waiting for resources");
-            runListener.getLogger().println("  - No nodes available matching job requirements");
-            runListener.getLogger().println("  - Job was held or blocked by Slurm policies");
-            runListener.getLogger().println("");
-            runListener.getLogger().println("Check:");
-            runListener.getLogger().println("  - Run: squeue -j " + jobId);
-            runListener.getLogger().println("  - Run: scontrol show job " + jobId);
-        } else {
-            runListener.getLogger().println("The Slurm job started but agent failed to connect.");
-            runListener.getLogger().println("Check:");
-            runListener.getLogger().println("  - Slurm job output: slurm-" + jobId + ".out");
-            runListener.getLogger().println("  - Network connectivity from Slurm nodes to Jenkins");
-            runListener.getLogger().println("  - JNLP port accessibility (default: " + getJnlpPort() + ")");
-        }
-        runListener.getLogger().println("========================================");
-        runListener.getLogger().println("");
+        TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
+        logLaunchTimeout(errorTarget, jobId, template, jobRunning);
         
         listener.error(errorMsg);
         LOGGER.severe(errorMsg);
