@@ -33,12 +33,9 @@ import jenkins.model.JenkinsLocationConfiguration;
 public class SlurmLauncher extends JNLPLauncher {
     private static final Logger LOGGER = Logger.getLogger(SlurmLauncher.class.getName());
     
-    // Timeout for waiting for agent to connect (5 minutes)
-    private static final long AGENT_TIMEOUT_MS = 5 * 60 * 1000;
-    
     // How often to check job status (5 seconds)
     private static final long STATUS_CHECK_INTERVAL_MS = 5000;
-    
+
     // How often to log progress (30 seconds)
     private static final long PROGRESS_LOG_INTERVAL_MS = 30000;
     
@@ -132,9 +129,12 @@ public class SlurmLauncher extends JNLPLauncher {
                 listener.getLogger().println("Slurm job submitted with ID: " + jobId);
                 
                 // Wait for the agent to connect with active status checking
-                LOGGER.info("Waiting for agent to connect via WebSocket/JNLP...");
-                listener.getLogger().println("Waiting for agent to connect...");
-                waitForAgentConnection(slurmComputer, agent, cloud, template, jobId, listener);
+                long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
+                LOGGER.info("Waiting for agent to connect via WebSocket/JNLP (timeout: " +
+                    cloud.getAgentTimeoutMinutes() + " minutes)...");
+                listener.getLogger().println("Waiting for agent to connect (timeout: " +
+                    cloud.getAgentTimeoutMinutes() + " minutes)...");
+                waitForAgentConnection(slurmComputer, agent, cloud, template, jobId, agentTimeoutMs, listener);
                 
             } finally {
                 slurmComputer.setLaunching(false);
@@ -328,13 +328,14 @@ public class SlurmLauncher extends JNLPLauncher {
      * Logs a rich, actionable message when we timed out waiting for the agent.
      */
     private void logLaunchTimeout(TaskListener listener, String jobId,
-                                  SlurmJobTemplate template, boolean jobReachedRunning) {
+                                  SlurmJobTemplate template, boolean jobReachedRunning,
+                                  long agentTimeoutMs) {
         PrintStream log = listener.getLogger();
         String workDir = template != null ? template.getCurrentWorkingDirectory() : null;
 
         log.println("");
         log.println("[Slurm] Agent provisioning timed out after "
-                + (AGENT_TIMEOUT_MS / 1000) + "s — job " + jobId);
+                + (agentTimeoutMs / 1000) + "s — job " + jobId);
         log.println("");
 
         if (!jobReachedRunning) {
@@ -390,16 +391,13 @@ public class SlurmLauncher extends JNLPLauncher {
      */
     private void waitForAgentConnection(SlurmComputer computer, SlurmAgent agent,
                                         SlurmCloud cloud, SlurmJobTemplate template,
-                                        String jobId,
+                                        String jobId, long agentTimeoutMs,
                                         TaskListener listener) throws IOException, InterruptedException {
         long startTime = System.currentTimeMillis();
-        long timeout = startTime + AGENT_TIMEOUT_MS;
+        long timeout = startTime + agentTimeoutMs;
         long lastStatusCheck = 0;
         long lastProgressLog = startTime;
         boolean jobRunning = false;  // Track if job reached RUNNING state
-        
-        listener.getLogger().println("Waiting for agent to connect (timeout: " + 
-            (AGENT_TIMEOUT_MS / 1000) + " seconds)...");
         
         SlurmClient client = null;
         try {
@@ -584,7 +582,7 @@ public class SlurmLauncher extends JNLPLauncher {
                               !computer.isOnline() ? "JNLP connection never established" :
                               "unknown reason";
         String errorMsg = "Timeout waiting for agent to launch after " + 
-            (AGENT_TIMEOUT_MS / 1000) + " seconds (" + timeoutReason + "). " +
+            (agentTimeoutMs / 1000) + " seconds (" + timeoutReason + "). " +
             "Slurm job ID: " + jobId + ". Check Slurm job logs: slurm-" + jobId + ".out";
         
         // Set problem field to prevent retries
@@ -593,7 +591,7 @@ public class SlurmLauncher extends JNLPLauncher {
         
         TaskListener runListener = agent.getRunListener();
         TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
-        logLaunchTimeout(errorTarget, jobId, template, jobRunning);
+        logLaunchTimeout(errorTarget, jobId, template, jobRunning, agentTimeoutMs);
         
         listener.error(errorMsg);
         LOGGER.severe(errorMsg);

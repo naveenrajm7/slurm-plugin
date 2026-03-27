@@ -193,9 +193,12 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             template.setLabel(label);
         }
         
-        // Core Slurm fields
+        // Core Slurm fields — explicit partition wins; fall back to cloud default partition
         if (!StringUtils.isEmpty(partition)) {
             template.setPartition(partition);
+        } else if (StringUtils.isEmpty(template.getPartition())
+                && !StringUtils.isEmpty(cloud.getDefaultPartition())) {
+            template.setPartition(cloud.getDefaultPartition());
         }
         if (!StringUtils.isEmpty(workingDir)) {
             template.setCurrentWorkingDirectory(workingDir);
