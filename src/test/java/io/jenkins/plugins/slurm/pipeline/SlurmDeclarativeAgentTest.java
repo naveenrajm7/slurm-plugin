@@ -30,7 +30,8 @@ public class SlurmDeclarativeAgentTest {
         assertEquals("test-cloud", agent.getCloud());
         
         agent.setLabel("gpu");
-        assertEquals("gpu", agent.getLabel());
+        assertTrue(agent.getLabel().startsWith("gpu-"),
+            "getLabel() should return the user label with a unique suffix, got: " + agent.getLabel());
         
         agent.setPartition("gpu");
         assertEquals("gpu", agent.getPartition());

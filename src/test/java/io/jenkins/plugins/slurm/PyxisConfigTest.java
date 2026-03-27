@@ -22,7 +22,7 @@ public class PyxisConfigTest {
         assertEquals(Boolean.TRUE, config.getContainerMountHome());
         assertEquals("", config.getContainerWorkdir());
         assertEquals("", config.getContainerName());
-        assertNull(config.getContainerRemap());
+        assertFalse(config.getContainerRemap());
         assertEquals("", config.getContainerSave());
         assertEquals(Boolean.FALSE, config.getContainerWritable());
         assertEquals("", config.getContainerEntrypoint());
