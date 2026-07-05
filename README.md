@@ -30,6 +30,7 @@ It is not required to run the Jenkins controller inside the Slurm cluster.
 - [Features controlled using system properties](#features-controlled-using-system-properties)
 - [Troubleshooting](#troubleshooting)
 - [Building and testing](#building-and-testing)
+- [Agent harness](#agent-harness)
 - [Related projects](#related-projects)
 
 
@@ -401,6 +402,26 @@ Then open `http://localhost:8080/jenkins` and configure a Slurm cloud pointing a
 > `src/main/resources/openapi/slurm-v0.0.42.json` via the `openapi-generator-maven-plugin`.
 > Generated code lands in `target/generated-sources/`.
 
+
+# Agent Harness
+
+This repository uses [repository-harness](https://github.com/hoangnb24/repository-harness) so
+coding agents (Cursor, Claude Code, Codex, etc.) have stable project context before changing code.
+
+| Doc | Purpose |
+| --- | --- |
+| [`AGENTS.md`](AGENTS.md) | Agent entry point (local notes + Harness links) |
+| [`docs/HARNESS.md`](docs/HARNESS.md) | Human–agent collaboration model |
+| [`docs/FEATURE_INTAKE.md`](docs/FEATURE_INTAKE.md) | Classify work as tiny, normal, or high-risk |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Plugin architecture and boundaries |
+| [`docs/TEST_MATRIX.md`](docs/TEST_MATRIX.md) | Behavior-to-proof expectations |
+| [`docs/product/`](docs/product/) | Product contract |
+
+Install or refresh the harness CLI:
+
+```bash
+curl -fsSL "https://raw.githubusercontent.com/hoangnb24/repository-harness/main/scripts/install-harness.sh?$(date +%s)" | bash -s -- --merge --yes
+```
 
 # Related Projects
 
