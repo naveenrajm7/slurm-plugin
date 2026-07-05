@@ -19,3 +19,21 @@ This repository is a single **Maven-based Jenkins plugin** (the Slurm plugin). T
 
 ### Slurm cluster is NOT required for local dev
 - Building, unit tests, `hpi:run`, and configuring a Slurm cloud all work **without** a real Slurm cluster. A live `slurmrestd` (Slurm 24.11+ with JWT) is only needed to actually provision agents end to end. You can create and persist a `SlurmCloud` + `SlurmJobTemplate` (via UI, JCasC, or the Script Console) without any cluster.
+
+<!-- HARNESS:BEGIN -->
+## Harness
+
+This repo uses Harness. Before non-trivial work, read:
+
+- `README.md` and `CLAUDE.md` (build commands, class map)
+- `docs/HARNESS.md` and `docs/FEATURE_INTAKE.md` (work classification)
+- `docs/ARCHITECTURE.md` and `docs/product/overview.md` (plugin boundaries)
+- `docs/TEST_MATRIX.md` and `TODO.md` (proof expectations and known gaps)
+- `docs/CONTEXT_RULES.md` and `docs/TOOL_REGISTRY.md`
+- `scripts/bin/harness-cli query matrix` (if CLI installed)
+
+Use the Rust Harness CLI at `scripts/bin/harness-cli` as the main operational
+tool. Before a step that could use an external tool, run
+`scripts/bin/harness-cli query tools --capability <name> --status present` to
+see what is equipped; an absent capability is a clean skip.
+<!-- HARNESS:END -->
