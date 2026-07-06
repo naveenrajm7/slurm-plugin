@@ -12,6 +12,7 @@ import hudson.Util;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.util.ListBoxModel;
+import io.jenkins.plugins.slurm.AgentLaunchConfig;
 import io.jenkins.plugins.slurm.PyxisConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
@@ -355,6 +356,14 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 PyxisConfig pyxisConfig = OBJECT_MAPPER.readValue(pyxisJsonString, PyxisConfig.class);
                 template.setPyxis(pyxisConfig);
                 LOGGER.fine("Applied PyxisConfig using ObjectMapper");
+            }
+
+            // Parse native agent launch configuration
+            if (jsonConfig.has("agent")) {
+                String agentJsonString = jsonConfig.getJSONObject("agent").toString();
+                AgentLaunchConfig agentConfig = OBJECT_MAPPER.readValue(agentJsonString, AgentLaunchConfig.class);
+                template.setAgent(agentConfig);
+                LOGGER.fine("Applied AgentLaunchConfig using ObjectMapper");
             }
             
             LOGGER.fine("Successfully applied JSON configuration to template");
@@ -940,6 +949,10 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 if (parsed.has("pyxis")) {
                     String pyxisJson = parsed.getJSONObject("pyxis").toString();
                     OBJECT_MAPPER.readValue(pyxisJson, io.jenkins.plugins.slurm.PyxisConfig.class);
+                }
+                if (parsed.has("agent")) {
+                    String agentJson = parsed.getJSONObject("agent").toString();
+                    OBJECT_MAPPER.readValue(agentJson, io.jenkins.plugins.slurm.AgentLaunchConfig.class);
                 }
                 return hudson.util.FormValidation.ok();
             } catch (com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException e) {

@@ -169,6 +169,13 @@
 
   </f:section>
 
+  <!-- Agent Launch (native, without Pyxis) -->
+  <f:section title="Agent Launch (without container)">
+    
+    <f:optionalProperty field="agent" title="Enable Native Agent Launch"/>
+    
+  </f:section>
+
   <!-- Container Configuration (Pyxis/Enroot) -->
   <f:section title="Container Configuration (Pyxis)">
     

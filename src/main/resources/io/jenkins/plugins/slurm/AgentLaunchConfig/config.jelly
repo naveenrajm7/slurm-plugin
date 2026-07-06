@@ -1,0 +1,25 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout"
+         xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+
+  <f:entry field="javaPath" title="Java Path"
+           description="Java executable on compute nodes (default: java). Use a full path when Java is not on PATH.">
+    <f:textbox default="java"/>
+  </f:entry>
+
+  <f:entry field="jarPath" title="Agent JAR Path"
+           description="Path to agent.jar on compute nodes (e.g. /opt/jenkins/agent.jar). Required unless Download Agent JAR is enabled.">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="downloadJar" title="Download Agent JAR"
+           description="Download agent.jar from the Jenkins controller at job start (cached in the working directory). Requires network access from compute nodes.">
+    <f:checkbox/>
+  </f:entry>
+
+  <f:entry field="setupScript" title="Setup Script"
+           description="Optional shell commands run before launching the agent (e.g. module load java/21). One command per line.">
+    <f:textarea/>
+  </f:entry>
+
+</j:jelly>

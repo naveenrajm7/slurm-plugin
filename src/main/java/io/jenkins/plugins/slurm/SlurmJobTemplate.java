@@ -202,6 +202,9 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     
     // Container support (Pyxis/Enroot)
     private PyxisConfig pyxis;                   // Pyxis container configuration
+
+    // Native agent launch (without Pyxis)
+    private AgentLaunchConfig agent;
     
     // Pipeline build context (transient - not persisted)
     private transient TaskListener listener;     // Build's TaskListener for pipeline error reporting
@@ -266,6 +269,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.standardError = "";
         this.standardInput = "";
         this.pyxis = null;
+        this.agent = null;
     }
     
     public SlurmJobTemplate(String name, String label) {
@@ -856,6 +860,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setPyxis(PyxisConfig pyxis) {
         this.pyxis = pyxis;
+    }
+
+    @CheckForNull
+    public AgentLaunchConfig getAgent() {
+        return agent;
+    }
+
+    @DataBoundSetter
+    public void setAgent(AgentLaunchConfig agent) {
+        this.agent = agent;
     }
     
     // Pipeline build context (listener for error reporting)
