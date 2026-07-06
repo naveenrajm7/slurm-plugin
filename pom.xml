@@ -5,7 +5,7 @@
   <parent>
     <groupId>org.jenkins-ci.plugins</groupId>
     <artifactId>plugin</artifactId>
-    <version>5.21</version>
+    <version>6.2189.v695a_c41f5249</version>
     <relativePath />
   </parent>
 
@@ -43,7 +43,7 @@
     <revision>1.1</revision>
     <changelist>-SNAPSHOT</changelist>
     <!-- https://www.jenkins.io/doc/developer/plugin-development/choosing-jenkins-baseline/ -->
-    <jenkins.baseline>2.504</jenkins.baseline>
+    <jenkins.baseline>2.555</jenkins.baseline>
     <jenkins.version>${jenkins.baseline}.3</jenkins.version>
     <gitHubRepo>jenkinsci/${project.artifactId}-plugin</gitHubRepo>
 
@@ -56,7 +56,7 @@
       <dependency>
         <groupId>io.jenkins.tools.bom</groupId>
         <artifactId>bom-${jenkins.baseline}.x</artifactId>
-        <version>5208.vb_69e9d049f68</version>
+        <version>6667.v64d86185fd17</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -104,6 +104,13 @@
       <groupId>org.openapitools</groupId>
       <artifactId>jackson-databind-nullable</artifactId>
       <version>0.2.6</version>
+    </dependency>
+
+    <!-- Required by OpenAPI-generated client (javax.annotation.Nullable from JSR-305) -->
+    <dependency>
+      <groupId>com.google.code.findbugs</groupId>
+      <artifactId>jsr305</artifactId>
+      <version>3.0.2</version>
     </dependency>
     
     <!-- Caffeine cache for client management - use version from BOM -->
