@@ -11,6 +11,7 @@ import hudson.slaves.SlaveComputer;
 import hudson.slaves.OfflineCause;
 import io.jenkins.plugins.slurm.client.model.JobDescMsg;
 import io.jenkins.plugins.slurm.client.SlurmClient;
+import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import io.jenkins.plugins.slurm.client.ApiException;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -64,11 +65,15 @@ public class SlurmLauncher extends JNLPLauncher {
             LOGGER.severe("Agent is null for computer: " + computer.getName());
             throw new IllegalStateException("Agent is null");
         }
+
+        TaskListener console = consoleListener(agent, listener);
         
         // Kubernetes pattern: Check if previous launch failed permanently
         if (problem != null) {
             LOGGER.severe("Launch previously failed permanently for agent: " + agent.getNodeName() + 
                          " - " + problem.getMessage());
+            console.getLogger().println("[Slurm] Agent launch previously failed: " + problem.getMessage());
+            console.error(problem.getMessage());
             listener.error("Agent launch previously failed: " + problem.getMessage());
             listener.error("Not retrying - please check agent configuration and Slurm logs");
             // Don't throw - just return and keep agent offline
@@ -122,7 +127,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 // Submit the job
                 LOGGER.info("Submitting job to Slurm...");
                 listener.getLogger().println("Submitting job to Slurm...");
-                String jobId = cloud.submitJob(jobDesc, listener);
+                String jobId = cloud.submitJob(jobDesc, console);
                 
                 // Store the job ID in the agent
                 agent.setSlurmJobId(jobId);
@@ -144,7 +149,10 @@ public class SlurmLauncher extends JNLPLauncher {
             
         } catch (InterruptedException e) {
             LOGGER.log(Level.WARNING, "Interrupted while launching Slurm agent: " + agent.getNodeName(), e);
-            listener.error("Launch interrupted: " + e.getMessage());
+            String interruptMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            console.getLogger().println("[Slurm] Agent provisioning interrupted: " + interruptMsg);
+            console.error(interruptMsg);
+            listener.error("Launch interrupted: " + interruptMsg);
             
             // Set problem field to prevent retries
             setProblem(e);
@@ -168,7 +176,12 @@ public class SlurmLauncher extends JNLPLauncher {
             
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to launch Slurm agent: " + agent.getNodeName(), e);
-            listener.error("Failed to launch Slurm agent: " + e.getMessage());
+            String failureMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            if (agent.getSlurmJobId() != null) {
+                console.getLogger().println("[Slurm] Agent provisioning failed: " + failureMsg);
+                console.error(failureMsg);
+            }
+            listener.error("Failed to launch Slurm agent: " + failureMsg);
             
             // Set problem field to prevent retries
             setProblem(e);
@@ -382,6 +395,86 @@ public class SlurmLauncher extends JNLPLauncher {
         return (url != null && !url.isEmpty()) ? url : "<jenkins-url>";
     }
 
+    private TaskListener consoleListener(SlurmAgent agent, TaskListener launchListener) {
+        TaskListener runListener = agent.getRunListener();
+        return runListener == TaskListener.NULL ? launchListener : runListener;
+    }
+
+    private void handleMissingSlurmJob(
+            SlurmComputer computer,
+            SlurmAgent agent,
+            SlurmCloud cloud,
+            SlurmJobTemplate template,
+            String jobId,
+            TaskListener listener) throws IOException, InterruptedException {
+        String errorMsg = "Slurm job was cancelled or is no longer visible (job ID: " + jobId + ")";
+        IOException exception = new IOException(errorMsg);
+        setProblem(exception);
+
+        TaskListener console = consoleListener(agent, listener);
+        console.getLogger().println("[Slurm] " + errorMsg);
+        console.error(errorMsg);
+
+        JobUtils.cancelQueueItemFor(agent, errorMsg);
+
+        try {
+            cloud.cancelJob(jobId, listener);
+        } catch (Exception cancelEx) {
+            LOGGER.log(Level.FINE, "Could not cancel missing Slurm job " + jobId, cancelEx);
+        }
+
+        computer.updateProvisioningStatus(new SlurmJobStatus(jobId, null, null, null));
+        computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+
+        try {
+            agent.terminate();
+        } catch (IOException | InterruptedException removeEx) {
+            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
+        }
+
+        throw exception;
+    }
+
+    private void failProvisioning(
+            SlurmComputer computer,
+            SlurmAgent agent,
+            SlurmCloud cloud,
+            SlurmJobTemplate template,
+            String jobId,
+            String jobState,
+            String errorMsg,
+            TaskListener listener,
+            boolean cancelJob,
+            Runnable logDetails) throws IOException, InterruptedException {
+        IOException exception = new IOException(errorMsg);
+        setProblem(exception);
+
+        TaskListener console = consoleListener(agent, listener);
+        logDetails.run();
+        console.error(errorMsg);
+        listener.error(errorMsg);
+        LOGGER.severe(errorMsg);
+
+        if (cancelJob) {
+            try {
+                cloud.cancelJob(jobId, listener);
+            } catch (Exception cancelEx) {
+                LOGGER.log(Level.WARNING, "Failed to cancel job " + jobId, cancelEx);
+            }
+        }
+
+        JobUtils.cancelQueueItemFor(agent, errorMsg);
+        computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+
+        try {
+            agent.terminate();
+        } catch (IOException | InterruptedException removeEx) {
+            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
+        }
+
+        throw exception;
+    }
+
     /**
      * Wait for agent to connect with active status checking.
      * This follows the Kubernetes plugin pattern:
@@ -398,7 +491,8 @@ public class SlurmLauncher extends JNLPLauncher {
         long timeout = startTime + agentTimeoutMs;
         long lastStatusCheck = 0;
         long lastProgressLog = startTime;
-        boolean jobRunning = false;  // Track if job reached RUNNING state
+        boolean jobRunning = false;
+        String lastLoggedStatus = null;
         
         SlurmClient client = null;
         try {
@@ -408,131 +502,79 @@ public class SlurmLauncher extends JNLPLauncher {
             listener.getLogger().println("Warning: Could not create Slurm client for status checking. " +
                 "Will wait for agent connection without status monitoring.");
         }
+
+        TaskListener console = consoleListener(agent, listener);
         
         while (System.currentTimeMillis() < timeout) {
-            // Check job status periodically
             if (client != null && System.currentTimeMillis() - lastStatusCheck >= STATUS_CHECK_INTERVAL_MS) {
                 try {
-                    String jobState = client.getJobState(jobId);
-                    
+                    SlurmJobStatus status = client.getJobStatus(jobId);
+
+                    if (status == null) {
+                        handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                    }
+
+                    computer.updateProvisioningStatus(status);
+                    String statusLine = status.formatForDisplay();
+                    if (!statusLine.equals(lastLoggedStatus)) {
+                        console.getLogger().println(status.formatForConsole());
+                        lastLoggedStatus = statusLine;
+                    }
+
+                    String jobState = status.getState();
                     if (jobState != null) {
-                        // Kubernetes pattern: Check if job reached RUNNING state (like pod ready)
                         if (jobState.equals("RUNNING")) {
                             if (!jobRunning) {
                                 jobRunning = true;
-                                listener.getLogger().println("Slurm job " + jobId + " is now RUNNING");
+                                console.getLogger().println(status.formatForConsole());
                                 LOGGER.info("Slurm job " + jobId + " reached RUNNING state");
                             }
                         }
-                        
-                        // Check if job is in a failed state
+
+                        if ("CANCELLED".equals(jobState)) {
+                            String errorMsg = "Slurm job was cancelled (job ID: " + jobId + ")";
+                            failProvisioning(
+                                computer, agent, cloud, template, jobId, jobState, errorMsg, listener, false,
+                                () -> logProvisioningFailure(console, jobId, jobState, template));
+                        }
+
                         if (SlurmClient.isFailedState(jobState)) {
-                            LOGGER.severe("FAIL-FAST: Job " + jobId + " entered FAILED state: " + jobState);
-                            
                             String errorMsg = "Slurm job " + jobId + " failed with state: " + jobState + ". " +
                                 "Agent will not connect. Check Slurm logs: slurm-" + jobId + ".out";
-                            
-                            // Set problem field to prevent retries
-                            IOException exception = new IOException(errorMsg);
-                            setProblem(exception);
-                            
-                            // Log error details to BUILD CONSOLE using getRunListener(),
-                            // falling back to the launch listener when no pipeline listener is set
-                            // (e.g. static-template provisioning without a slurmJobTemplate() step).
-                            TaskListener runListener = agent.getRunListener();
-                            TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
-                            logProvisioningFailure(errorTarget, jobId, jobState, template);
-                            
-                            // Cancel the job immediately
-                            try {
-                                cloud.cancelJob(jobId, listener);
-                                LOGGER.info("Canceled failed Slurm job: " + jobId);
-                            } catch (Exception cancelEx) {
-                                LOGGER.log(Level.WARNING, "Failed to cancel job " + jobId, cancelEx);
-                            }
-                            
-                            // Kubernetes pattern: Cancel queue item to prevent infinite loop
-                            JobUtils.cancelQueueItemFor(agent, "Slurm job failed with state: " + jobState);
-                            
-                            listener.error(errorMsg);
-                            LOGGER.severe(errorMsg);
-                            
-                            // Mark computer offline before terminating
-                            computer.setTemporarilyOffline(true, 
-                                new OfflineCause.UserCause(null, errorMsg));
-                            
-                            // CRITICAL: Terminate node BEFORE throwing exception
-                            // This removes the node from Jenkins so it can't be relaunched
-                            // Kubernetes pattern: node must be gone before exception propagates
-                            try {
-                                agent.terminate();
-                                LOGGER.info("Terminated failed agent node: " + agent.getNodeName());
-                            } catch (IOException | InterruptedException removeEx) {
-                                LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
-                            }
-                            
-                            LOGGER.severe("FAIL-FAST: Throwing IOException to exit launch loop");
-                            throw exception;
+                            LOGGER.severe("FAIL-FAST: Job " + jobId + " entered FAILED state: " + jobState);
+                            failProvisioning(
+                                computer, agent, cloud, template, jobId, jobState, errorMsg, listener, true,
+                                () -> logProvisioningFailure(console, jobId, jobState, template));
                         }
-                        
-                        // CRITICAL: Check if job completed without agent connection
-                        // This happens when the Slurm job runs but the startup script fails
-                        // (e.g., bad Jenkins URL, network issues, agent.jar download failure)
+
                         if (jobState.equals("COMPLETED") && !computer.isOnline()) {
-                            LOGGER.severe("FAIL-FAST: Job " + jobId + " COMPLETED but agent never connected");
-                            
                             String errorMsg = "Slurm job " + jobId + " completed but agent failed to connect. " +
                                 "This usually means the startup script failed. Check Slurm logs: slurm-" + jobId + ".out";
-                            
-                            // Set problem field to prevent retries
-                            IOException exception = new IOException(errorMsg);
-                            setProblem(exception);
-                            
-                            TaskListener runListener = agent.getRunListener();
-                            TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
-                            logAgentConnectionFailure(errorTarget, jobId, template);
-                            
-                            // Job already completed, no need to cancel
-                            
-                            // Kubernetes pattern: Cancel queue item to prevent infinite loop
-                            JobUtils.cancelQueueItemFor(agent, "Job completed but agent failed to connect");
-                            
-                            listener.error(errorMsg);
-                            LOGGER.severe(errorMsg);
-                            
-                            // Mark computer offline before terminating
-                            computer.setTemporarilyOffline(true, 
-                                new OfflineCause.UserCause(null, errorMsg));
-                            
-                            // Terminate node before throwing
-                            try {
-                                agent.terminate();
-                                LOGGER.info("Terminated failed agent node: " + agent.getNodeName());
-                            } catch (IOException | InterruptedException removeEx) {
-                                LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
-                            }
-                            
-                            LOGGER.severe("FAIL-FAST: Throwing IOException to exit launch loop");
-                            throw exception;
+                            LOGGER.severe("FAIL-FAST: Job " + jobId + " COMPLETED but agent never connected");
+                            failProvisioning(
+                                computer, agent, cloud, template, jobId, jobState, errorMsg, listener, false,
+                                () -> logAgentConnectionFailure(console, jobId, template));
                         }
                     }
-                    
+
                     lastStatusCheck = System.currentTimeMillis();
-                    
+
                 } catch (ApiException e) {
-                    // Log but don't fail - continue waiting for agent
+                    if (e.getCode() == 404) {
+                        handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                    }
                     LOGGER.log(Level.FINE, "Failed to check job status for " + jobId, e);
                 } catch (IOException ioe) {
-                    // Re-throw IOException from failed job state
                     throw ioe;
                 }
             }
             
-            // Log progress periodically (unless job is running and we're waiting for connection)
             if (!jobRunning && System.currentTimeMillis() - lastProgressLog >= PROGRESS_LOG_INTERVAL_MS) {
                 long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                listener.getLogger().println("Waiting for Slurm job to start running... (" + 
-                    elapsed + " seconds elapsed)");
+                String progress = lastLoggedStatus != null
+                    ? lastLoggedStatus + " — still waiting (" + elapsed + "s elapsed)"
+                    : "Waiting for Slurm job to start running... (" + elapsed + " seconds elapsed)";
+                console.getLogger().println(progress);
                 lastProgressLog = System.currentTimeMillis();
             }
             
@@ -542,12 +584,12 @@ public class SlurmLauncher extends JNLPLauncher {
             // 2. Computer is online (JNLP channel established)
             if (jobRunning && computer.isOnline()) {
                 long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                listener.getLogger().println("Agent connected successfully after " + 
+                console.getLogger().println("Agent connected successfully after " + 
                     elapsed + " seconds (job RUNNING + JNLP connected)");
                 LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + 
                     elapsed + " seconds (job RUNNING + JNLP connected)");
                 
-                // Kubernetes pattern: enable tasks and mark as launched
+                computer.clearProvisioningStatus();
                 computer.setAcceptingTasks(true);
                 launched = true;
                 
@@ -565,7 +607,7 @@ public class SlurmLauncher extends JNLPLauncher {
             if (jobRunning && !computer.isOnline()) {
                 if (System.currentTimeMillis() - lastProgressLog >= PROGRESS_LOG_INTERVAL_MS) {
                     long elapsed = (System.currentTimeMillis() - startTime) / 1000;
-                    listener.getLogger().println("Job is RUNNING, waiting for JNLP connection... (" + 
+                    console.getLogger().println("Job is RUNNING, waiting for JNLP connection... (" + 
                         elapsed + " seconds elapsed)");
                     lastProgressLog = System.currentTimeMillis();
                 }
@@ -590,9 +632,7 @@ public class SlurmLauncher extends JNLPLauncher {
         IOException exception = new IOException(errorMsg);
         setProblem(exception);
         
-        TaskListener runListener = agent.getRunListener();
-        TaskListener errorTarget = runListener == TaskListener.NULL ? listener : runListener;
-        logLaunchTimeout(errorTarget, jobId, template, jobRunning, agentTimeoutMs);
+        logLaunchTimeout(console, jobId, template, jobRunning, agentTimeoutMs);
         
         listener.error(errorMsg);
         LOGGER.severe(errorMsg);

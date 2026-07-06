@@ -17,23 +17,23 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 - [ ] **Error messages not visible in build console for static-template provisioning** (`SlurmLauncher`)
   - When provisioned via a Jenkins label (no `slurmJobTemplate()` pipeline step), `jobTemplate.getListenerOrNull()` is null so `agent.runListener` is never set, and executor scanning finds nothing (agent never reached RUNNING). `getRunListener()` returns `TaskListener.NULL` → error messages fall back to the computer/agent log (Manage Jenkins → Nodes → agent → Log), not the build console.
   - Declarative agent path works correctly because `SlurmJobTemplateStepExecution` injects the build's `TaskListener` into the template before provisioning.
-  - **Fix approach (model after K8s):** In `SlurmCloud.provision()` / `createPlannedNode()`, scan `Jenkins.get().getQueue()` for a `Queue.Item` whose label matches the template label and extract its `TaskListener` via `FlowExecutionOwner` (same pattern K8s uses in `KubernetesSlave.getRunListener()`). Inject that listener into the agent at creation time. Alternatively, store the `Queue.Item` ID on the agent and resolve its listener lazily at error time.
+  - **Partial fix:** `JobUtils.findRunListenerForLabel()` + queue scan wired in `SlurmCloud.createPlannedNode()` (same PR as job status visibility). Error messages during provisioning should now reach the build console for `node('label')`; verify edge cases remain.
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [ ] **[MED]** Consider periodic cleanup for orphaned Slurm jobs — K8s has `GarbageCollection` class that cleans orphaned pods
-- [ ] **Slurm job status visibility while provisioning** (discovered during label smoke testing — build shows "waiting/offline" while Slurm job is PD in queue)
-  - [ ] **[HIGH]** Build console — log Slurm job ID, state, and pending reason (e.g. `PENDING (Priority)`) on each poll while queued; not only after agent is online
-  - [ ] **[HIGH]** Wire `runListener` for cloud `node('label')` provisioning — attach queued build's `TaskListener` at agent creation (same queue scan as error-message TODO above); today only `slurmJobTemplate()` step sets it
-  - [ ] **[MED]** Agent page — show live status via `SlurmComputer.getSlurmJobInfo()` + REST poll (e.g. `Slurm job 413835: PENDING (Priority)`)
-  - [ ] **[MED]** Offline cause — set description to current Slurm state/reason instead of blank offline agent
-  - [ ] **[MED]** External cancel — detect `CANCELLED` / missing job (404) immediately and surface "Slurm job was cancelled" in build console (fail fast, don't wait for agent timeout)
-  - Context: `SlurmLauncher.waitForAgentConnection()` polls every 5s and logs generic "Waiting for Slurm job to start running…" to agent launch log only; pipeline `node('label')` users see no Slurm context in build console
 - [ ] **Slurm compute node visibility** (discovered during CK workload validation — agent page shows Jenkins synthetic name, not where the job landed)
-  - [ ] **[HIGH]** Populate `SlurmAgent.nodeList` when job reaches RUNNING — poll `JobInfo.nodes` from slurmrestd in `SlurmLauncher.waitForAgentConnection()` and call `setNodeList()` (field + `getSlurmJobInfo()` exist but `setNodeList` is never called today)
-  - [ ] **[HIGH]** Agent UI — Jelly sidepanel on `SlurmComputer` showing `getSlurmJobInfo()` (job ID, partition, compute node hostname(s)); `getSlurmJobInfo()` is implemented but not exposed in any view
-  - [ ] **[MED]** Build console — when agent connects, log `Slurm job <id> on node(s) <host>` (not only the Jenkins agent name like `ctr2-alola-ctrl-01-wl-nogpu-<timestamp>`)
-  - [ ] **[MED]** Agent description — update from "Slurm agent from template wl-nogpu" to include partition + nodelist once known
+  - [ ] **[HIGH]** Ensure `SlurmAgent.nodeList` is populated when job reaches RUNNING — `updateProvisioningStatus()` sets it when `JobInfo.nodes` is returned; verify on live cluster and backfill if nodes arrive only at RUNNING
+  - [ ] **[HIGH]** Agent UI — richer sidepanel on `SlurmComputer` (partition + compute hostname(s)); basic `SlurmJobStatusAction` box exists in job-status PR
+  - [ ] **[MED]** Build console — when agent connects, log `Slurm job <id> on node(s) <host>` (not only the Jenkins synthetic agent name)
+  - [ ] **[MED]** Agent description — update from "Slurm agent from template …" to include partition + nodelist once known
   - [ ] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
 
 ## Done
+
+- [x] **Slurm job status visibility while provisioning** (`feature/slurm-job-status-visibility`)
+  - Build console logs `[Slurm] Slurm job <id>: <state> (<reason>)` on each state change during `waitForAgentConnection()`
+  - `JobUtils.findRunListenerForLabel()` wires build `TaskListener` for static-template `node('label')` provisioning
+  - Agent page: `SlurmJobStatusAction` box + REST poll of `slurmJobInfo`
+  - Fail-fast on `CANCELLED` / missing job (404)
+  - Note: offline cause during launch uses live status in agent UI only (`setTemporaryOfflineCause` blocks scheduling)

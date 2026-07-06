@@ -414,12 +414,16 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           cloudStatsId                                  // cloud-stats tracking ID
                                       );
                                       
-                                      // 4. Set the TaskListener from template to agent (K8s pattern)
-                                      // This enables error messages to appear in build console even before executor assignment
-                                      hudson.model.TaskListener templateListener = jobTemplate.getListenerOrNull();
-                                      if (templateListener != null) {
-                                          agent.setRunListener(templateListener);
-                                          LOGGER.fine("Set build TaskListener on agent for error reporting");
+                                      // 4. Wire build console listener (K8s pattern)
+                                      // slurmJobTemplate() / declarative agent set it on the template;
+                                      // node('label') static-template provisioning needs a queue scan.
+                                      hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
+                                      if (buildListener == null && label != null) {
+                                          buildListener = JobUtils.findRunListenerForLabel(label.getName());
+                                      }
+                                      if (buildListener != null && buildListener != hudson.model.TaskListener.NULL) {
+                                          agent.setRunListener(buildListener);
+                                          LOGGER.fine("Set build TaskListener on agent for provisioning status");
                                       }
                                       
                                       // 5. Add agent to Jenkins
@@ -580,8 +584,10 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
             
         } catch (Exception e) {
-            LOGGER.severe("Failed to submit Slurm job: " + e.getMessage());
-            listener.error("Failed to submit job: " + e.getMessage());
+            String failureMsg = e.getMessage() != null ? e.getMessage() : e.toString();
+            LOGGER.severe("Failed to submit Slurm job: " + failureMsg);
+            listener.getLogger().println("[Slurm] Job submission failed: " + failureMsg);
+            listener.error(failureMsg);
             throw e;
         }
     }
