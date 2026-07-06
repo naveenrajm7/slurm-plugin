@@ -82,21 +82,10 @@
       <artifactId>cloudbees-folder</artifactId>
     </dependency>
     
-    <!-- SSH launcher for connecting to Slurm nodes -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>ssh-slaves</artifactId>
-    </dependency>
-    
     <!-- Credentials management -->
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>credentials</artifactId>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>ssh-credentials</artifactId>
     </dependency>
     
     <!-- Plain credentials for JWT tokens -->
