@@ -43,6 +43,7 @@ jobs:
         with:
           files: target/surefire-reports/**/*.xml
           check_name: Unit test results
+          comment_mode: off
 
       - name: Upload test results
         if: always()
