@@ -28,6 +28,7 @@ It is not required to run the Jenkins controller inside the Slurm cluster.
 - [Pyxis / Enroot container support](#pyxis--enroot-container-support)
 - [Folder-based cloud restrictions](#folder-based-cloud-restrictions)
 - [Features controlled using system properties](#features-controlled-using-system-properties)
+- [Paths reference](#paths-reference)
 - [Troubleshooting](#troubleshooting)
 - [Building and testing](#building-and-testing)
 - [Related projects](#related-projects)
@@ -343,6 +344,143 @@ See [Features controlled by system properties](https://www.jenkins.io/doc/book/m
 | `io.jenkins.plugins.slurm.SlurmCloud.agentTimeoutMinutes` | `5` | Minutes to wait for an agent to connect before failing |
 
 
+# Paths Reference
+
+When a build provisions a Slurm agent, several independent path namespaces come into play:
+the Jenkins controller, the Slurm REST API, the Slurm job on a compute node, and the
+inbound agent process inside an optional Pyxis container. This section lists them in one
+place so you can map console output and cluster files to the right location.
+
+Placeholders used below:
+
+| Placeholder | Meaning |
+|-------------|---------|
+| `{jenkins}` | Jenkins controller host (e.g. `localhost:8080` for `mvn hpi:run`) |
+| `{controller}` | Slurm controller hostname or IP |
+| `{cloud}` | Slurm cloud name configured in Jenkins |
+| `{template}` | Job template name |
+| `{folder}` | Jenkins folder item name |
+| `{job}` | Pipeline or freestyle job name |
+| `{agent}` | Dynamic agent name (`{cloud}-{template}-{timestamp}`) |
+| `{jobId}` | Numeric Slurm job ID from the build log |
+| `{workdir}` | Template `current_working_directory` (default `/tmp/jenkins`) |
+
+## Jenkins controller
+
+| Path | Purpose |
+|------|---------|
+| `http://{jenkins}/jenkins` | Web UI (`mvn hpi:run` default) |
+| `http://{jenkins}/jenkins/` | REST API root; also the trailing-slash form agents expect in `JENKINS_URL` |
+| `/jenkins/job/{folder}/job/{job}/` | Job page URL |
+| `/jenkins/job/{folder}/job/{job}/build` | Trigger a build (POST with CSRF crumb) |
+| `/jenkins/job/{folder}/job/{job}/api/json` | Job metadata |
+| `/jenkins/crumbIssuer/api/json` | CSRF crumb for scripted API calls |
+| `work/jenkins/` | Jenkins home directory created by `mvn hpi:run` (under the plugin checkout) |
+| `target/slurm.hpi` | Built plugin artifact from `mvn package` |
+
+The **Jenkins URL** field on the Slurm cloud is what gets passed to agents as `JENKINS_URL`.
+It is resolved in this order: cloud configuration → **Manage Jenkins → System → Jenkins URL**
+→ Jenkins root URL → `http://localhost:8080/jenkins/` (dev fallback).
+
+When Jenkins runs outside the cluster, this URL must be reachable from compute nodes over
+HTTP/WebSocket — often different from the URL you use in a browser on your laptop.
+See [Agent reachability](#agent-reachability-tunnel) below.
+
+## Slurm REST API
+
+| Path | Purpose |
+|------|---------|
+| `http://{controller}:6820` | Base URL configured on the Slurm cloud (*Slurm REST URL*) |
+| `http://{controller}:6820/slurm/v0.0.42/ping/` | Health check used by **Test Connection** |
+| `http://{controller}:6820/slurm/v0.0.42/jobs/` | Job submission (`POST`) and queries |
+
+The plugin client appends `/slurm/v0.0.42/...` to the configured base URL automatically.
+
+## Slurm job working directory
+
+The template field **Working Directory** maps to the Slurm REST field
+`current_working_directory` and becomes:
+
+* Slurm **WorkDir** — where the batch script starts and where stdout/stderr are written
+* Jenkins agent **remote root** (`remoteFS`) — parent of the build workspace on the node
+
+| Setting | Default | Notes |
+|---------|---------|-------|
+| UI / JCasC template | `/tmp/jenkins` | Must exist and be writable on every compute node |
+| Inline pipeline JSON | (none — you must set it) | Set `"current_working_directory": "/tmp/jenkins"` in the `job` object |
+| Pipeline helper default | `/tmp/jenkins-{cloud}` | Used when the plugin synthesizes a template from declarative JSON |
+
+**Do not** point `current_working_directory` at paths that only exist on the Jenkins
+controller (e.g. `/var/jenkins_home`) or at home directories owned by another service
+account with restrictive permissions. If WorkDir is missing or not writable, the Slurm job
+exits immediately and the agent never connects.
+
+## Paths on compute nodes
+
+During a build, paths on the allocated node look like this (with default `{workdir}` =
+`/tmp/jenkins` and agent `my-cloud-gpu-agent-1712345678901`):
+
+```
+{workdir}/                          ← Slurm WorkDir + Jenkins remoteFS
+├── slurm-{jobId}.out               ← Slurm stdout (shown in build log hints)
+├── slurm-{jobId}.err               ← Slurm stderr (if configured separately)
+└── workspace/
+    └── {folder}/
+        └── {job}/                  ← Pipeline workspace (checkout, build steps)
+
+/tmp/{agent}/                       ← agent.jar -workDir (remoting files)
+└── remoting/                       ← Remoting logs
+```
+
+The build console line `Running on … in /path/to/workspace` refers to
+`{workdir}/workspace/{folder}/{job}` (or the freestyle equivalent under `{workdir}/workspace/`).
+
+Slurm job **name** equals the Jenkins agent name: `{cloud}-{template}-{timestamp}`.
+
+## Inbound agent inside a container
+
+When a template uses Pyxis, the batch script runs inside the container image. The plugin
+hard-codes paths from the standard [`jenkins/inbound-agent`](https://hub.docker.com/r/jenkins/inbound-agent)
+image layout:
+
+| Path | Purpose |
+|------|---------|
+| `/opt/java/openjdk/bin/java` | JVM used to start the agent |
+| `/usr/share/jenkins/agent.jar` | Inbound agent JAR |
+| `-workDir /tmp/{agent}` | Per-agent remoting directory (outside `{workdir}`) |
+
+The **container image** itself is a cluster-local path (commonly a `.sqsh` file), e.g.
+`/path/to/jenkins-inbound-agent.sqsh`, set in the template Pyxis section or pipeline JSON
+`pyxis.containerImage`.
+
+Optional Pyxis `containerWorkdir` overrides the working directory *inside* the container;
+it does not replace `{workdir}` on the host for Slurm stdout or Jenkins `remoteFS`.
+
+## Agent reachability (tunnel)
+
+If Jenkins is on your laptop but agents run on the cluster, compute nodes must reach the
+**cloud Jenkins URL**, not necessarily the URL you open locally.
+
+A common local-dev pattern (see `scripts/e2e/`):
+
+| Location | URL / bind | Who uses it |
+|----------|------------|-------------|
+| Your machine | `http://localhost:8080/jenkins` | Browser, REST scripts, `mvn hpi:run` |
+| Slurm controller (SSH `-R`) | `127.0.0.1:5000` → your `:8080` | Tunnel endpoint on the cluster side |
+| Slurm cloud **Jenkins URL** | `http://localhost:5000/jenkins/` | Agents on compute nodes (via controller loopback + tunnel) |
+
+Set `SLURM_JENKINS_AGENT_URL` in `scripts/e2e/config.env` to match the cloud configuration.
+
+## Repository paths (development)
+
+| Path | Purpose |
+|------|---------|
+| `src/main/resources/openapi/slurm-v0.0.42.json` | OpenAPI spec; preprocessed before code generation |
+| `target/generated-sources/` | Generated Slurm REST Java client (recreated on each build) |
+| `examples/` | Sample pipeline definitions |
+| `scripts/e2e/config.env.example` | E2E placeholders; copy to gitignored `config.env` |
+
+
 # Troubleshooting
 
 ## Check whether the Slurm job was submitted
@@ -365,6 +503,8 @@ sacct -j 12345 --format=JobID,State,ExitCode,NodeList
 * Ensure the compute node can reach `JENKINS_URL` over WebSocket.
 * Confirm the JWT token has not expired.
 * Increase agent timeout via `agentTimeoutMinutes` if node startup is slow.
+* If the Slurm job fails instantly, check [Paths reference](#paths-reference) — especially
+  `current_working_directory` on compute nodes and the cloud **Jenkins URL** agents use.
 
 ## Enable debug logging
 
