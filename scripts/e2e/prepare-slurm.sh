@@ -9,6 +9,11 @@ source "${SCRIPT_DIR}/load-config.sh"
 WORKDIR="${E2E_TEMPLATE_WORKDIR:-/tmp/jenkins}"
 TUNNEL_REMOTE_PORT="${TUNNEL_REMOTE_PORT:-5000}"
 
+# Optional cluster resources (see prepare-slurm-cluster.sh)
+if [[ -f "${SCRIPT_DIR}/prepare-slurm-cluster.sh" ]]; then
+  bash "${SCRIPT_DIR}/prepare-slurm-cluster.sh" || true
+fi
+
 echo "Ensuring workdir ${WORKDIR}"
 # shellcheck disable=SC2086
 ssh ${SLURM_SSH_OPTS} "${SLURM_SSH_HOST}" "mkdir -p '${WORKDIR}' && ls -ld '${WORKDIR}'"
