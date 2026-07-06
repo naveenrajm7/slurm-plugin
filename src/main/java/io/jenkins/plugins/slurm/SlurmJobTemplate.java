@@ -26,6 +26,7 @@ import hudson.model.TaskListener;
 import java.util.UUID;
 import java.util.logging.Logger;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.Set;
 import hudson.model.labels.LabelAtom;
 
@@ -915,7 +916,14 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         if (label == null || label.trim().isEmpty()) {
             return Collections.emptySet();
         }
-        return Label.parse(label.trim());
+        // Split explicitly — Label.parse() can collapse to a single atom if that name already exists.
+        Set<LabelAtom> atoms = new LinkedHashSet<>();
+        for (String part : label.trim().split("\\s+")) {
+            if (!part.isEmpty()) {
+                atoms.add(Jenkins.get().getLabelAtom(part));
+            }
+        }
+        return atoms;
     }
 
     /**
