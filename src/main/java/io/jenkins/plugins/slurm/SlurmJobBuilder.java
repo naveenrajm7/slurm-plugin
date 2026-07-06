@@ -404,6 +404,7 @@ public class SlurmJobBuilder {
         if (workdir == null || workdir.trim().isEmpty()) {
             workdir = "/tmp/jenkins";
         }
+        script.append("mkdir -p ").append(shellQuote(workdir)).append("\n");
 
         String javaPath;
         String jarReference;
