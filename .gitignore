@@ -1,5 +1,8 @@
 target
 
+# Accidental extract of plugin HPI/JAR (do not commit)
+META-INF/
+
 # mvn hpi:run
 work
 
