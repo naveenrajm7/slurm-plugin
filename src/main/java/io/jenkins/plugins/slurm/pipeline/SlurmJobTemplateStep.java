@@ -456,6 +456,75 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         if (source.getStandardError() != null && !source.getStandardError().isEmpty()) {
             dest.setStandardError(source.getStandardError());
         }
+        if (source.getComment() != null && !source.getComment().isEmpty()) {
+            dest.setComment(source.getComment());
+        }
+        if (source.getJobName() != null && !source.getJobName().isEmpty()) {
+            dest.setJobName(source.getJobName());
+        }
+        if (source.getNetwork() != null && !source.getNetwork().isEmpty()) {
+            dest.setNetwork(source.getNetwork());
+        }
+        if (source.getNice() != null) {
+            dest.setNice(source.getNice());
+        }
+        if (source.getReboot() != null) {
+            dest.setReboot(source.getReboot());
+        }
+        if (source.getTresPerSocket() != null && !source.getTresPerSocket().isEmpty()) {
+            dest.setTresPerSocket(source.getTresPerSocket());
+        }
+        if (source.getTresBind() != null && !source.getTresBind().isEmpty()) {
+            dest.setTresBind(source.getTresBind());
+        }
+        if (source.getTresFreq() != null && !source.getTresFreq().isEmpty()) {
+            dest.setTresFreq(source.getTresFreq());
+        }
+        if (source.getTimeMinimum() != null) {
+            dest.setTimeMinimum(source.getTimeMinimum());
+        }
+        if (source.getMinimumCpus() != null) {
+            dest.setMinimumCpus(source.getMinimumCpus());
+        }
+        if (source.getMaximumCpus() != null) {
+            dest.setMaximumCpus(source.getMaximumCpus());
+        }
+        if (source.getSocketsPerNode() != null) {
+            dest.setSocketsPerNode(source.getSocketsPerNode());
+        }
+        if (source.getThreadsPerCore() != null) {
+            dest.setThreadsPerCore(source.getThreadsPerCore());
+        }
+        if (source.getTasksPerSocket() != null) {
+            dest.setTasksPerSocket(source.getTasksPerSocket());
+        }
+        if (source.getTasksPerCore() != null) {
+            dest.setTasksPerCore(source.getTasksPerCore());
+        }
+        if (source.getTasksPerBoard() != null) {
+            dest.setTasksPerBoard(source.getTasksPerBoard());
+        }
+        if (source.getMinimumCpusPerNode() != null) {
+            dest.setMinimumCpusPerNode(source.getMinimumCpusPerNode());
+        }
+        if (source.getMinimumBoardsPerNode() != null) {
+            dest.setMinimumBoardsPerNode(source.getMinimumBoardsPerNode());
+        }
+        if (source.getMinimumSocketsPerBoard() != null) {
+            dest.setMinimumSocketsPerBoard(source.getMinimumSocketsPerBoard());
+        }
+        if (source.getMemoryPerCpu() != null) {
+            dest.setMemoryPerCpu(source.getMemoryPerCpu());
+        }
+        if (source.getTemporaryDiskPerNode() != null) {
+            dest.setTemporaryDiskPerNode(source.getTemporaryDiskPerNode());
+        }
+        if (source.getStandardInput() != null && !source.getStandardInput().isEmpty()) {
+            dest.setStandardInput(source.getStandardInput());
+        }
+        if (source.getEnvironment() != null && !source.getEnvironment().isEmpty()) {
+            dest.setEnvironment(source.getEnvironment());
+        }
     }
     
     /**

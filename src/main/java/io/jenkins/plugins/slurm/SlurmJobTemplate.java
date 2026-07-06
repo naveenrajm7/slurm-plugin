@@ -2,6 +2,8 @@ package io.jenkins.plugins.slurm;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.databind.JsonNode;
 import hudson.Extension;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
@@ -485,6 +487,14 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     public void setRequiredNodes(String requiredNodes) {
         this.requiredNodes = requiredNodes != null ? requiredNodes : "";
     }
+
+    /**
+     * Accept REST API array or comma-separated string for required_nodes.
+     */
+    @JsonSetter("required_nodes")
+    public void setRequiredNodesFromJson(JsonNode node) {
+        this.requiredNodes = jsonNodeToCsv(node);
+    }
     
     public String getExcludedNodes() {
         return excludedNodes;
@@ -494,6 +504,14 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     public void setExcludedNodes(String excludedNodes) {
         this.excludedNodes = excludedNodes != null ? excludedNodes : "";
     }
+
+    /**
+     * Accept REST API array or comma-separated string for excluded_nodes.
+     */
+    @JsonSetter("excluded_nodes")
+    public void setExcludedNodesFromJson(JsonNode node) {
+        this.excludedNodes = jsonNodeToCsv(node);
+    }
     
     public String getEnvironment() {
         return environment;
@@ -502,6 +520,20 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     @DataBoundSetter
     public void setEnvironment(String environment) {
         this.environment = environment != null ? environment : "";
+    }
+
+    /**
+     * Accept REST API string array or JSON array string for environment.
+     */
+    @JsonSetter("environment")
+    public void setEnvironmentFromJson(JsonNode node) {
+        if (node == null || node.isNull()) {
+            this.environment = "";
+        } else if (node.isArray()) {
+            this.environment = node.toString();
+        } else {
+            this.environment = node.asText("");
+        }
     }
     
     // ====================
@@ -839,6 +871,23 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     // ====================
     // Utility Methods
     // ====================
+
+    private static String jsonNodeToCsv(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        if (node.isArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonNode item : node) {
+                if (sb.length() > 0) {
+                    sb.append(',');
+                }
+                sb.append(item.asText());
+            }
+            return sb.toString();
+        }
+        return node.asText("");
+    }
     
     /**
      * Checks if this template can handle the given label.

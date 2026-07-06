@@ -92,9 +92,34 @@
       <f:textbox/>
     </f:entry>
 
-    <f:entry field="constraints" title="Node Constraints" 
-             description="Required node features/constraints (e.g., 'AMD&amp;MI250X')">
+    <f:entry field="reservation" title="Reservation" 
+             description="Slurm reservation name (optional)">
       <f:textbox/>
+    </f:entry>
+
+    <f:entry field="prefer" title="Preferred Features" 
+             description="Preferred but not required node features (optional)">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="constraints" title="Node Constraints" 
+             description="Required node features/constraints (e.g., 'jenkins-e2e')">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="nodes" title="Node Count / Range" 
+             description="Node count or range (e.g., '1', '1-4') — maps to Slurm nodes field">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="tasksPerNode" title="Tasks per Node" 
+             description="Number of tasks per node (optional)">
+      <f:number min="1"/>
+    </f:entry>
+
+    <f:entry field="ntasksPerTres" title="Tasks per TRES" 
+             description="Tasks per trackable resource, e.g. per GPU (optional)">
+      <f:number min="1"/>
     </f:entry>
 
     <f:entry field="requiredNodes" title="Required Nodes" 
@@ -110,6 +135,26 @@
     <f:entry field="environment" title="Environment Variables" 
              description="Environment variables as JSON array string (optional, advanced usage)">
       <f:textarea/>
+    </f:entry>
+
+  </f:section>
+
+  <!-- I/O Redirection -->
+  <f:section title="I/O Redirection">
+    
+    <f:entry field="standardOutput" title="Standard Output" 
+             description="Path to stdout file (optional, Slurm --output)">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="standardError" title="Standard Error" 
+             description="Path to stderr file (optional, Slurm --error)">
+      <f:textbox/>
+    </f:entry>
+
+    <f:entry field="standardInput" title="Standard Input" 
+             description="Path to stdin file (optional)">
+      <f:textbox/>
     </f:entry>
 
   </f:section>

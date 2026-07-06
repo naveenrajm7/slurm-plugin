@@ -158,14 +158,83 @@ public class SlurmJobBuilder {
             }
         }
         
+        applyOptionalString(jobDesc::setComment, template.getComment());
+        applyOptionalString(jobDesc::setPrefer, template.getPrefer());
+        applyOptionalString(jobDesc::setReservation, template.getReservation());
+        applyOptionalString(jobDesc::setNetwork, template.getNetwork());
+        applyOptionalString(jobDesc::setNodes, template.getNodes());
+        applyOptionalString(jobDesc::setTresPerSocket, template.getTresPerSocket());
+        applyOptionalString(jobDesc::setTresBind, template.getTresBind());
+        applyOptionalString(jobDesc::setTresFreq, template.getTresFreq());
+        applyOptionalString(jobDesc::setStandardOutput, template.getStandardOutput());
+        applyOptionalString(jobDesc::setStandardError, template.getStandardError());
+        applyOptionalString(jobDesc::setStandardInput, template.getStandardInput());
+
+        if (template.getNice() != null) {
+            jobDesc.setNice(template.getNice());
+        }
+        if (template.getReboot() != null) {
+            jobDesc.setReboot(template.getReboot());
+        }
+        if (template.getTimeMinimum() != null && template.getTimeMinimum() > 0) {
+            jobDesc.setTimeMinimum(uint32(template.getTimeMinimum()));
+        }
+        if (template.getMaximumNodes() != null && template.getMaximumNodes() > 0) {
+            jobDesc.setMaximumNodes(template.getMaximumNodes());
+        }
+        if (template.getMinimumCpus() != null && template.getMinimumCpus() > 0) {
+            jobDesc.setMinimumCpus(template.getMinimumCpus());
+        }
+        if (template.getMaximumCpus() != null && template.getMaximumCpus() > 0) {
+            jobDesc.setMaximumCpus(template.getMaximumCpus());
+        }
+        if (template.getSocketsPerNode() != null && template.getSocketsPerNode() > 0) {
+            jobDesc.setSocketsPerNode(template.getSocketsPerNode());
+        }
+        if (template.getThreadsPerCore() != null && template.getThreadsPerCore() > 0) {
+            jobDesc.setThreadsPerCore(template.getThreadsPerCore());
+        }
+        if (template.getTasksPerNode() != null && template.getTasksPerNode() > 0) {
+            jobDesc.setTasksPerNode(template.getTasksPerNode());
+        }
+        if (template.getTasksPerSocket() != null && template.getTasksPerSocket() > 0) {
+            jobDesc.setTasksPerSocket(template.getTasksPerSocket());
+        }
+        if (template.getTasksPerCore() != null && template.getTasksPerCore() > 0) {
+            jobDesc.setTasksPerCore(template.getTasksPerCore());
+        }
+        if (template.getTasksPerBoard() != null && template.getTasksPerBoard() > 0) {
+            jobDesc.setTasksPerBoard(template.getTasksPerBoard());
+        }
+        if (template.getNtasksPerTres() != null && template.getNtasksPerTres() > 0) {
+            jobDesc.setNtasksPerTres(template.getNtasksPerTres());
+        }
+        if (template.getMinimumCpusPerNode() != null && template.getMinimumCpusPerNode() > 0) {
+            jobDesc.setMinimumCpusPerNode(template.getMinimumCpusPerNode());
+        }
+        if (template.getMinimumBoardsPerNode() != null && template.getMinimumBoardsPerNode() > 0) {
+            jobDesc.setMinimumBoardsPerNode(template.getMinimumBoardsPerNode());
+        }
+        if (template.getMinimumSocketsPerBoard() != null && template.getMinimumSocketsPerBoard() > 0) {
+            jobDesc.setMinimumSocketsPerBoard(template.getMinimumSocketsPerBoard());
+        }
+        if (template.getTemporaryDiskPerNode() != null && template.getTemporaryDiskPerNode() > 0) {
+            jobDesc.setTemporaryDiskPerNode(template.getTemporaryDiskPerNode());
+        }
+        if (template.getMemoryPerCpu() != null && template.getMemoryPerCpu() > 0) {
+            jobDesc.setMemoryPerCpu(uint64(template.getMemoryPerCpu()));
+        }
+
         // Build environment variables
         List<String> environment = buildEnvironment();
         if (!environment.isEmpty()) {
             jobDesc.setEnvironment(environment);
         }
-        
-        // Generate the batch script
-        String script = generateBatchScript();
+
+        // Generate the batch script (unless template supplies a custom script)
+        String script = template.getScript() != null && !template.getScript().trim().isEmpty()
+                ? template.getScript()
+                : generateBatchScript();
         jobDesc.setScript(script);
         
         LOGGER.info("Built Slurm job: " + jobDesc.getName() + 
@@ -176,6 +245,28 @@ public class SlurmJobBuilder {
         return jobDesc;
     }
     
+    private static void applyOptionalString(java.util.function.Consumer<String> setter, String value) {
+        if (value != null && !value.trim().isEmpty()) {
+            setter.accept(value);
+        }
+    }
+
+    private static Uint32NoValStruct uint32(int value) {
+        Uint32NoValStruct struct = new Uint32NoValStruct();
+        struct.setSet(true);
+        struct.setInfinite(false);
+        struct.setNumber(value);
+        return struct;
+    }
+
+    private static Uint64NoValStruct uint64(long value) {
+        Uint64NoValStruct struct = new Uint64NoValStruct();
+        struct.setSet(true);
+        struct.setInfinite(false);
+        struct.setNumber(value);
+        return struct;
+    }
+
     /**
      * Builds the environment variables for the job.
      * Ensures our required environment variables (PATH, LD_LIBRARY_PATH) are always present,
