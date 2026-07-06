@@ -3,21 +3,44 @@
   <j:set var="sc" value="${it.computer}"/>
   <j:if test="${sc.launching or sc.node.slurmJobId != null}">
     <div class="pane">
-      <h2>Slurm Job</h2>
-      <p id="slurm-job-status-${sc.name}">${sc.slurmJobInfo}</p>
+      <h2>${%SlurmJobStatus}</h2>
+      <dl id="slurm-job-status-${sc.name}">
+        <dt>${%SlurmJobId}</dt>
+        <dd data-field="jobId">${sc.slurmJobId != null ? sc.slurmJobId : 'Not submitted'}</dd>
+        <dt>${%SlurmPartition}</dt>
+        <dd data-field="partition">${sc.slurmPartition != null ? sc.slurmPartition : '—'}</dd>
+        <dt>${%SlurmComputeNodes}</dt>
+        <dd data-field="nodes">${sc.slurmNodeList != null ? sc.slurmNodeList : '—'}</dd>
+      </dl>
+      <p class="jenkins-hidden" data-field="summary">${sc.slurmJobInfo}</p>
       <script>
         (function () {
-          var el = document.getElementById('slurm-job-status-${sc.name}');
-          if (!el) {
+          var root = document.getElementById('slurm-job-status-${sc.name}');
+          if (!root) {
             return;
           }
-          var url = '${rootURL}/computer/${sc.name}/api/json?tree=slurmJobInfo';
+          var url = '${rootURL}/computer/${sc.name}/api/json?tree=slurmJobId,slurmPartition,slurmNodeList,slurmJobInfo';
+          function setField(name, value) {
+            var el = root.querySelector('[data-field="' + name + '"]');
+            if (el) {
+              el.textContent = value;
+            }
+          }
           function poll() {
             fetch(url, { credentials: 'same-origin' })
               .then(function (r) { return r.json(); })
               .then(function (data) {
-                if (data &amp;&amp; data.slurmJobInfo) {
-                  el.textContent = data.slurmJobInfo;
+                if (!data) {
+                  return;
+                }
+                if (data.slurmJobId) {
+                  setField('jobId', data.slurmJobId);
+                }
+                if (data.slurmPartition) {
+                  setField('partition', data.slurmPartition);
+                }
+                if (data.slurmNodeList) {
+                  setField('nodes', data.slurmNodeList);
                 }
               })
               .catch(function () { /* ignore transient poll errors */ });

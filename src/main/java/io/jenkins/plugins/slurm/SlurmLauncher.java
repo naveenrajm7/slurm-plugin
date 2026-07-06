@@ -400,6 +400,22 @@ public class SlurmLauncher extends JNLPLauncher {
         return runListener == TaskListener.NULL ? launchListener : runListener;
     }
 
+    private void finalizeAgentPlacement(SlurmAgent agent, SlurmJobStatus status, TaskListener console) {
+        if (status != null) {
+            agent.applyJobPlacement(status);
+            console.getLogger().println(status.formatConnectionMessage());
+            return;
+        }
+
+        String jobId = agent.getSlurmJobId();
+        String nodes = agent.getNodeList();
+        if (jobId != null) {
+            console.getLogger().println(
+                    new SlurmJobStatus(jobId, "RUNNING", null, nodes).formatConnectionMessage());
+            agent.refreshNodeDescription();
+        }
+    }
+
     private void handleMissingSlurmJob(
             SlurmComputer computer,
             SlurmAgent agent,
@@ -493,6 +509,7 @@ public class SlurmLauncher extends JNLPLauncher {
         long lastProgressLog = startTime;
         boolean jobRunning = false;
         String lastLoggedStatus = null;
+        SlurmJobStatus lastKnownStatus = null;
         
         SlurmClient client = null;
         try {
@@ -514,6 +531,7 @@ public class SlurmLauncher extends JNLPLauncher {
                         handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
                     }
 
+                    lastKnownStatus = status;
                     computer.updateProvisioningStatus(status);
                     String statusLine = status.formatForDisplay();
                     if (!statusLine.equals(lastLoggedStatus)) {
@@ -584,6 +602,7 @@ public class SlurmLauncher extends JNLPLauncher {
             // 2. Computer is online (JNLP channel established)
             if (jobRunning && computer.isOnline()) {
                 long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                finalizeAgentPlacement(agent, lastKnownStatus, console);
                 console.getLogger().println("Agent connected successfully after " + 
                     elapsed + " seconds (job RUNNING + JNLP connected)");
                 LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + 

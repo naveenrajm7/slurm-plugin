@@ -165,6 +165,45 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         LOGGER.log(Level.FINE, "Set node list for agent {0}: {1}", 
                   new Object[]{getNodeName(), nodeList});
     }
+
+    /**
+     * Records compute placement from a Slurm job status poll and updates the agent description.
+     */
+    public void applyJobPlacement(@CheckForNull io.jenkins.plugins.slurm.client.SlurmJobStatus status) {
+        if (status != null && status.getNodes() != null && !status.getNodes().isBlank()) {
+            setNodeList(status.getNodes());
+        }
+        refreshNodeDescription();
+    }
+
+    /**
+     * Updates the Jenkins agent description with partition and compute node(s) once known.
+     */
+    public void refreshNodeDescription() {
+        StringBuilder sb = new StringBuilder();
+        try {
+            SlurmJobTemplate template = getSlurmCloud().getTemplateById(templateId);
+            if (template != null) {
+                sb.append("Slurm agent from template ").append(template.getName());
+            } else {
+                sb.append("Slurm agent");
+            }
+        } catch (IllegalStateException e) {
+            sb.append("Slurm agent");
+        }
+
+        if (partition != null && !partition.isBlank()) {
+            sb.append(", partition ").append(partition);
+        }
+        if (nodeList != null && !nodeList.isBlank()) {
+            sb.append(", on ").append(nodeList);
+        }
+        if (slurmJobId != null) {
+            sb.append(" (job ").append(slurmJobId).append(')');
+        }
+
+        setNodeDescription(sb.toString());
+    }
     
     /**
      * Gets the Slurm cloud instance that created this agent.

@@ -22,14 +22,17 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [ ] **[MED]** Consider periodic cleanup for orphaned Slurm jobs — K8s has `GarbageCollection` class that cleans orphaned pods
 - [ ] **Slurm compute node visibility** (discovered during CK workload validation — agent page shows Jenkins synthetic name, not where the job landed)
-  - [ ] **[HIGH]** Ensure `SlurmAgent.nodeList` is populated when job reaches RUNNING — `updateProvisioningStatus()` sets it when `JobInfo.nodes` is returned; verify on live cluster and backfill if nodes arrive only at RUNNING
-  - [ ] **[HIGH]** Agent UI — richer sidepanel on `SlurmComputer` (partition + compute hostname(s)); basic `SlurmJobStatusAction` box exists in job-status PR
-  - [ ] **[MED]** Build console — when agent connects, log `Slurm job <id> on node(s) <host>` (not only the Jenkins synthetic agent name)
-  - [ ] **[MED]** Agent description — update from "Slurm agent from template …" to include partition + nodelist once known
   - [ ] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
 
 ## Done
+
+- [x] **Slurm compute node visibility** (`feature/slurm-compute-node-visibility`)
+  - Resolve allocated nodes from `job_resources.nodes` when top-level `nodes` is absent (live slurmrestd on 24.11)
+  - Build console: `[Slurm] Slurm job <id> on node(s) <host>` when agent connects; status polls include nodes when known
+  - Agent page: `SlurmJobStatusAction` sidepanel shows job ID, partition, compute node(s); REST poll updates fields
+  - Agent description updated with partition + compute node(s) once placement is known
+  - E2e: `scripts/e2e/run-compute-node-visibility-test.ps1`
 
 - [x] **Slurm job status visibility while provisioning** (`feature/slurm-job-status-visibility`)
   - Build console logs `[Slurm] Slurm job <id>: <state> (<reason>)` on each state change during `waitForAgentConnection()`

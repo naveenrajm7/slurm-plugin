@@ -111,22 +111,50 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
         if (agent == null) {
             return "N/A";
         }
-        
+
+        return formatPlacementSummary(
+                agent.getSlurmJobId(),
+                agent.getPartition(),
+                agent.getNodeList());
+    }
+
+    @Exported
+    @CheckForNull
+    public String getSlurmJobId() {
+        SlurmAgent agent = getNode();
+        return agent != null ? agent.getSlurmJobId() : null;
+    }
+
+    @Exported
+    @CheckForNull
+    public String getSlurmPartition() {
+        SlurmAgent agent = getNode();
+        return agent != null ? agent.getPartition() : null;
+    }
+
+    @Exported
+    @CheckForNull
+    public String getSlurmNodeList() {
+        SlurmAgent agent = getNode();
+        return agent != null ? agent.getNodeList() : null;
+    }
+
+    @NonNull
+    static String formatPlacementSummary(
+            @CheckForNull String jobId,
+            @CheckForNull String partition,
+            @CheckForNull String nodeList) {
         StringBuilder info = new StringBuilder();
-        
-        String jobId = agent.getSlurmJobId();
         info.append("Job ID: ").append(jobId != null ? jobId : "Not submitted");
-        
-        String partition = agent.getPartition();
+
         if (partition != null && !partition.isEmpty()) {
             info.append(", Partition: ").append(partition);
         }
-        
-        String nodeList = agent.getNodeList();
+
         if (nodeList != null && !nodeList.isEmpty()) {
-            info.append(", Nodes: ").append(nodeList);
+            info.append(", Compute node(s): ").append(nodeList);
         }
-        
+
         return info.toString();
     }
 
@@ -143,8 +171,8 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
         liveSlurmJobStatus = status.formatForDisplay();
 
         SlurmAgent agent = getNode();
-        if (agent != null && status.getNodes() != null && !status.getNodes().isBlank()) {
-            agent.setNodeList(status.getNodes());
+        if (agent != null) {
+            agent.applyJobPlacement(status);
         }
     }
 

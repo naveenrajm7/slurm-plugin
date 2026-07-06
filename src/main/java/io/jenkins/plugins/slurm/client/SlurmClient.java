@@ -1,10 +1,15 @@
 package io.jenkins.plugins.slurm.client;
 
+import edu.umd.cs.findbugs.annotations.CheckForNull;
 import io.jenkins.plugins.slurm.client.api.SlurmApi;
 import io.jenkins.plugins.slurm.client.model.OpenapiPingArrayResp;
 import io.jenkins.plugins.slurm.client.model.ControllerPing;
 import io.jenkins.plugins.slurm.client.ApiClient;
-import io.jenkins.plugins.slurm.client.ApiException;
+import io.jenkins.plugins.slurm.client.model.JobInfo;
+import io.jenkins.plugins.slurm.client.model.JobRes;
+import io.jenkins.plugins.slurm.client.model.JobResNode;
+import io.jenkins.plugins.slurm.client.model.JobResNodes1;
+import java.util.stream.Collectors;
 import io.jenkins.plugins.slurm.client.Configuration;
 
 import java.net.MalformedURLException;
@@ -264,7 +269,7 @@ public class SlurmClient {
                         jobId,
                         state,
                         jobInfo.getStateReason(),
-                        jobInfo.getNodes());
+                        resolveAllocatedNodes(jobInfo));
                 }
             }
 
@@ -281,6 +286,47 @@ public class SlurmClient {
                       " - " + e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Resolves allocated compute node name(s) from a Slurm job info payload.
+     * slurmrestd often omits the top-level {@code nodes} string while the job is running,
+     * but still populates {@code job_resources.nodes.list} or allocation entries.
+     */
+    @CheckForNull
+    static String resolveAllocatedNodes(@CheckForNull JobInfo jobInfo) {
+        if (jobInfo == null) {
+            return null;
+        }
+
+        String nodes = jobInfo.getNodes();
+        if (nodes != null && !nodes.isBlank()) {
+            return nodes;
+        }
+
+        JobRes resources = jobInfo.getJobResources();
+        if (resources == null) {
+            return null;
+        }
+
+        JobResNodes1 resourceNodes = resources.getNodes();
+        if (resourceNodes == null) {
+            return null;
+        }
+
+        String nodeList = resourceNodes.getList();
+        if (nodeList != null && !nodeList.isBlank()) {
+            return nodeList;
+        }
+
+        if (resourceNodes.getAllocation() == null || resourceNodes.getAllocation().isEmpty()) {
+            return null;
+        }
+
+        return resourceNodes.getAllocation().stream()
+                .map(JobResNode::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.joining(","));
     }
     
     /**

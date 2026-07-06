@@ -64,6 +64,7 @@ public final class SlurmJobStatus {
         if (stateReason != null && !stateReason.isBlank() && !"None".equalsIgnoreCase(stateReason)) {
             sb.append(" (").append(stateReason).append(")");
         }
+        appendNodes(sb);
         return sb.toString();
     }
 
@@ -73,5 +74,22 @@ public final class SlurmJobStatus {
     @NonNull
     public String formatForConsole() {
         return "[Slurm] " + formatForDisplay();
+    }
+
+    /**
+     * Build-console line when the agent connects and compute placement is known.
+     */
+    @NonNull
+    public String formatConnectionMessage() {
+        if (nodes != null && !nodes.isBlank()) {
+            return "[Slurm] Slurm job " + jobId + " on node(s) " + nodes;
+        }
+        return "[Slurm] Slurm job " + jobId + " connected (compute node not reported by Slurm yet)";
+    }
+
+    private void appendNodes(StringBuilder sb) {
+        if (nodes != null && !nodes.isBlank()) {
+            sb.append(" on ").append(nodes);
+        }
     }
 }
