@@ -62,7 +62,7 @@ Copy `config.env.example` → `config.env`. Key values:
 | `E2E_RESERVATION` | Optional Slurm reservation name |
 
 **Agent URL:** set `JENKINS_AGENT_URL` to a URL compute nodes can reach, e.g.
-`http://cgy-absol:8282/` when Jenkins Docker runs on the Slurm controller and port 8282
+`http://YOUR_JENKINS_HOST:8282/` when Jenkins Docker runs on a host compute nodes can reach on port 8282
 is open on the cluster network.
 
 **Java version:** use `jenkins/jenkins:lts-jdk17` so the controller matches Java 17 in the
