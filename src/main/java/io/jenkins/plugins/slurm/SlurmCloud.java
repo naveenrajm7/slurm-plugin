@@ -63,6 +63,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     private String jenkinsUrl;  // Optional - if not set, will auto-detect
     private List<SlurmJobTemplate> jobTemplates;
     private boolean usageRestricted = false;
+    private AgentLaunchConfig agent;
     
     @DataBoundConstructor
     public SlurmCloud(String name,
@@ -128,6 +129,20 @@ public class SlurmCloud extends AbstractCloudImpl {
     @DataBoundSetter
     public void setUsageRestricted(boolean usageRestricted) {
         this.usageRestricted = usageRestricted;
+    }
+
+    /**
+     * Default native agent launch settings for all templates on this cloud.
+     * Individual templates and pipeline JSON may override these values.
+     */
+    @CheckForNull
+    public AgentLaunchConfig getAgent() {
+        return agent;
+    }
+
+    @DataBoundSetter
+    public void setAgent(AgentLaunchConfig agent) {
+        this.agent = agent;
     }
     
     /**

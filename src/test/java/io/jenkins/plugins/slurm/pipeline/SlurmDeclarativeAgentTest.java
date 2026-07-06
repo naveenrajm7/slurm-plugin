@@ -6,6 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Map;
+
+import io.jenkins.plugins.slurm.AgentLaunchConfig;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -97,6 +100,20 @@ public class SlurmDeclarativeAgentTest {
         
         agent.setConstraints("gpu&nvme");
         assertEquals("gpu&nvme", agent.getConstraints());
+    }
+
+    @Test
+    public void testNativeAgentProperties() {
+        SlurmDeclarativeAgent agent = new SlurmDeclarativeAgent();
+        agent.setCloud("test-cloud");
+        agent.setJavaPath("/opt/jenkins/jdk-17/bin/java");
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        agent.setSetupScript("module load java/21");
+
+        Map<String, Object> args = agent.getAsArgs();
+        assertEquals("/opt/jenkins/jdk-17/bin/java", args.get("javaPath"));
+        assertEquals("/opt/jenkins/agent.jar", args.get("jarPath"));
+        assertEquals("module load java/21", args.get("setupScript"));
     }
 
     @Test

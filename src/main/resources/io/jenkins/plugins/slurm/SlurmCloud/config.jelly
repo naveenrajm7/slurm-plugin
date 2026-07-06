@@ -43,4 +43,8 @@
     <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId" />
     
   </f:section>
+
+  <f:section title="Default Agent Launch">
+    <f:optionalProperty field="agent" title="Native agent defaults (without Pyxis)"/>
+  </f:section>
 </j:jelly>

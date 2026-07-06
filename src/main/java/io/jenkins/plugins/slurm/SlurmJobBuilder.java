@@ -26,6 +26,7 @@ public class SlurmJobBuilder {
     private final String agentName;
     private final String jenkinsUrl;
     private final String agentSecret;
+    private final AgentLaunchConfig cloudAgent;
     
     /**
      * Creates a new job builder.
@@ -39,10 +40,22 @@ public class SlurmJobBuilder {
                           @NonNull String agentName,
                           @NonNull String jenkinsUrl,
                           @CheckForNull String agentSecret) {
+        this(template, agentName, jenkinsUrl, agentSecret, null);
+    }
+
+    /**
+     * Creates a new job builder with cloud-level agent launch defaults.
+     */
+    public SlurmJobBuilder(@NonNull SlurmJobTemplate template,
+                          @NonNull String agentName,
+                          @NonNull String jenkinsUrl,
+                          @CheckForNull String agentSecret,
+                          @CheckForNull AgentLaunchConfig cloudAgent) {
         this.template = template;
         this.agentName = agentName;
         this.jenkinsUrl = jenkinsUrl;
         this.agentSecret = agentSecret;
+        this.cloudAgent = cloudAgent;
     }
     
     /**
@@ -232,9 +245,13 @@ public class SlurmJobBuilder {
         }
 
         // Generate the batch script (unless template supplies a custom script)
-        String script = template.getScript() != null && !template.getScript().trim().isEmpty()
-                ? template.getScript()
-                : generateBatchScript();
+        String script;
+        if (template.getScript() != null && !template.getScript().trim().isEmpty()) {
+            script = template.getScript();
+        } else {
+            validateLaunchConfiguration();
+            script = generateBatchScript();
+        }
         jobDesc.setScript(script);
         
         LOGGER.info("Built Slurm job: " + jobDesc.getName() + 
@@ -321,30 +338,45 @@ public class SlurmJobBuilder {
     }
     
     /**
-     * Generates the batch script for running the Jenkins agent in a container.
-     * 
-     * Uses container image from Pyxis configuration with pre-baked Jenkins agent.
-     * The script format matches the actual working Slurm job submission.
-     * 
-     * IMPORTANT: The Jenkins agent always runs on exactly 1 node with 1 task (-N1 -n1),
-     * regardless of the user's resource request. This allows:
-     * 1. Single agent connection to Jenkins (not multiple agents per node)
-     * 2. User's pipeline commands inherit the full Slurm job allocation
-     * 3. Support for multi-node MPI jobs where srun commands use all allocated nodes
-     * 
-     * Example: User requests 4 nodes with 64 CPUs each
-     * - Slurm allocates 4 nodes to the job
-     * - Agent runs on node 0 only (srun -N1 -n1)
-     * - User's commands can use all nodes: sh 'srun --nodes=4 ./mpi_app'
-     * 
+     * Validates that the template can generate an agent launcher script.
+     */
+    void validateLaunchConfiguration() {
+        PyxisConfig pyxis = template.getPyxis();
+        if (pyxis != null && pyxis.isConfigured()) {
+            return;
+        }
+        AgentLaunchConfig agent = getEffectiveAgent();
+        if (agent != null && agent.isConfigured()) {
+            agent.validateNativeLaunch();
+            return;
+        }
+        throw new IllegalStateException(
+                "Agent launch is not configured. Enable Pyxis container support, configure native "
+                        + "Agent Launch on the cloud or template (jarPath or downloadJar), or supply a custom batch script.");
+    }
+
+    @CheckForNull
+    private AgentLaunchConfig getEffectiveAgent() {
+        return AgentLaunchConfig.merge(cloudAgent, template.getAgent());
+    }
+
+    /**
+     * Generates the batch script for running the Jenkins inbound agent.
+     *
+     * <p>Uses Pyxis container paths when configured; otherwise uses {@link AgentLaunchConfig}
+     * for native (host) launch.
+     *
+     * <p>IMPORTANT: The Jenkins agent always runs on exactly 1 node with 1 task (-N1 -n1),
+     * regardless of the user's resource request.
+     *
      * @return The complete batch script content
      */
     private String generateBatchScript() {
         StringBuilder script = new StringBuilder();
-        
+
         script.append("#!/bin/bash\n");
-        
-        // Log multi-node allocation if requested
+        script.append("set -euo pipefail\n");
+
         if (template.getMinimumNodes() != null && template.getMinimumNodes() > 1) {
             LOGGER.info(String.format(
                 "Multi-node job allocation: %d nodes requested. " +
@@ -353,71 +385,118 @@ public class SlurmJobBuilder {
                 template.getMinimumNodes(), template.getMinimumNodes()
             ));
         }
-        
-        // Launch Jenkins agent using srun with container
-        // CRITICAL: Always use -N1 -n1 to run agent on exactly one node with one task
-        // This ensures single agent connection regardless of multi-node allocation
-        script.append("srun -N1 -n1");
-        
-        // Add Pyxis/container arguments if configured
+
         PyxisConfig pyxis = template.getPyxis();
-        if (pyxis != null && pyxis.isConfigured()) {
-            // Container image (required for Pyxis)
-            if (pyxis.getContainerImage() != null && !pyxis.getContainerImage().trim().isEmpty()) {
-                script.append(" --container-image=").append(pyxis.getContainerImage());
+        boolean useContainer = pyxis != null && pyxis.isConfigured();
+        AgentLaunchConfig agent = getEffectiveAgent();
+
+        if (!useContainer && agent != null && agent.getSetupScript() != null
+                && !agent.getSetupScript().trim().isEmpty()) {
+            for (String line : agent.getSetupScript().split("\\r?\\n")) {
+                String trimmed = line.trim();
+                if (!trimmed.isEmpty() && !trimmed.startsWith("#")) {
+                    script.append(trimmed).append("\n");
+                }
             }
-            
-            // Mount home directory flag
-            if (pyxis.getContainerMountHome()) {
-                script.append(" --container-mount-home");
-            }
-            
-            // Additional mounts
-            if (pyxis.getContainerMounts() != null && !pyxis.getContainerMounts().trim().isEmpty()) {
-                script.append(" --container-mounts=").append(pyxis.getContainerMounts());
-            }
-            
-            // Container working directory
-            if (pyxis.getContainerWorkdir() != null && !pyxis.getContainerWorkdir().trim().isEmpty()) {
-                script.append(" --container-workdir=").append(pyxis.getContainerWorkdir());
-            }
-            
-            // Container name
-            if (pyxis.getContainerName() != null && !pyxis.getContainerName().trim().isEmpty()) {
-                script.append(" --container-name=").append(pyxis.getContainerName());
-            }
-            
-            // Container writable flag
-            if (pyxis.getContainerWritable()) {
-                script.append(" --container-writable");
-            }
-            
-            // Container remap user flag
-            if (pyxis.getContainerRemap()) {
-                script.append(" --container-remap-root");
-            }
-            
+        }
+
+        String workdir = template.getCurrentWorkingDirectory();
+        if (workdir == null || workdir.trim().isEmpty()) {
+            workdir = "/tmp/jenkins";
+        }
+
+        String javaPath;
+        String jarReference;
+
+        if (useContainer) {
+            javaPath = AgentLaunchConfig.CONTAINER_JAVA_PATH;
+            jarReference = AgentLaunchConfig.CONTAINER_JAR_PATH;
+        } else if (agent != null && agent.getDownloadJar()) {
+            javaPath = agent.getJavaPath();
+            script.append("AGENT_JAR=").append(shellQuote(workdir + "/agent.jar")).append("\n");
+            script.append("if [ ! -f \"$AGENT_JAR\" ]; then\n");
+            script.append("  echo 'Downloading Jenkins agent JAR...'\n");
+            script.append("  if command -v curl >/dev/null 2>&1; then\n");
+            script.append("    curl -fsSL -o \"$AGENT_JAR\" \"")
+                    .append(escapeForDoubleQuotedShell(jenkinsUrl))
+                    .append("jnlpJars/agent.jar\"\n");
+            script.append("  elif command -v wget >/dev/null 2>&1; then\n");
+            script.append("    wget -q -O \"$AGENT_JAR\" \"")
+                    .append(escapeForDoubleQuotedShell(jenkinsUrl))
+                    .append("jnlpJars/agent.jar\"\n");
+            script.append("  else\n");
+            script.append("    echo 'ERROR: curl or wget required to download agent.jar' >&2\n");
+            script.append("    exit 1\n");
+            script.append("  fi\n");
+            script.append("fi\n");
+            jarReference = "\"$AGENT_JAR\"";
+        } else {
+            javaPath = agent != null ? agent.getJavaPath() : AgentLaunchConfig.DEFAULT_JAVA_PATH;
+            jarReference = shellQuote(agent != null ? agent.getJarPath() : "");
+        }
+
+        script.append("srun -N1 -n1");
+
+        if (useContainer) {
+            appendPyxisFlags(script, pyxis);
             LOGGER.fine("Using Pyxis container configuration: " + pyxis.getContainerImage());
         } else {
-            LOGGER.warning("No Pyxis configuration found in template - job will run without container isolation");
+            LOGGER.fine("Using native agent launch: java=" + javaPath + ", jar=" + jarReference);
         }
-        
-        // Start Jenkins agent with WebSocket connection (more reliable than direct JNLP)
-        script.append(" /opt/java/openjdk/bin/java -jar /usr/share/jenkins/agent.jar");
+
+        script.append(" ").append(javaPath).append(" -jar ").append(jarReference);
         script.append(" -url ").append(jenkinsUrl);
-        
+
         if (agentSecret != null && !agentSecret.isEmpty()) {
             script.append(" -secret ").append(agentSecret);
         }
-        
+
         script.append(" -name ").append(agentName);
         script.append(" -webSocket");
         script.append(" -workDir /tmp/").append(agentName);
         script.append("\n");
-        
-        LOGGER.fine("Generated batch script for agent " + agentName + ":\n" + script.toString());
-        
+
+        LOGGER.fine("Generated batch script for agent " + agentName + ":\n" + script);
+
         return script.toString();
+    }
+
+    private static void appendPyxisFlags(StringBuilder script, PyxisConfig pyxis) {
+        if (pyxis.getContainerImage() != null && !pyxis.getContainerImage().trim().isEmpty()) {
+            script.append(" --container-image=").append(pyxis.getContainerImage());
+        }
+        if (pyxis.getContainerMountHome()) {
+            script.append(" --container-mount-home");
+        }
+        if (pyxis.getContainerMounts() != null && !pyxis.getContainerMounts().trim().isEmpty()) {
+            script.append(" --container-mounts=").append(pyxis.getContainerMounts());
+        }
+        if (pyxis.getContainerWorkdir() != null && !pyxis.getContainerWorkdir().trim().isEmpty()) {
+            script.append(" --container-workdir=").append(pyxis.getContainerWorkdir());
+        }
+        if (pyxis.getContainerName() != null && !pyxis.getContainerName().trim().isEmpty()) {
+            script.append(" --container-name=").append(pyxis.getContainerName());
+        }
+        if (pyxis.getContainerWritable()) {
+            script.append(" --container-writable");
+        }
+        if (pyxis.getContainerRemap()) {
+            script.append(" --container-remap-root");
+        }
+    }
+
+    private static String shellQuote(String value) {
+        if (value == null || value.isEmpty()) {
+            return "''";
+        }
+        return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    private static String escapeForDoubleQuotedShell(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
     
     /**

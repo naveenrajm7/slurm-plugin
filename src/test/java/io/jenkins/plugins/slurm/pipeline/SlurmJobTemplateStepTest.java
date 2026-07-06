@@ -47,6 +47,31 @@ public class SlurmJobTemplateStepTest {
     }
 
     @Test
+    public void testJsonWithNativeAgent() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        String json = "{\"job\": {\"partition\": \"compute\"}, \"agent\": {\"java_path\": \"/opt/java/bin/java\", \"jar_path\": \"/opt/jenkins/agent.jar\"}}";
+        step.setJson(json);
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertNotNull(template.getAgent());
+        assertEquals("/opt/java/bin/java", template.getAgent().getJavaPath());
+        assertEquals("/opt/jenkins/agent.jar", template.getAgent().getJarPath());
+    }
+
+    @Test
+    public void testNativeAgentPropertiesOverrideJson() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        String json = "{\"job\": {\"partition\": \"compute\"}, \"agent\": {\"jar_path\": \"/old/agent.jar\"}}";
+        step.setJson(json);
+        step.setJarPath("/opt/jenkins/agent.jar");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals("/opt/jenkins/agent.jar", template.getAgent().getJarPath());
+    }
+
+    @Test
     public void testJsonWithContainers() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
         String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 8}, \"pyxis\": {\"container_image\": \"nvcr.io/nvidia/pytorch:latest\", \"container_mounts\": \"/data:/data\", \"container_workdir\": \"/workspace\", \"container_mount_home\": true}}";
