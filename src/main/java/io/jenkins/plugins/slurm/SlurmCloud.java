@@ -317,7 +317,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         for (SlurmJobTemplate template : allTemplates) {
-            if (template.canTake(label != null ? label.getName() : null)) {
+            if (template.canTake(label)) {
                 matchingTemplates.add(template);
             }
         }

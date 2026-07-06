@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import hudson.Extension;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
+import hudson.model.Label;
 import hudson.model.Node;
 import hudson.util.FormValidation;
 import org.jenkinsci.Symbol;
@@ -24,6 +25,9 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.TaskListener;
 import java.util.UUID;
 import java.util.logging.Logger;
+import java.util.Collections;
+import java.util.Set;
+import hudson.model.labels.LabelAtom;
 
 /**
  * Represents a Slurm job template that defines the parameters for submitting
@@ -904,29 +908,43 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
     
     /**
-     * Checks if this template can handle the given label.
+     * Label atoms assigned to agents provisioned from this template.
+     */
+    @NonNull
+    public Set<LabelAtom> getLabelAtoms() {
+        if (label == null || label.trim().isEmpty()) {
+            return Collections.emptySet();
+        }
+        return Label.parse(label.trim());
+    }
+
+    /**
+     * Checks if this template can satisfy the given label requirement (expression or atom).
+     */
+    public boolean canTake(@CheckForNull Label required) {
+        if (required == null) {
+            return label == null || label.trim().isEmpty();
+        }
+        if (label == null || label.trim().isEmpty()) {
+            return false;
+        }
+        return required.matches(getLabelAtoms());
+    }
+
+    /**
+     * Checks if this template can handle the given label name or expression string.
      */
     public boolean canTake(@CheckForNull String requestedLabel) {
         if (requestedLabel == null || requestedLabel.trim().isEmpty()) {
-            return this.label == null || this.label.trim().isEmpty();
+            return label == null || label.trim().isEmpty();
         }
-        
-        if (this.label == null || this.label.trim().isEmpty()) {
-            return false;
+        String trimmed = requestedLabel.trim();
+        if (trimmed.contains("||") || trimmed.contains("&&") || trimmed.contains("(")) {
+            return canTake(Label.parseExpression(trimmed));
         }
-        
-        // Split labels by space and check if any match
-        String[] requestedLabels = requestedLabel.trim().split("\\s+");
-        String[] templateLabels = this.label.trim().split("\\s+");
-        
-        for (String reqLabel : requestedLabels) {
-            for (String tmpLabel : templateLabels) {
-                if (reqLabel.equals(tmpLabel)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        // Space-separated labels are ANDed (same as Jenkins node label assignment).
+        String[] atoms = Label.parse(trimmed).stream().map(LabelAtom::getName).toArray(String[]::new);
+        return canTake(Label.parseExpression(String.join(" && ", atoms)));
     }
     
     /**

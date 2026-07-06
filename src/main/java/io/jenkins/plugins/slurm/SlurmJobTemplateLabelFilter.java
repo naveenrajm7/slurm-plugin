@@ -28,8 +28,8 @@ public class SlurmJobTemplateLabelFilter extends SlurmJobTemplateFilter {
             return jobTemplate;
         }
         
-        // If label requested and template has matching labels
-        if (label != null && jobTemplate.canTake(label.getName())) {
+        // If label requested and template can satisfy the expression (model after K8s plugin)
+        if (label != null && jobTemplate.canTake(label)) {
             return jobTemplate;
         }
         
