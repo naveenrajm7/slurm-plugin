@@ -158,7 +158,7 @@ pipeline {
                 "partition": "gpu",
                 "cpus_per_task": 16,
                 "memory_per_node": {"set": true, "number": 32768},
-                "required_nodes": ["cgy-absol"]
+                "required_nodes": ["controller-node"]
               },
               "pyxis": {
                 "containerImage": "/home/user/jenkins-agent.sqsh",

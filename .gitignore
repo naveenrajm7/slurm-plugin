@@ -19,3 +19,6 @@ work
 
 # Claude Code local settings (machine-specific)
 .claude/
+
+# E2E local config (hostnames, usernames, cluster URLs)
+scripts/e2e/config.env

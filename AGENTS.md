@@ -19,3 +19,9 @@ This repository is a single **Maven-based Jenkins plugin** (the Slurm plugin). T
 
 ### Slurm cluster is NOT required for local dev
 - Building, unit tests, `hpi:run`, and configuring a Slurm cloud all work **without** a real Slurm cluster. A live `slurmrestd` (Slurm 24.11+ with JWT) is only needed to actually provision agents end to end. You can create and persist a `SlurmCloud` + `SlurmJobTemplate` (via UI, JCasC, or the Script Console) without any cluster.
+
+### End-to-end tests (local Jenkins + live Slurm)
+- Scripts live under `scripts/e2e/`. Copy `config.env.example` → `config.env` (gitignored) and set **your** SSH host, cloud name, and job paths — nothing environment-specific is hardcoded in committed scripts.
+- Start `mvn hpi:run`, then the WSL agent tunnel (`start-tunnel.sh`), then `powershell -File scripts/e2e/run-e2e.ps1`.
+- Agent tunnel must run in WSL if endpoint security blocks Windows OpenSSH `-R` forwards. Jenkins UI stays on `localhost:8080`; agents use the tunneled URL configured in your Slurm cloud (typically `http://localhost:5000/jenkins/` on the controller).
+- Use a writable `current_working_directory` on compute nodes (e.g. `/tmp/jenkins`), not a restricted home directory owned by another service account.
