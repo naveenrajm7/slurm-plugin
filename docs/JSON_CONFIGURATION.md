@@ -29,6 +29,22 @@ The SLURM plugin uses JSON configuration that **matches the SLURM REST API forma
 
 Cloud-level **Default Agent Launch** settings (Manage Jenkins → Clouds) provide site-wide `java_path` / `jar_path` defaults; template and pipeline `agent` blocks override individual fields.
 
+### Declarative properties (without JSON)
+
+```groovy
+agent {
+  slurm {
+    cloud 'my-cluster'
+    partition 'compute'
+    workingDir '/tmp/jenkins'
+    javaPath '/opt/jenkins/jdk-17/bin/java'
+    jarPath '/opt/jenkins/agent.jar'
+  }
+}
+```
+
+See [NATIVE_AGENT_SETUP.md](NATIVE_AGENT_SETUP.md) for compute-node preparation.
+
 ## Complete Example
 
 ```json

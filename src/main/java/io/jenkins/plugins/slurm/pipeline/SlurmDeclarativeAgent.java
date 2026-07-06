@@ -7,6 +7,7 @@ import hudson.Util;
 import hudson.model.Label;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.slurm.PyxisConfig;
+import io.jenkins.plugins.slurm.AgentLaunchConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
@@ -164,6 +165,18 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     
     @CheckForNull
     private String containerWorkdir;  // Working directory in container
+    
+    // Native agent launch (without Pyxis)
+    @CheckForNull
+    private String javaPath;
+
+    @CheckForNull
+    private String jarPath;
+
+    private boolean downloadJar;
+
+    @CheckForNull
+    private String setupScript;
     
     // I/O redirection
     @CheckForNull
@@ -489,6 +502,49 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     }
     
     // ====================
+    // Native Agent Launch
+    // ====================
+
+    @CheckForNull
+    public String getJavaPath() {
+        return javaPath;
+    }
+
+    @DataBoundSetter
+    public void setJavaPath(String javaPath) {
+        this.javaPath = Util.fixEmpty(javaPath);
+    }
+
+    @CheckForNull
+    public String getJarPath() {
+        return jarPath;
+    }
+
+    @DataBoundSetter
+    public void setJarPath(String jarPath) {
+        this.jarPath = Util.fixEmpty(jarPath);
+    }
+
+    public boolean isDownloadJar() {
+        return downloadJar;
+    }
+
+    @DataBoundSetter
+    public void setDownloadJar(boolean downloadJar) {
+        this.downloadJar = downloadJar;
+    }
+
+    @CheckForNull
+    public String getSetupScript() {
+        return setupScript;
+    }
+
+    @DataBoundSetter
+    public void setSetupScript(String setupScript) {
+        this.setupScript = Util.fixEmpty(setupScript);
+    }
+    
+    // ====================
     // I/O Redirection
     // ====================
     
@@ -632,6 +688,20 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
                 pyxis.setContainerWorkdir(containerWorkdir);
             }
             argMap.put("pyxis", pyxis);
+        }
+
+        // Native agent launch (without Pyxis)
+        if (!StringUtils.isEmpty(javaPath)) {
+            argMap.put("javaPath", javaPath);
+        }
+        if (!StringUtils.isEmpty(jarPath)) {
+            argMap.put("jarPath", jarPath);
+        }
+        if (downloadJar) {
+            argMap.put("downloadJar", true);
+        }
+        if (!StringUtils.isEmpty(setupScript)) {
+            argMap.put("setupScript", setupScript);
         }
         
         // I/O redirection

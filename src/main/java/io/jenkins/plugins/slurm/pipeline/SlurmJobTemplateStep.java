@@ -136,6 +136,22 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     // Container support
     @CheckForNull
     private PyxisConfig pyxis;
+
+    // Native agent launch (without Pyxis)
+    @CheckForNull
+    private AgentLaunchConfig agent;
+
+    @CheckForNull
+    private String javaPath;
+
+    @CheckForNull
+    private String jarPath;
+
+    @CheckForNull
+    private Boolean downloadJar;
+
+    @CheckForNull
+    private String setupScript;
     
     // I/O
     @CheckForNull
@@ -250,6 +266,12 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         if (pyxis != null && pyxis.isConfigured()) {
             template.setPyxis(pyxis);
         }
+
+        // Native agent launch — step properties override JSON/template values
+        AgentLaunchConfig nativeOverrides = resolveNativeAgentOverrides();
+        if (nativeOverrides != null) {
+            template.setAgent(AgentLaunchConfig.merge(template.getAgent(), nativeOverrides));
+        }
         
         // I/O
         if (!StringUtils.isEmpty(standardOutput)) {
@@ -275,6 +297,35 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         template.setInstanceCap(1);
         
         return template;
+    }
+
+    /**
+     * Builds native agent overrides from step-level properties and optional {@code agent} object.
+     */
+    @CheckForNull
+    private AgentLaunchConfig resolveNativeAgentOverrides() {
+        AgentLaunchConfig overrides = agent != null ? AgentLaunchConfig.merge(null, agent) : null;
+        boolean hasProperty = !StringUtils.isEmpty(javaPath) || !StringUtils.isEmpty(jarPath)
+                || Boolean.TRUE.equals(downloadJar) || !StringUtils.isEmpty(setupScript);
+        if (!hasProperty) {
+            return overrides;
+        }
+        if (overrides == null) {
+            overrides = new AgentLaunchConfig();
+        }
+        if (!StringUtils.isEmpty(javaPath)) {
+            overrides.setJavaPath(javaPath);
+        }
+        if (!StringUtils.isEmpty(jarPath)) {
+            overrides.setJarPath(jarPath);
+        }
+        if (Boolean.TRUE.equals(downloadJar)) {
+            overrides.setDownloadJar(true);
+        }
+        if (!StringUtils.isEmpty(setupScript)) {
+            overrides.setSetupScript(setupScript);
+        }
+        return overrides;
     }
     
     /**
@@ -819,6 +870,56 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     @DataBoundSetter
     public void setPyxis(PyxisConfig pyxis) {
         this.pyxis = pyxis;
+    }
+
+    @CheckForNull
+    public AgentLaunchConfig getAgent() {
+        return agent;
+    }
+
+    @DataBoundSetter
+    public void setAgent(AgentLaunchConfig agent) {
+        this.agent = agent;
+    }
+
+    @CheckForNull
+    public String getJavaPath() {
+        return javaPath;
+    }
+
+    @DataBoundSetter
+    public void setJavaPath(String javaPath) {
+        this.javaPath = Util.fixEmpty(javaPath);
+    }
+
+    @CheckForNull
+    public String getJarPath() {
+        return jarPath;
+    }
+
+    @DataBoundSetter
+    public void setJarPath(String jarPath) {
+        this.jarPath = Util.fixEmpty(jarPath);
+    }
+
+    @CheckForNull
+    public Boolean getDownloadJar() {
+        return downloadJar;
+    }
+
+    @DataBoundSetter
+    public void setDownloadJar(Boolean downloadJar) {
+        this.downloadJar = downloadJar;
+    }
+
+    @CheckForNull
+    public String getSetupScript() {
+        return setupScript;
+    }
+
+    @DataBoundSetter
+    public void setSetupScript(String setupScript) {
+        this.setupScript = Util.fixEmpty(setupScript);
     }
     
     @CheckForNull

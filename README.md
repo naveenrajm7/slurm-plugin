@@ -26,6 +26,7 @@ It is not required to run the Jenkins controller inside the Slurm cluster.
 - [Configuration reference](#configuration-reference)
 - [Declarative pipeline](#declarative-pipeline)
 - [Pyxis / Enroot container support](#pyxis--enroot-container-support)
+- [Running without Pyxis / containers](#running-without-pyxis--containers)
 - [Folder-based cloud restrictions](#folder-based-cloud-restrictions)
 - [Features controlled using system properties](#features-controlled-using-system-properties)
 - [Paths reference](#paths-reference)
@@ -323,6 +324,78 @@ Add a `pyxis` block to the job JSON:
 | `containerWritable` | boolean | Make the container layer writable |
 | `containerRemap` | boolean | Remap root user in container |
 | `containerName` | string | Name for the container instance |
+
+
+# Running without Pyxis / containers
+
+Clusters without [Pyxis](https://github.com/NVIDIA/pyxis) can run the inbound Jenkins agent
+**directly on compute nodes**. You must provide Java 17+ and `agent.jar` on each node (or
+enable download-at-runtime).
+
+## Configuration levels
+
+| Level | Where | Use for |
+|-------|--------|---------|
+| Cloud | Manage Jenkins → Clouds → Slurm → **Default Agent Launch** | Site-wide `java_path` / `jar_path` |
+| Template | Job template → **Agent Launch (without container)** | Per-label overrides |
+| Pipeline | Declarative properties or JSON `agent` block | Per-stage overrides |
+
+Later levels override earlier ones. Pyxis, when configured, takes precedence over native launch.
+
+## Declarative pipeline (properties)
+
+```groovy
+agent {
+  slurm {
+    cloud 'my-cluster'
+    partition 'compute'
+    workingDir '/tmp/jenkins'
+    javaPath '/opt/jenkins/jdk-17/bin/java'
+    jarPath '/opt/jenkins/agent.jar'
+  }
+}
+```
+
+## Declarative pipeline (JSON)
+
+```groovy
+agent {
+  slurm {
+    cloud 'my-cluster'
+    json '''
+      {
+        "job": {
+          "partition": "compute",
+          "current_working_directory": "/tmp/jenkins",
+          "cpus_per_task": 4
+        },
+        "agent": {
+          "java_path": "/opt/jenkins/jdk-17/bin/java",
+          "jar_path": "/opt/jenkins/agent.jar"
+        }
+      }
+    '''
+  }
+}
+```
+
+Set `"download_jar": true` in the `agent` block (or enable **Download Agent JAR** in the UI)
+to fetch `agent.jar` from the controller into the job workdir on first run.
+
+## Native agent fields
+
+| Field | JSON key | Description |
+|-------|----------|-------------|
+| `javaPath` | `java_path` | Java executable on compute nodes (default: `java`) |
+| `jarPath` | `jar_path` | Path to pre-installed `agent.jar` |
+| `downloadJar` | `download_jar` | Download JAR from controller at job start |
+| `setupScript` | `setup_script` | Shell commands before launch (e.g. `module load java/21`) |
+
+## Node preparation
+
+See [docs/NATIVE_AGENT_SETUP.md](docs/NATIVE_AGENT_SETUP.md) for the admin checklist (Java 17,
+`agent.jar`, workdir, network). E2E scripts: `scripts/e2e/prepare-native-agent.sh`,
+`scripts/e2e/install-jdk17-remote.sh`, example pipeline `examples/native-agent-test.groovy`.
 
 
 # Folder-based Cloud Restrictions
