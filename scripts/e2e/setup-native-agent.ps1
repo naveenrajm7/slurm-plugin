@@ -18,7 +18,7 @@ $javaPath = if ($cfg['E2E_NATIVE_JAVA_PATH']) { $cfg['E2E_NATIVE_JAVA_PATH'] } e
 $label = 'absol-native'
 $jobName = 'native-agent-test'
 
-Write-Host "=== Configure native template label=$label on cloud $cloud ==="
+Write-Host "=== Configure cloud-level native agent defaults on $cloud ==="
 $groovyTemplate = @"
 import io.jenkins.plugins.slurm.SlurmCloud
 import io.jenkins.plugins.slurm.SlurmJobTemplate
@@ -28,6 +28,11 @@ def cloud = jenkins.model.Jenkins.get().clouds.getAll(io.jenkins.plugins.slurm.S
 if (!(cloud instanceof SlurmCloud)) {
   return 'ERROR: cloud not found'
 }
+
+def cloudAgent = new AgentLaunchConfig()
+cloudAgent.javaPath = '$javaPath'
+cloudAgent.jarPath = '$jarPath'
+cloud.agent = cloudAgent
 
 def t = cloud.jobTemplates?.find { it.label == '$label' }
 if (t == null) {
@@ -42,15 +47,11 @@ t.memoryPerNode = 2048L
 t.timeLimit = 30
 t.constraints = '$feature'
 t.pyxis = null
-
-def agent = new AgentLaunchConfig()
-agent.javaPath = '$javaPath'
-agent.jarPath = '$jarPath'
-t.agent = agent
+t.agent = null
 
 cloud.jobTemplates = cloud.jobTemplates
 jenkins.model.Jenkins.get().save()
-return 'OK template $label'
+return 'OK cloud agent + template $label'
 "@
 
 $result = Invoke-JenkinsScript -Jenkins $jenkins -Groovy $groovyTemplate

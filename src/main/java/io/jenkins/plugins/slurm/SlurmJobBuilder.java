@@ -26,6 +26,7 @@ public class SlurmJobBuilder {
     private final String agentName;
     private final String jenkinsUrl;
     private final String agentSecret;
+    private final AgentLaunchConfig cloudAgent;
     
     /**
      * Creates a new job builder.
@@ -39,10 +40,22 @@ public class SlurmJobBuilder {
                           @NonNull String agentName,
                           @NonNull String jenkinsUrl,
                           @CheckForNull String agentSecret) {
+        this(template, agentName, jenkinsUrl, agentSecret, null);
+    }
+
+    /**
+     * Creates a new job builder with cloud-level agent launch defaults.
+     */
+    public SlurmJobBuilder(@NonNull SlurmJobTemplate template,
+                          @NonNull String agentName,
+                          @NonNull String jenkinsUrl,
+                          @CheckForNull String agentSecret,
+                          @CheckForNull AgentLaunchConfig cloudAgent) {
         this.template = template;
         this.agentName = agentName;
         this.jenkinsUrl = jenkinsUrl;
         this.agentSecret = agentSecret;
+        this.cloudAgent = cloudAgent;
     }
     
     /**
@@ -332,14 +345,19 @@ public class SlurmJobBuilder {
         if (pyxis != null && pyxis.isConfigured()) {
             return;
         }
-        AgentLaunchConfig agent = template.getAgent();
+        AgentLaunchConfig agent = getEffectiveAgent();
         if (agent != null && agent.isConfigured()) {
             agent.validateNativeLaunch();
             return;
         }
         throw new IllegalStateException(
                 "Agent launch is not configured. Enable Pyxis container support, configure native "
-                        + "Agent Launch (jarPath or downloadJar), or supply a custom batch script.");
+                        + "Agent Launch on the cloud or template (jarPath or downloadJar), or supply a custom batch script.");
+    }
+
+    @CheckForNull
+    private AgentLaunchConfig getEffectiveAgent() {
+        return AgentLaunchConfig.merge(cloudAgent, template.getAgent());
     }
 
     /**
@@ -370,7 +388,7 @@ public class SlurmJobBuilder {
 
         PyxisConfig pyxis = template.getPyxis();
         boolean useContainer = pyxis != null && pyxis.isConfigured();
-        AgentLaunchConfig agent = template.getAgent();
+        AgentLaunchConfig agent = getEffectiveAgent();
 
         if (!useContainer && agent != null && agent.getSetupScript() != null
                 && !agent.getSetupScript().trim().isEmpty()) {

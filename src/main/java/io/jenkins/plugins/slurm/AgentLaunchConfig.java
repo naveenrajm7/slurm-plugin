@@ -105,8 +105,55 @@ public class AgentLaunchConfig extends AbstractDescribableImpl<AgentLaunchConfig
         if (!isConfigured()) {
             throw new IllegalStateException(
                     "Native agent launch requires agent.jarPath or agent.downloadJar=true. "
-                            + "Configure Agent Launch settings on the template, or enable Pyxis container support.");
+                            + "Configure Agent Launch on the cloud or template, or enable Pyxis container support.");
         }
+    }
+
+    /**
+     * Merges cloud-level defaults with template-level overrides.
+     * Template wins for any field it explicitly sets (non-empty jarPath/setupScript,
+     * downloadJar=true, or non-default javaPath).
+     */
+    @CheckForNull
+    public static AgentLaunchConfig merge(@CheckForNull AgentLaunchConfig cloud,
+                                          @CheckForNull AgentLaunchConfig template) {
+        if (cloud == null && template == null) {
+            return null;
+        }
+        if (template == null) {
+            return copy(cloud);
+        }
+        if (cloud == null) {
+            return copy(template);
+        }
+
+        AgentLaunchConfig merged = copy(cloud);
+        if (template.getJarPath() != null && !template.getJarPath().trim().isEmpty()) {
+            merged.setJarPath(template.getJarPath());
+        }
+        if (template.getDownloadJar()) {
+            merged.setDownloadJar(true);
+        }
+        if (template.getSetupScript() != null && !template.getSetupScript().trim().isEmpty()) {
+            merged.setSetupScript(template.getSetupScript());
+        }
+        if (!DEFAULT_JAVA_PATH.equals(template.getJavaPath())) {
+            merged.setJavaPath(template.getJavaPath());
+        }
+        return merged;
+    }
+
+    @CheckForNull
+    private static AgentLaunchConfig copy(@CheckForNull AgentLaunchConfig source) {
+        if (source == null) {
+            return null;
+        }
+        AgentLaunchConfig copy = new AgentLaunchConfig();
+        copy.setJavaPath(source.getJavaPath());
+        copy.setJarPath(source.getJarPath());
+        copy.setDownloadJar(source.getDownloadJar());
+        copy.setSetupScript(source.getSetupScript());
+        return copy;
     }
 
     @Extension

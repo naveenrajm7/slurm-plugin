@@ -77,6 +77,22 @@ public class SlurmJobBuilderTest {
     }
 
     @Test
+    public void testCloudDefaultsUsedWhenTemplateHasNoAgent() {
+        SlurmJobTemplate template = baseTemplate();
+
+        AgentLaunchConfig cloudAgent = new AgentLaunchConfig();
+        cloudAgent.setJavaPath("/opt/jenkins/jdk-17/bin/java");
+        cloudAgent.setJarPath("/opt/jenkins/agent.jar");
+
+        SlurmJobBuilder builder = new SlurmJobBuilder(
+                template, AGENT_NAME, JENKINS_URL, SECRET, cloudAgent);
+        String script = builder.build().getScript();
+
+        assertTrue(script.contains("/opt/jenkins/jdk-17/bin/java"));
+        assertTrue(script.contains("'/opt/jenkins/agent.jar'"));
+    }
+
+    @Test
     public void testMissingLaunchConfigFails() {
         SlurmJobTemplate template = baseTemplate();
 

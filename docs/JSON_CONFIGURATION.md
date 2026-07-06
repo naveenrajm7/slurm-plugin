@@ -14,6 +14,9 @@ The SLURM plugin uses JSON configuration that **matches the SLURM REST API forma
   },
   "pyxis": {
     // Plugin-specific Pyxis/container configuration
+  },
+  "agent": {
+    // Plugin-specific native (non-container) agent launch overrides
   }
 }
 ```
@@ -22,6 +25,9 @@ The SLURM plugin uses JSON configuration that **matches the SLURM REST API forma
 
 - **`job`**: SLURM job description (matches `job_desc_msg` from REST API)
 - **`pyxis`**: (Optional) Pyxis container configuration (plugin-specific)
+- **`agent`**: (Optional) Native agent launch overrides (`java_path`, `jar_path`, `download_jar`, `setup_script`). Cloud-level defaults apply when omitted.
+
+Cloud-level **Default Agent Launch** settings (Manage Jenkins → Clouds) provide site-wide `java_path` / `jar_path` defaults; template and pipeline `agent` blocks override individual fields.
 
 ## Complete Example
 

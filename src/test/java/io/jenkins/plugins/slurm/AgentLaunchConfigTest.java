@@ -47,4 +47,29 @@ public class AgentLaunchConfigTest {
         AgentLaunchConfig config = new AgentLaunchConfig();
         assertThrows(IllegalStateException.class, config::validateNativeLaunch);
     }
+
+    @Test
+    public void testMergeCloudDefaultsWithTemplateOverride() {
+        AgentLaunchConfig cloud = new AgentLaunchConfig();
+        cloud.setJavaPath("/opt/jenkins/jdk-17/bin/java");
+        cloud.setJarPath("/opt/jenkins/agent.jar");
+
+        AgentLaunchConfig template = new AgentLaunchConfig();
+        template.setJavaPath("/usr/bin/java");
+
+        AgentLaunchConfig merged = AgentLaunchConfig.merge(cloud, template);
+        assertEquals("/usr/bin/java", merged.getJavaPath());
+        assertEquals("/opt/jenkins/agent.jar", merged.getJarPath());
+    }
+
+    @Test
+    public void testMergeTemplateInheritsCloudWhenUnset() {
+        AgentLaunchConfig cloud = new AgentLaunchConfig();
+        cloud.setJavaPath("/opt/jenkins/jdk-17/bin/java");
+        cloud.setJarPath("/opt/jenkins/agent.jar");
+
+        AgentLaunchConfig merged = AgentLaunchConfig.merge(cloud, new AgentLaunchConfig());
+        assertEquals("/opt/jenkins/jdk-17/bin/java", merged.getJavaPath());
+        assertEquals("/opt/jenkins/agent.jar", merged.getJarPath());
+    }
 }

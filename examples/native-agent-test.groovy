@@ -23,10 +23,6 @@ pipeline {
                             "memory_per_node": 2048,
                             "time_limit": 30,
                             "constraints": "${e2eFeature}"
-                        },
-                        "agent": {
-                            "java_path": "/opt/jenkins/jdk-17/bin/java",
-                            "jar_path": "/opt/jenkins/agent.jar"
                         }
                     }
                     """
