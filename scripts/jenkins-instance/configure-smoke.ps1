@@ -1,4 +1,4 @@
-# Configure CK-style smoke templates and job on existing Slurm cloud.
+# Configure label smoke templates and job on existing Slurm cloud.
 #
 # Usage:
 #   pwsh -File scripts/jenkins-instance/configure-smoke.ps1
@@ -12,7 +12,7 @@ $base = $cfg['JENKINS_URL']
 $user = $cfg['JENKINS_ADMIN_USER']
 $pass = $cfg['JENKINS_ADMIN_PASSWORD']
 
-Write-Host "=== Configure CK smoke (templates + job) ==="
+Write-Host "=== Configure label smoke (templates + job) ==="
 Write-Host "Jenkins: $base"
 Write-Host "Cloud: $($cfg['SLURM_CLOUD_NAME'])"
 

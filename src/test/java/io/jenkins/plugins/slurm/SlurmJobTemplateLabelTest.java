@@ -8,7 +8,7 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
- * Tests for {@link SlurmJobTemplate} label matching (CK-style expressions).
+ * Tests for {@link SlurmJobTemplate} label matching (Jenkins label expressions).
  */
 @WithJenkins
 public class SlurmJobTemplateLabelTest {

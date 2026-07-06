@@ -21,7 +21,7 @@ $folder = $cfg['E2E_FOLDER']
 $jobName = $cfg['E2E_JOB_TEMPLATE_TEST']
 $jobPath = (ConvertTo-JobPath -JobFullName "$folder/$jobName")
 
-Write-Host "=== CK label smoke run ==="
+Write-Host "=== Label expression smoke run ==="
 Write-Host "Jenkins: $base"
 Write-Host "Job: $jobPath"
 

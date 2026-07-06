@@ -19,7 +19,7 @@ try {
 }
 
 Write-Host ''
-Write-Host '=== Label match detail (ck-nogpu) ==='
+Write-Host '=== Label match detail (smoke-nogpu template) ==='
 $groovy = @"
 import io.jenkins.plugins.slurm.*
 import hudson.model.Label

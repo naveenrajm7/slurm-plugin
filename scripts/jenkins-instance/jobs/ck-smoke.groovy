@@ -1,4 +1,4 @@
-// Minimal CK label smoke — validates Slurm provisioning without the CK shared library.
+// Minimal label-expression smoke — validates Slurm provisioning with compound Jenkins labels.
 pipeline {
   agent none
   stages {

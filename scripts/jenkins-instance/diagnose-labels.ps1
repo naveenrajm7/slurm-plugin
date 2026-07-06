@@ -22,7 +22,7 @@ Jenkins.get().clouds.each { c ->
 return sb.toString()
 '@
 
-Write-Host '=== Label match (ck-nogpu vs CK expression) ==='
+Write-Host '=== Label match (smoke-nogpu template vs compound expression) ==='
 $groovy = @"
 import io.jenkins.plugins.slurm.*
 import hudson.model.Label

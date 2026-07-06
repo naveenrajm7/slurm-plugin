@@ -21,7 +21,7 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [ ] **[MED]** Consider periodic cleanup for orphaned Slurm jobs — K8s has `GarbageCollection` class that cleans orphaned pods
-- [ ] **Slurm job status visibility while provisioning** (discovered during CK smoke testing — build shows "waiting/offline" while Slurm job is PD in queue)
+- [ ] **Slurm job status visibility while provisioning** (discovered during label smoke testing — build shows "waiting/offline" while Slurm job is PD in queue)
   - [ ] **[HIGH]** Build console — log Slurm job ID, state, and pending reason (e.g. `PENDING (Priority)`) on each poll while queued; not only after agent is online
   - [ ] **[HIGH]** Wire `runListener` for cloud `node('label')` provisioning — attach queued build's `TaskListener` at agent creation (same queue scan as error-message TODO above); today only `slurmJobTemplate()` step sets it
   - [ ] **[MED]** Agent page — show live status via `SlurmComputer.getSlurmJobInfo()` + REST poll (e.g. `Slurm job 413835: PENDING (Priority)`)
