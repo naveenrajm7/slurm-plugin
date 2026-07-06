@@ -18,12 +18,16 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Label;
 import hudson.model.Queue;
+import hudson.model.Run;
+import hudson.model.TaskListener;
 import jenkins.model.Jenkins;
+import java.io.IOException;
 import java.util.Arrays;
-import java.util.Optional;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.commons.lang.StringUtils;
+import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
+import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 
 /**
  * Utility methods for Slurm job and agent management.
@@ -36,7 +40,70 @@ public final class JobUtils {
     private JobUtils() {}
     
     private static final Logger LOGGER = Logger.getLogger(JobUtils.class.getName());
-    
+
+    /**
+     * Finds the build console {@link TaskListener} for a queued pipeline {@code node('label')} block
+     * waiting on the given Jenkins label.
+     *
+     * <p>When provisioning via a static cloud template (no {@code slurmJobTemplate()} step), the
+     * template has no listener. Scanning the queue for a matching {@link ExecutorStepExecution.PlaceholderTask}
+     * lets provisioning logs reach the build console before the agent is online.
+     *
+     * @param labelString Jenkins label the agent is being provisioned for
+     * @return the build listener, or {@link TaskListener#NULL} if none is found
+     */
+    @NonNull
+    public static TaskListener findRunListenerForLabel(@NonNull String labelString) {
+        if (labelString.isBlank()) {
+            return TaskListener.NULL;
+        }
+
+        for (Queue.Item item : Jenkins.get().getQueue().getItems()) {
+            Label assignedLabel = item.getAssignedLabel();
+            if (assignedLabel == null) {
+                continue;
+            }
+            if (!labelString.equals(assignedLabel.getName())) {
+                continue;
+            }
+
+            TaskListener listener = getListenerFromQueueItem(item);
+            if (listener != null) {
+                LOGGER.log(Level.FINE, () -> "Found build listener for label '" + labelString
+                    + "' from queue item: " + item.task.getDisplayName());
+                return listener;
+            }
+        }
+
+        return TaskListener.NULL;
+    }
+
+    @CheckForNull
+    private static TaskListener getListenerFromQueueItem(Queue.Item item) {
+        Queue.Task task = item.task;
+        if (!(task instanceof ExecutorStepExecution.PlaceholderTask)) {
+            return null;
+        }
+
+        ExecutorStepExecution.PlaceholderTask placeholderTask = (ExecutorStepExecution.PlaceholderTask) task;
+        Run<?, ?> run = placeholderTask.runForDisplay();
+        if (run == null) {
+            return null;
+        }
+
+        if (run instanceof FlowExecutionOwner.Executable) {
+            FlowExecutionOwner owner = ((FlowExecutionOwner.Executable) run).asFlowExecutionOwner();
+            if (owner != null) {
+                try {
+                    return owner.getListener();
+                } catch (IOException e) {
+                    LOGGER.log(Level.FINE, "Could not get listener from queue item " + item, e);
+                }
+            }
+        }
+        return null;
+    }
+
     /**
      * Cancel queue items matching the given agent based on label matching.
      * 

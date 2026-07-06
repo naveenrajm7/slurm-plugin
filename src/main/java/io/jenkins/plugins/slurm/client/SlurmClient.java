@@ -225,48 +225,59 @@ public class SlurmClient {
      * @throws ApiException if the API call fails
      */
     public String getJobState(String jobId) throws ApiException {
+        SlurmJobStatus status = getJobStatus(jobId);
+        return status != null ? status.getState() : null;
+    }
+
+    /**
+     * Get the state, pending reason, and nodes for a Slurm job.
+     *
+     * @param jobId The Slurm job ID to check
+     * @return job status snapshot, or {@code null} if the job is not found (404 / empty response)
+     * @throws ApiException if the API call fails for reasons other than a missing job
+     */
+    public SlurmJobStatus getJobStatus(String jobId) throws ApiException {
         if (jobId == null || jobId.isEmpty()) {
             throw new IllegalArgumentException("Job ID cannot be null or empty");
         }
-        
+
         try {
-            // Call the API to get job info
-            io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response = 
+            io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response =
                 api.slurmGetJob(jobId, null, null);
-            
+
             if (response != null && response.getJobs() != null && !response.getJobs().isEmpty()) {
                 io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = response.getJobs().get(0);
                 if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
-                    // getJobState() returns a List, get the first element and convert to String
                     String state = jobInfo.getJobState().get(0).toString();
                     Integer exitCode = getExitCode(jobInfo);
-                    
-                    LOGGER.info("Job " + jobId + " state: " + state + 
+
+                    LOGGER.info("Job " + jobId + " state: " + state +
                         (exitCode != null ? " (exit code: " + exitCode + ")" : ""));
-                    
-                    // CRITICAL: Check exit code for COMPLETED jobs
-                    // Slurm marks jobs as COMPLETED even if they exit with non-zero code
-                    // We need to treat non-zero exit as FAILED for Jenkins
+
                     if ("COMPLETED".equals(state) && exitCode != null && exitCode != 0) {
-                        LOGGER.warning("Job " + jobId + " COMPLETED with non-zero exit code " + 
+                        LOGGER.warning("Job " + jobId + " COMPLETED with non-zero exit code " +
                             exitCode + " - treating as FAILED");
-                        return "FAILED";
+                        state = "FAILED";
                     }
-                    
-                    return state;
+
+                    return new SlurmJobStatus(
+                        jobId,
+                        state,
+                        jobInfo.getStateReason(),
+                        jobInfo.getNodes());
                 }
             }
-            
+
             LOGGER.warning("Job " + jobId + " not found in response");
             return null;
-            
+
         } catch (ApiException e) {
             if (e.getCode() == 404) {
                 LOGGER.info("Job " + jobId + " not found (404) - may have been cleaned up");
                 return null;
             }
-            LOGGER.log(Level.WARNING, 
-                      "Failed to get job state for " + jobId + ": HTTP " + e.getCode() + 
+            LOGGER.log(Level.WARNING,
+                      "Failed to get job state for " + jobId + ": HTTP " + e.getCode() +
                       " - " + e.getMessage(), e);
             throw e;
         }

@@ -1,0 +1,30 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler">
+  <j:set var="sc" value="${it.computer}"/>
+  <j:if test="${sc.launching or sc.node.slurmJobId != null}">
+    <div class="pane">
+      <h2>Slurm Job</h2>
+      <p id="slurm-job-status-${sc.name}">${sc.slurmJobInfo}</p>
+      <script>
+        (function () {
+          var el = document.getElementById('slurm-job-status-${sc.name}');
+          if (!el) {
+            return;
+          }
+          var url = '${rootURL}/computer/${sc.name}/api/json?tree=slurmJobInfo';
+          function poll() {
+            fetch(url, { credentials: 'same-origin' })
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data &amp;&amp; data.slurmJobInfo) {
+                  el.textContent = data.slurmJobInfo;
+                }
+              })
+              .catch(function () { /* ignore transient poll errors */ });
+          }
+          setInterval(poll, 5000);
+        })();
+      </script>
+    </div>
+  </j:if>
+</j:jelly>

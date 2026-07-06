@@ -8,11 +8,14 @@ import hudson.slaves.OfflineCause;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.kohsuke.stapler.export.Exported;
+import org.kohsuke.stapler.export.ExportedBean;
 
 /**
  * Computer implementation for Slurm agents.
@@ -21,11 +24,14 @@ import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
  * Jenkins agent, including handling connection status and job execution.
  * Implements TrackedItem for cloud-stats plugin integration.
  */
+@ExportedBean
 public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements TrackedItem {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmComputer.class.getName());
     
     private volatile boolean launching = false;
+    @CheckForNull
+    private volatile String liveSlurmJobStatus;
     
     public SlurmComputer(@NonNull SlurmAgent agent) {
         super(agent);
@@ -92,10 +98,15 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     }
     
     /**
-     * Gets display information about the Slurm job for the UI.
+     * Gets display information about the Slurm job for the UI and REST API.
      */
+    @Exported
     @NonNull
     public String getSlurmJobInfo() {
+        if (liveSlurmJobStatus != null && !liveSlurmJobStatus.isEmpty()) {
+            return liveSlurmJobStatus;
+        }
+
         SlurmAgent agent = getNode();
         if (agent == null) {
             return "N/A";
@@ -117,6 +128,28 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
         }
         
         return info.toString();
+    }
+
+    /**
+     * Updates the live Slurm job status shown on the agent page while provisioning.
+     * Does not mark the computer offline — that would block pipeline scheduling.
+     */
+    public void updateProvisioningStatus(@CheckForNull SlurmJobStatus status) {
+        if (status == null) {
+            liveSlurmJobStatus = null;
+            return;
+        }
+
+        liveSlurmJobStatus = status.formatForDisplay();
+
+        SlurmAgent agent = getNode();
+        if (agent != null && status.getNodes() != null && !status.getNodes().isBlank()) {
+            agent.setNodeList(status.getNodes());
+        }
+    }
+
+    public void clearProvisioningStatus() {
+        liveSlurmJobStatus = null;
     }
     
     @Override
