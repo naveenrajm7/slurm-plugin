@@ -6,3 +6,17 @@ cloud-stats:latest
 caffeine-api:latest
 jackson2-api:latest
 pipeline-model-definition:latest
+git:latest
+workflow-cps-global-lib:latest
+pipeline-groovy-lib:latest
+pipeline-github-lib:latest
+docker-workflow:latest
+docker-commons:latest
+pipeline-utility-steps:latest
+copyartifact:latest
+lockable-resources:latest
+workflow-multibranch:latest
+parameterized-scheduler:latest
+github-branch-source:latest
+branch-api:latest
+scm-api:latest

@@ -357,6 +357,20 @@ function Start-JenkinsBuild {
     return Invoke-JenkinsApi -Jenkins $Jenkins -Uri "$($Jenkins.BaseUrl)/$JobPath/lastBuild/api/json?tree=number,building,url,result"
 }
 
+function Start-JenkinsParameterizedBuild {
+    param(
+        [hashtable]$Jenkins,
+        [string]$JobPath,
+        [hashtable]$Parameters
+    )
+    $query = ($Parameters.GetEnumerator() | ForEach-Object {
+        "$([uri]::EscapeDataString($_.Key))=$([uri]::EscapeDataString([string]$_.Value))"
+    }) -join '&'
+    Invoke-JenkinsApi -Jenkins $Jenkins -Uri "$($Jenkins.BaseUrl)/$JobPath/buildWithParameters?$query" -Method Post | Out-Null
+    Start-Sleep -Seconds 3
+    return Invoke-JenkinsApi -Jenkins $Jenkins -Uri "$($Jenkins.BaseUrl)/$JobPath/lastBuild/api/json?tree=number,building,url,result"
+}
+
 function Get-BuildStatus {
     param([hashtable]$Jenkins, [string]$JobPath, [int]$BuildNumber)
     Invoke-JenkinsApi -Jenkins $Jenkins -Uri "$($Jenkins.BaseUrl)/$JobPath/$BuildNumber/api/json?tree=number,building,result,duration,url"
