@@ -471,6 +471,12 @@ A common local-dev pattern (see `scripts/e2e/`):
 
 Set `SLURM_JENKINS_AGENT_URL` in `scripts/e2e/config.env` to match the cloud configuration.
 
+### Dedicated Jenkins instance (no tunnel)
+
+When Jenkins runs on the cluster network (see `scripts/jenkins-instance/`), set the cloud
+**Jenkins URL** to the instance URL agents can reach directly, e.g. `http://<host>:8282/`.
+No SSH reverse tunnel is required.
+
 ## Repository paths (development)
 
 | Path | Purpose |
@@ -478,7 +484,8 @@ Set `SLURM_JENKINS_AGENT_URL` in `scripts/e2e/config.env` to match the cloud con
 | `src/main/resources/openapi/slurm-v0.0.42.json` | OpenAPI spec; preprocessed before code generation |
 | `target/generated-sources/` | Generated Slurm REST Java client (recreated on each build) |
 | `examples/` | Sample pipeline definitions |
-| `scripts/e2e/config.env.example` | E2E placeholders; copy to gitignored `config.env` |
+| `scripts/e2e/config.env.example` | Local e2e placeholders; copy to gitignored `config.env` |
+| `scripts/jenkins-instance/` | Docker Jenkins instance harness; see `README.md` in that folder |
 
 
 # Troubleshooting

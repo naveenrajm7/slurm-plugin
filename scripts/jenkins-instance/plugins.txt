@@ -1,0 +1,8 @@
+cloudbees-folder:latest
+workflow-aggregator:latest
+credentials:latest
+plain-credentials:latest
+cloud-stats:latest
+caffeine-api:latest
+jackson2-api:latest
+pipeline-model-definition:latest

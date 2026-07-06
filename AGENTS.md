@@ -25,3 +25,9 @@ This repository is a single **Maven-based Jenkins plugin** (the Slurm plugin). T
 - Start `mvn hpi:run`, then the WSL agent tunnel (`start-tunnel.sh`), then `powershell -File scripts/e2e/run-e2e.ps1`.
 - Agent tunnel must run in WSL if endpoint security blocks Windows OpenSSH `-R` forwards. Jenkins UI stays on `localhost:8080`; agents use the tunneled URL configured in your Slurm cloud (typically `http://localhost:5000/jenkins/` on the controller).
 - Use a writable `current_working_directory` on compute nodes (e.g. `/tmp/jenkins`), not a restricted home directory owned by another service account.
+
+### Dedicated Jenkins instance (Docker + live Slurm)
+- Scripts live under `scripts/jenkins-instance/`. Copy `config.env.example` → `config.env` (gitignored).
+- `deploy.ps1` — Docker Jenkins LTS on remote host, install `target/slurm.hpi`.
+- `configure.ps1` — Slurm cloud, JWT credential, e2e jobs (direct agent URL, no tunnel).
+- `run-e2e.ps1` — build, deploy, and run smoke jobs. See `scripts/jenkins-instance/README.md`.
