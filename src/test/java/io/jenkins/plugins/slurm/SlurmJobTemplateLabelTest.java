@@ -1,5 +1,6 @@
 package io.jenkins.plugins.slurm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,6 +19,7 @@ public class SlurmJobTemplateLabelTest {
         SlurmJobTemplate t = new SlurmJobTemplate();
         t.setLabel("rocmtest nogpu");
 
+        assertEquals(2, t.getLabelAtoms().size());
         assertTrue(t.canTake("(rocmtest || miopen) && nogpu"));
         assertTrue(t.canTake("rocmtest nogpu"));
         assertFalse(t.canTake("(rocmtest || miopen) && gfx942"));
