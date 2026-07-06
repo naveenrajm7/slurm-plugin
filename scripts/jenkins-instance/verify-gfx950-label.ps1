@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 
 $cfg = Get-InstanceConfig
 $cloudName = $cfg['SLURM_CLOUD_NAME']
-$gpuTemplate = if ($cfg['CK_GPU_TEMPLATE_NAME']) { $cfg['CK_GPU_TEMPLATE_NAME'] } else { 'ck-gfx950' }
-$gpuLabel = if ($cfg['CK_GPU_NODE_LABEL']) { $cfg['CK_GPU_NODE_LABEL'] } else { 'gfx950' }
+$gpuTemplate = if ($cfg['SMOKE_GPU_TEMPLATE_NAME']) { $cfg['SMOKE_GPU_TEMPLATE_NAME'] } else { 'smoke-gfx950' }
+$gpuLabel = if ($cfg['SMOKE_GPU_NODE_LABEL']) { $cfg['SMOKE_GPU_NODE_LABEL'] } else { 'gfx950' }
 $jenkins = Connect-JenkinsScriptConsole -Cfg $cfg
 
 $groovy = @"

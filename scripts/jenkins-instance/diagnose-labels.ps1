@@ -30,8 +30,8 @@ import jenkins.model.Jenkins
 def cloud = Jenkins.get().clouds.find { it instanceof SlurmCloud && it.name == '$cloudName' } as SlurmCloud
 if (!cloud) return "cloud not found"
 def req = Label.parseExpression("(rocmtest || miopen) && nogpu")
-def t = cloud.jobTemplates?.find { it.name == "ck-nogpu" }
-if (!t) return "template ck-nogpu not found; names=" + cloud.jobTemplates*.name
+def t = cloud.jobTemplates?.find { it.name == "smoke-nogpu" }
+if (!t) return "template smoke-nogpu not found; names=" + cloud.jobTemplates*.name
 return "canTake(Label)=" + t.canTake(req) + " atoms=" + t.labelAtoms + " cloudsForLabel=" + req.clouds*.name
 "@
 Invoke-JenkinsScript -Jenkins $jenkins -Groovy $groovy

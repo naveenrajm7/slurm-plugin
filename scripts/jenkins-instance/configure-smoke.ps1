@@ -57,7 +57,7 @@ return 'folder-ok'
 Write-Host "Creating folder ${folder}..."
 Invoke-JenkinsScript -Jenkins $jenkins -Groovy $folderGroovy | Out-Null
 
-$scriptText = Get-Content -Raw -LiteralPath "$PSScriptRoot\jobs\ck-smoke.groovy"
+$scriptText = Get-Content -Raw -LiteralPath "$PSScriptRoot\jobs\label-smoke.groovy"
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($scriptText))
 $jobGroovy = @"
 import com.cloudbees.hudson.plugins.folder.Folder
