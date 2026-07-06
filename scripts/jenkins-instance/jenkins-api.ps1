@@ -84,6 +84,21 @@ function Get-BasicAuthHeader {
   return @{ Authorization = "Basic $([Convert]::ToBase64String($bytes))" }
 }
 
+function Connect-JenkinsScriptConsole {
+    param([hashtable]$Cfg)
+    $base = $Cfg['JENKINS_URL']
+    $user = $Cfg['JENKINS_ADMIN_USER']
+    $pass = $Cfg['JENKINS_ADMIN_PASSWORD']
+    if ($pass -and $pass -ne 'unused') {
+        return Get-JenkinsSession -BaseUrl $base -User $user -Password $pass
+    }
+    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $crumb = Invoke-RestMethod -Uri "$base/crumbIssuer/api/json" -WebSession $session
+    $headers = @{}
+    $headers[$crumb.crumbRequestField] = $crumb.crumb
+    return @{ Session = $session; Headers = $headers; BaseUrl = $base.TrimEnd('/') }
+}
+
 function Get-JenkinsSession {
     param(
         [string]$BaseUrl,
