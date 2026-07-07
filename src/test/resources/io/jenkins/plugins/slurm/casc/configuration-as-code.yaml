@@ -1,0 +1,30 @@
+jenkins:
+  clouds:
+    - slurm:
+        name: "slurm-casc-roundtrip"
+        slurmRestApiUrl: "http://slurm-controller:6820"
+        credentialsId: "slurm-jwt"
+        defaultPartition: "compute"
+        maxAgents: 20
+        agentTimeoutMinutes: 5
+        usageRestricted: true
+        jobTemplates:
+          - name: "cpu-default"
+            label: "linux"
+            partition: "compute"
+            cpusPerTask: 4
+            memoryPerNode: 8192
+            timeLimit: 120
+            instanceCap: 10
+            idleMinutes: 3
+            runOnce: true
+
+          - name: "gpu-large"
+            label: "gpu ml"
+            partition: "gpu"
+            cpusPerTask: 16
+            memoryPerNode: 32768
+            tresPerJob: "gres/gpu:a100:4"
+            timeLimit: 480
+            instanceCap: 2
+            runOnce: false

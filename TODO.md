@@ -8,10 +8,12 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 ## Open
 
 - [ ] **Multi cloud instance testing** (ref: K8s plugin comparison)
-  - [ ] **[HIGH]** Add multi-cloud test class — model after K8s `KubernetesQueueTaskDispatcherTest`: two clouds with folder restrictions, verify correct cloud/agent dispatch
-  - [ ] **[HIGH]** Test folder property inheritance with multiple clouds — model after K8s `KubernetesFolderPropertyTest`
-  - [ ] **[HIGH]** Test provisioning limits across multiple clouds — model after K8s `KubernetesProvisioningLimitsTest` (concurrent tasks across 3 clouds)
-  - [ ] **[HIGH]** Test pipeline jobs with cloud restrictions — K8s has `checkPipelinesRestrictedTwoClouds()`
+  - [x] **[HIGH]** Add multi-cloud test class — `SlurmQueueTaskDispatcherTest`, `SlurmFolderPropertyTest`, `SlurmProvisioningLimitsTest`
+  - [x] **[HIGH]** Test folder property inheritance with multiple clouds — `SlurmFolderPropertyTest`
+  - [x] **[HIGH]** Test provisioning limits across multiple clouds — `SlurmProvisioningLimitsTest`
+  - [x] **[HIGH]** Test pipeline jobs with cloud restrictions — `SlurmQueueTaskDispatcherTest.checkPipelinesRestrictedTwoClouds`
+  - [x] **[HIGH]** JCasC round-trip test — `SlurmCasCTest`
+  - [x] **[HIGH]** Launcher/agent lifecycle tests — `SlurmLauncherTest`, `SlurmAgentTest`
   - [ ] **[LOW]** Overlapping labels across clouds — neither K8s nor Slurm load-balances; no action unless we want to exceed K8s behavior
   - [ ] **[LOW]** Add help text to cloud field documenting "first available" fallback — K8s has this, we don't
 - [ ] **Error messages not visible in build console for static-template provisioning** (`SlurmLauncher`)
