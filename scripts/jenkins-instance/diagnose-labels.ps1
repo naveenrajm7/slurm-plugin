@@ -32,7 +32,7 @@ if (!cloud) return "cloud not found"
 def req = Label.parseExpression("(rocmtest || miopen) && nogpu")
 def t = cloud.jobTemplates?.find { it.name == "wl-nogpu" }
 if (!t) return "template wl-nogpu not found; names=" + cloud.jobTemplates*.name
-return "canTake(Label)=" + t.canTake(req) + " atoms=" + t.labelAtoms + " cloudsForLabel=" + req.clouds*.name
+return "workdir=" + t.currentWorkingDirectory + " canTake(Label)=" + t.canTake(req) + " atoms=" + t.labelAtoms + " cloudsForLabel=" + req.clouds*.name
 "@
 Invoke-JenkinsScript -Jenkins $jenkins -Groovy $groovy
 
