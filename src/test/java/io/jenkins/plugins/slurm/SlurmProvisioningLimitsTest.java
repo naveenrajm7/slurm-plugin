@@ -34,8 +34,7 @@ class SlurmProvisioningLimitsTest {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 10);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-b", 2, template);
 
-        Cloud.CloudState state = new Cloud.CloudState(Label.get("linux"), 0);
-        assertEquals(2, cloud.provision(state, 5).size());
+        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 5).size());
     }
 
     @Test
@@ -43,8 +42,7 @@ class SlurmProvisioningLimitsTest {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("gpu", "gpu", 2);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-c", 10, template);
 
-        Cloud.CloudState state = new Cloud.CloudState(Label.get("gpu"), 0);
-        assertEquals(2, cloud.provision(state, 5).size());
+        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "gpu", 5).size());
     }
 
     @Test
@@ -55,8 +53,7 @@ class SlurmProvisioningLimitsTest {
         j.jenkins.addNode(SlurmTestHelper.createAgent("existing-1", cloud.name, template.getId()));
         j.jenkins.addNode(SlurmTestHelper.createAgent("existing-2", cloud.name, template.getId()));
 
-        Cloud.CloudState state = new Cloud.CloudState(Label.get("linux"), 0);
-        assertEquals(3, cloud.provision(state, 10).size());
+        assertEquals(3, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 10).size());
     }
 
     @Test
@@ -66,15 +63,7 @@ class SlurmProvisioningLimitsTest {
         SlurmCloud cloudOne = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cloud-one", 2, templateOne);
         SlurmCloud cloudTwo = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cloud-two", 3, templateTwo);
 
-        assertEquals(
-                2,
-                cloudOne
-                        .provision(new Cloud.CloudState(Label.get("linux-one"), 0), 10)
-                        .size());
-        assertEquals(
-                3,
-                cloudTwo
-                        .provision(new Cloud.CloudState(Label.get("linux-two"), 0), 10)
-                        .size());
+        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloudOne, j.jenkins, "linux-one", 10).size());
+        assertEquals(3, SlurmTestHelper.provisionAndAwait(cloudTwo, j.jenkins, "linux-two", 10).size());
     }
 }
