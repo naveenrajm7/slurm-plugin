@@ -31,6 +31,7 @@ It is not required to run the Jenkins controller inside the Slurm cluster.
 - [Features controlled using system properties](#features-controlled-using-system-properties)
 - [Paths reference](#paths-reference)
 - [Troubleshooting](#troubleshooting)
+- [Monitoring provisioning](#monitoring-provisioning)
 - [Building and testing](#building-and-testing)
 - [Related projects](#related-projects)
 
@@ -590,6 +591,45 @@ sacct -j 12345 --format=JobID,State,ExitCode,NodeList
 
 Add a [Jenkins log recorder](https://www.jenkins.io/doc/book/system-administration/viewing-logs/) for
 `io.jenkins.plugins.slurm` at `FINE` level to see template selection, job submission, and polling details.
+
+
+# Monitoring provisioning
+
+The Slurm plugin integrates with the [Cloud Statistics](https://plugins.jenkins.io/cloud-stats/) plugin
+(optional dependency — install it on the controller to use the UI and REST API).
+
+Each dynamic agent is tracked as a **provisioning activity** when `SlurmCloud` creates a
+`TrackedPlannedNode`. During launch, `SlurmLauncher` attaches Slurm-specific context to the
+**LAUNCHING** phase:
+
+| Event | cloud-stats level | Example attachment |
+|-------|-------------------|--------------------|
+| Job submitted to `slurmrestd` | OK | `Submitted Slurm job 413835` |
+| Slurm state change | OK / FAIL | `Slurm job 413835: PENDING (Priority)` |
+| Job PENDING longer than 60s | WARN | `Slurm job 413835 still PENDING after 90s (Priority)` |
+| Agent connected | OK | `Agent connected after 42s (Slurm job 413835)` |
+| Launch failure / timeout | FAIL | `Timeout waiting for agent… (job 413835, state PENDING)` |
+
+## UI
+
+With cloud-stats installed: **Manage Jenkins → Cloud Statistics** shows recent provisioning
+activities, phases, and the attachments above.
+
+## REST API
+
+```text
+GET /cloud-stats/api/json?depth=2
+```
+
+Filter for Slurm agents by `trackedItem` name or cloud name. Each activity exposes `phases`
+with `attachments` (title, status, timestamp).
+
+## Compared to the Kubernetes plugin
+
+The Kubernetes plugin does **not** use cloud-stats; it exposes counters via
+[jenkins-metrics](https://plugins.jenkins.io/metrics/). The Slurm plugin already uses cloud-stats
+for activity tracking — Phase A enriches LAUNCHING attachments with Slurm job IDs, states, and
+failure context. Future work may add jenkins-metrics counters for dashboard parity.
 
 
 # Building and Testing
