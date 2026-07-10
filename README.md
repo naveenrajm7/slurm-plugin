@@ -131,7 +131,7 @@ slurmJobTemplate(cloud: 'my-cluster', json: '''
 }
 ```
 
-Find more examples in the [examples](examples) directory.
+Find more examples in the [examples](examples) directory, including [static-node-migration.json](examples/static-node-migration.json) for migrating long-lived SSH agents to Slurm templates.
 
 
 # Configuration Reference

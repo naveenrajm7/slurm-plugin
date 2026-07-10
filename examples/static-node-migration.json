@@ -1,0 +1,160 @@
+{
+  "_comment": "Reference templates for migrating long-lived SSH Jenkins agents to Slurm dynamic provisioning. Example static node: gpu-workstation-01 (4x gfx1100). Customize cloud name, partition, GRES type, hostnames, and paths for your cluster.",
+  "sourceStaticNode": {
+    "name": "gpu-workstation-01",
+    "description": "4x gfx1100 workstation",
+    "labels": "rhel8 rhel9 sles15 sles15sp1 ubuntu22 ubuntu24 ubuntu24-therock 4gfx1100",
+    "remoteRoot": "/var/jenkins_home",
+    "executors": 1,
+    "usage": "EXCLUSIVE"
+  },
+  "migrationNotes": {
+    "dropTheseStaticEnvVars": [
+      "MULTI_GPU",
+      "NUMBER_OF_EXECUTORS",
+      "DOCKER_GPU_MASK_0",
+      "DOCKER_GPU_MASK_1",
+      "DOCKER_GPU_MASK_2",
+      "DOCKER_GPU_MASK_3",
+      "DOCKER_GPU_MASK_ROCR_0",
+      "DOCKER_GPU_MASK_ROCR_1",
+      "DOCKER_GPU_MASK_ROCR_2",
+      "DOCKER_GPU_MASK_ROCR_3",
+      "DOCKER_CARD_OFFSET",
+      "DOCKER_RENDER_OFFSET"
+    ],
+    "reason": "Static nodes used per-executor GPU masks when multiple Jenkins executors shared one physical host. Slurm allocates isolated GPUs per job; each Slurm job is one Jenkins agent with one executor.",
+    "keepIfPipelinesNeedThem": [
+      "NODE_CCACHE_PATH=/files/common/ccache",
+      "DOCKER_API_VERSION=1.44",
+      "RENDER_GID=109"
+    ],
+    "verifyOnCluster": [
+      "GRES type string (e.g. gres/gpu:gfx1100:1) via sacctmgr show tres or scontrol show node",
+      "Target host is a Slurm compute node and reachable from Jenkins agent URL",
+      "current_working_directory exists and is writable on compute nodes"
+    ]
+  },
+  "cloudTemplates": {
+    "gfx1100-1gpu-transitional": {
+      "_use": "Phase 1: pin to a specific host while the machine is still outside the general pool (required_nodes).",
+      "jcasc": {
+        "name": "gfx1100-1gpu",
+        "label": "gfx1100 rhel8 rhel9 sles15 sles15sp1 ubuntu22 ubuntu24 ubuntu24-therock",
+        "partition": "gpu",
+        "cpusPerTask": 8,
+        "memoryPerNode": 32768,
+        "timeLimit": 180,
+        "tresPerJob": "gres/gpu:gfx1100:1",
+        "currentWorkingDirectory": "/var/jenkins_home",
+        "requiredNodes": "gpu-workstation-01",
+        "nodeUsageMode": "EXCLUSIVE",
+        "runOnce": true,
+        "idleMinutes": 0,
+        "environment": "[\"NODE_CCACHE_PATH=/files/common/ccache\", \"DOCKER_API_VERSION=1.44\", \"RENDER_GID=109\"]"
+      },
+      "slurmJobJson": {
+        "job": {
+          "partition": "gpu",
+          "required_nodes": ["gpu-workstation-01"],
+          "cpus_per_task": 8,
+          "memory_per_node": 32768,
+          "time_limit": 180,
+          "tres_per_job": "gres/gpu:gfx1100:1",
+          "current_working_directory": "/var/jenkins_home",
+          "environment": [
+            "NODE_CCACHE_PATH=/files/common/ccache",
+            "DOCKER_API_VERSION=1.44",
+            "RENDER_GID=109"
+          ]
+        }
+      }
+    },
+    "gfx1100-1gpu-pool": {
+      "_use": "Phase 2: after enrolling hosts into the Slurm pool, remove required_nodes and schedule any matching gfx1100 node.",
+      "jcasc": {
+        "name": "gfx1100-1gpu",
+        "label": "gfx1100 rhel8 rhel9 sles15 sles15sp1 ubuntu22 ubuntu24 ubuntu24-therock",
+        "partition": "gpu",
+        "cpusPerTask": 8,
+        "memoryPerNode": 32768,
+        "timeLimit": 180,
+        "tresPerJob": "gres/gpu:gfx1100:1",
+        "currentWorkingDirectory": "/var/jenkins_home",
+        "nodeUsageMode": "EXCLUSIVE",
+        "runOnce": true,
+        "idleMinutes": 0,
+        "environment": "[\"NODE_CCACHE_PATH=/files/common/ccache\", \"DOCKER_API_VERSION=1.44\", \"RENDER_GID=109\"]"
+      },
+      "slurmJobJson": {
+        "job": {
+          "partition": "gpu",
+          "cpus_per_task": 8,
+          "memory_per_node": 32768,
+          "time_limit": 180,
+          "tres_per_job": "gres/gpu:gfx1100:1",
+          "current_working_directory": "/var/jenkins_home",
+          "environment": [
+            "NODE_CCACHE_PATH=/files/common/ccache",
+            "DOCKER_API_VERSION=1.44",
+            "RENDER_GID=109"
+          ]
+        }
+      }
+    },
+    "gfx1100-4gpu": {
+      "_use": "Jobs that previously used the 4gfx1100 label to request all GPUs on the box.",
+      "jcasc": {
+        "name": "gfx1100-4gpu",
+        "label": "4gfx1100 gfx1100",
+        "partition": "gpu",
+        "cpusPerTask": 32,
+        "memoryPerNode": 131072,
+        "timeLimit": 180,
+        "tresPerJob": "gres/gpu:gfx1100:4",
+        "currentWorkingDirectory": "/var/jenkins_home",
+        "nodeUsageMode": "EXCLUSIVE",
+        "runOnce": true,
+        "idleMinutes": 0,
+        "environment": "[\"NODE_CCACHE_PATH=/files/common/ccache\", \"DOCKER_API_VERSION=1.44\", \"RENDER_GID=109\"]"
+      },
+      "slurmJobJson": {
+        "job": {
+          "partition": "gpu",
+          "cpus_per_task": 32,
+          "memory_per_node": 131072,
+          "time_limit": 180,
+          "tres_per_job": "gres/gpu:gfx1100:4",
+          "current_working_directory": "/var/jenkins_home",
+          "environment": [
+            "NODE_CCACHE_PATH=/files/common/ccache",
+            "DOCKER_API_VERSION=1.44",
+            "RENDER_GID=109"
+          ]
+        }
+      }
+    }
+  },
+  "jcascCloudSnippet": {
+    "_comment": "Paste under jenkins.clouds[].slurm.jobTemplates in JCasC. Replace cloud-level slurmRestApiUrl and credentialsId.",
+    "name": "my-cluster",
+    "slurmRestApiUrl": "http://slurm-controller:6820",
+    "credentialsId": "slurm-jwt",
+    "jenkinsUrl": "http://jenkins.example.com:8080/",
+    "jobTemplates": [
+      {
+        "name": "gfx1100-1gpu",
+        "label": "gfx1100 rhel8 rhel9 sles15 sles15sp1 ubuntu22 ubuntu24 ubuntu24-therock",
+        "partition": "gpu",
+        "cpusPerTask": 8,
+        "memoryPerNode": 32768,
+        "timeLimit": 180,
+        "tresPerJob": "gres/gpu:gfx1100:1",
+        "currentWorkingDirectory": "/var/jenkins_home",
+        "requiredNodes": "gpu-workstation-01",
+        "nodeUsageMode": "EXCLUSIVE",
+        "environment": "[\"NODE_CCACHE_PATH=/files/common/ccache\", \"DOCKER_API_VERSION=1.44\", \"RENDER_GID=109\"]"
+      }
+    ]
+  }
+}
