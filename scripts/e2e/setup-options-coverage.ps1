@@ -12,7 +12,12 @@ $cloud = $cfg['SLURM_CLOUD_NAME']
 $folder = $cfg['E2E_FOLDER']
 $workdir = $cfg['E2E_TEMPLATE_WORKDIR']
 $cpuImage = $cfg['E2E_CPU_CONTAINER_IMAGE']
-$label = 'absol-options'
+$partition = if ($cfg['E2E_PARTITION']) { $cfg['E2E_PARTITION'] } else { 'jenkins-e2e' }
+$feature = if ($cfg['E2E_FEATURE']) { $cfg['E2E_FEATURE'] } else { 'jenkins-e2e' }
+$label = if ($cfg['E2E_OPTIONS_LABEL']) { $cfg['E2E_OPTIONS_LABEL'] } else { 'options-e2e' }
+$account = $cfg['E2E_SLURM_ACCOUNT']
+$requiredNodes = $cfg['E2E_REQUIRED_NODES']
+$excludedNodes = $cfg['E2E_EXCLUDED_NODES']
 $jobName = 'options-coverage-test'
 
 Write-Host "=== Configure template label=$label on cloud $cloud ==="
@@ -34,16 +39,16 @@ if (t == null) {
   }
   cloud.jobTemplates.add(t)
 }
-t.setPartition('jenkins-e2e')
-t.setAccount('ags')
+t.setPartition('$partition')
+if ('$account') { t.setAccount('$account') }
 t.setQos('normal')
-t.setConstraints('jenkins-e2e')
+t.setConstraints('$feature')
 t.setCpusPerTask(2)
 t.setMemoryPerNode(2048L)
 t.setTimeLimit(30)
 t.setCurrentWorkingDirectory('$workdir')
-t.setRequiredNodes('cgy-absol')
-t.setExcludedNodes('cgy-clefairy,cgy-geodude')
+if ('$requiredNodes') { t.setRequiredNodes('$requiredNodes') }
+if ('$excludedNodes') { t.setExcludedNodes('$excludedNodes') }
 t.setEnvironment('["JENKINS_E2E_TEMPLATE=static-template"]')
 t.setIdleMinutes(0)
 t.setRunOnce(true)

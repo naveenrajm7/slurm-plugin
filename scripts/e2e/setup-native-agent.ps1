@@ -15,7 +15,7 @@ $partition = $cfg['E2E_PARTITION']
 $feature = $cfg['E2E_FEATURE']
 $jarPath = if ($cfg['E2E_NATIVE_AGENT_JAR']) { $cfg['E2E_NATIVE_AGENT_JAR'] } else { '/opt/jenkins/agent.jar' }
 $javaPath = if ($cfg['E2E_NATIVE_JAVA_PATH']) { $cfg['E2E_NATIVE_JAVA_PATH'] } else { '/opt/jenkins/jdk-17/bin/java' }
-$label = 'absol-native'
+$label = if ($cfg['E2E_NATIVE_LABEL']) { $cfg['E2E_NATIVE_LABEL'] } else { 'native-e2e' }
 $jobName = 'native-agent-test'
 
 Write-Host "=== Configure cloud-level native agent defaults on $cloud ==="
