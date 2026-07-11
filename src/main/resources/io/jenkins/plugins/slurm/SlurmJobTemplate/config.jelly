@@ -178,9 +178,16 @@
 
   <!-- Container Configuration (Pyxis/Enroot) -->
   <f:section title="Container Configuration (Pyxis)">
-    
+
     <f:optionalProperty field="pyxis" title="Enable Pyxis Container Support"/>
-    
+
+  </f:section>
+
+  <!-- VM Configuration (vmocs/QEMU) -->
+  <f:section title="VM Configuration (vmocs)">
+
+    <f:optionalProperty field="vmocs" title="Enable vmocs VM Support"/>
+
   </f:section>
 
   <!-- Agent Management -->

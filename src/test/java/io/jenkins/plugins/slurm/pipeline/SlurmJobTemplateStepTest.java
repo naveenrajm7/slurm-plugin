@@ -24,9 +24,9 @@ public class SlurmJobTemplateStepTest {
         step.setCpus(16);
         step.setMemory("32G");
         step.setTime("02:00:00");
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
         assertEquals("gpu", template.getPartition());
         assertEquals(Integer.valueOf(16), template.getCpusPerTask());
@@ -35,7 +35,8 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testJsonConfiguration() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 16, \"memory_per_node\": 32768, \"time_limit\": 120, \"tres_per_job\": \"gres/gpu:gfx1030:1\"}}";
+        String json =
+                "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 16, \"memory_per_node\": 32768, \"time_limit\": 120, \"tres_per_job\": \"gres/gpu:gfx1030:1\"}}";
         step.setJson(json);
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
@@ -49,7 +50,8 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testJsonWithNativeAgent() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"job\": {\"partition\": \"compute\"}, \"agent\": {\"java_path\": \"/opt/java/bin/java\", \"jar_path\": \"/opt/jenkins/agent.jar\"}}";
+        String json =
+                "{\"job\": {\"partition\": \"compute\"}, \"agent\": {\"java_path\": \"/opt/java/bin/java\", \"jar_path\": \"/opt/jenkins/agent.jar\"}}";
         step.setJson(json);
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
@@ -74,7 +76,8 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testJsonWithContainers() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 8}, \"pyxis\": {\"container_image\": \"nvcr.io/nvidia/pytorch:latest\", \"container_mounts\": \"/data:/data\", \"container_workdir\": \"/workspace\", \"container_mount_home\": true}}";
+        String json =
+                "{\"job\": {\"partition\": \"gpu\", \"cpus_per_task\": 8}, \"pyxis\": {\"container_image\": \"nvcr.io/nvidia/pytorch:latest\", \"container_mounts\": \"/data:/data\", \"container_workdir\": \"/workspace\", \"container_mount_home\": true}}";
         step.setJson(json);
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
@@ -95,7 +98,7 @@ public class SlurmJobTemplateStepTest {
         step.setJson(json);
 
         // Set properties that should override JSON
-        step.setCpus(16);        // overrides JSON value of 8
+        step.setCpus(16); // overrides JSON value of 8
         step.setPartition("cpu"); // overrides JSON value of "gpu"
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
@@ -108,7 +111,8 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testAdvancedJsonFields() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        String json = "{\"job\": {\"account\": \"project123\", \"qos\": \"high\", \"reservation\": \"gpu_res\", \"constraints\": \"volta\", \"minimum_nodes\": 2, \"tasks\": 4}}";
+        String json =
+                "{\"job\": {\"account\": \"project123\", \"qos\": \"high\", \"reservation\": \"gpu_res\", \"constraints\": \"volta\", \"minimum_nodes\": 2, \"tasks\": 4}}";
         step.setJson(json);
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
@@ -126,9 +130,9 @@ public class SlurmJobTemplateStepTest {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
         step.setJson("");
         step.setCpus(4);
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
         assertEquals(Integer.valueOf(4), template.getCpusPerTask());
     }
@@ -138,9 +142,9 @@ public class SlurmJobTemplateStepTest {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
         step.setJson(null);
         step.setCpus(4);
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
-        
+
         assertNotNull(template);
         assertEquals(Integer.valueOf(4), template.getCpusPerTask());
     }
@@ -169,18 +173,18 @@ public class SlurmJobTemplateStepTest {
         parentTemplate.setName("parent");
         parentTemplate.setPartition("gpu");
         parentTemplate.setCpusPerTask(8);
-        
+
         // Create a cloud with this template
         SlurmCloud cloud = createTestCloud();
         cloud.setJobTemplates(java.util.Collections.singletonList(parentTemplate));
-        
+
         // Create a step that inherits from parent
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
         step.setInheritFrom("parent");
         step.setCpus(16); // Override parent's cpus
-        
+
         SlurmJobTemplate template = step.buildJobTemplate(cloud);
-        
+
         assertNotNull(template);
         assertEquals("gpu", template.getPartition()); // Inherited
         assertEquals(Integer.valueOf(16), template.getCpusPerTask()); // Overridden

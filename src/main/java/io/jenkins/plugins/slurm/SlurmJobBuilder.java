@@ -3,90 +3,90 @@ package io.jenkins.plugins.slurm;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import io.jenkins.plugins.slurm.client.model.*;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Logger;
 
 /**
  * Builder class for creating Slurm job descriptions.
- * 
+ *
  * This class takes a {@link SlurmJobTemplate} and converts it into a
  * {@link JobDescMsg} suitable for submission to the Slurm REST API.
  *
  * Similar to Kubernetes plugin's PodTemplateBuilder.
  */
 public class SlurmJobBuilder {
-    
+
     private static final Logger LOGGER = Logger.getLogger(SlurmJobBuilder.class.getName());
-    
+
     private final SlurmJobTemplate template;
     private final String agentName;
     private final String jenkinsUrl;
     private final String agentSecret;
     private final AgentLaunchConfig cloudAgent;
-    
+
     /**
      * Creates a new job builder.
-     * 
+     *
      * @param template The job template to build from
      * @param agentName The unique name for this agent/job
      * @param jenkinsUrl The Jenkins URL for agent connection
      * @param agentSecret The secret for agent authentication
      */
-    public SlurmJobBuilder(@NonNull SlurmJobTemplate template, 
-                          @NonNull String agentName,
-                          @NonNull String jenkinsUrl,
-                          @CheckForNull String agentSecret) {
+    public SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret) {
         this(template, agentName, jenkinsUrl, agentSecret, null);
     }
 
     /**
      * Creates a new job builder with cloud-level agent launch defaults.
      */
-    public SlurmJobBuilder(@NonNull SlurmJobTemplate template,
-                          @NonNull String agentName,
-                          @NonNull String jenkinsUrl,
-                          @CheckForNull String agentSecret,
-                          @CheckForNull AgentLaunchConfig cloudAgent) {
+    public SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret,
+            @CheckForNull AgentLaunchConfig cloudAgent) {
         this.template = template;
         this.agentName = agentName;
         this.jenkinsUrl = jenkinsUrl;
         this.agentSecret = agentSecret;
         this.cloudAgent = cloudAgent;
     }
-    
+
     /**
      * Builds the JobDescMsg for submission to Slurm.
-     * 
+     *
      * @return The job description message ready for submission
      */
     @NonNull
     public JobDescMsg build() {
         LOGGER.info("Building Slurm job for agent: " + agentName);
-        
+
         JobDescMsg jobDesc = new JobDescMsg();
-        
+
         // Set job name (required)
         jobDesc.setName(agentName);
-        
+
         // Set partition if specified
         if (template.getPartition() != null && !template.getPartition().trim().isEmpty()) {
             jobDesc.setPartition(template.getPartition());
         }
-        
+
         // Set working directory
-        if (template.getCurrentWorkingDirectory() != null && !template.getCurrentWorkingDirectory().trim().isEmpty()) {
+        if (template.getCurrentWorkingDirectory() != null
+                && !template.getCurrentWorkingDirectory().trim().isEmpty()) {
             jobDesc.setCurrentWorkingDirectory(template.getCurrentWorkingDirectory());
         }
-        
+
         // Set CPU resources
         if (template.getCpusPerTask() != null && template.getCpusPerTask() > 0) {
             jobDesc.setCpusPerTask(template.getCpusPerTask());
         }
-        
+
         // Set memory per node (in MB)
         if (template.getMemoryPerNode() != null && template.getMemoryPerNode() > 0) {
             Uint64NoValStruct memory = new Uint64NoValStruct();
@@ -95,7 +95,7 @@ public class SlurmJobBuilder {
             memory.setNumber(template.getMemoryPerNode());
             jobDesc.setMemoryPerNode(memory);
         }
-        
+
         // Set time limit (in minutes)
         if (template.getTimeLimit() != null && template.getTimeLimit() > 0) {
             Uint32NoValStruct time = new Uint32NoValStruct();
@@ -104,45 +104,49 @@ public class SlurmJobBuilder {
             time.setNumber(template.getTimeLimit());
             jobDesc.setTimeLimit(time);
         }
-        
+
         // Set node count
         if (template.getMinimumNodes() != null && template.getMinimumNodes() > 0) {
             jobDesc.setMinimumNodes(template.getMinimumNodes());
         }
-        
+
         // Set task count
         if (template.getTasks() != null && template.getTasks() > 0) {
             jobDesc.setTasks(template.getTasks());
         }
-        
+
         // Set TRES for GPUs and other trackable resources
         if (template.getTresPerJob() != null && !template.getTresPerJob().trim().isEmpty()) {
             jobDesc.setTresPerJob(template.getTresPerJob());
         }
-        if (template.getTresPerNode() != null && !template.getTresPerNode().trim().isEmpty()) {
+        if (template.getTresPerNode() != null
+                && !template.getTresPerNode().trim().isEmpty()) {
             jobDesc.setTresPerNode(template.getTresPerNode());
         }
-        if (template.getTresPerTask() != null && !template.getTresPerTask().trim().isEmpty()) {
+        if (template.getTresPerTask() != null
+                && !template.getTresPerTask().trim().isEmpty()) {
             jobDesc.setTresPerTask(template.getTresPerTask());
         }
-        
+
         // Set account if specified
         if (template.getAccount() != null && !template.getAccount().trim().isEmpty()) {
             jobDesc.setAccount(template.getAccount());
         }
-        
+
         // Set QoS if specified
         if (template.getQos() != null && !template.getQos().trim().isEmpty()) {
             jobDesc.setQos(template.getQos());
         }
-        
+
         // Set constraints (features) if specified
-        if (template.getConstraints() != null && !template.getConstraints().trim().isEmpty()) {
+        if (template.getConstraints() != null
+                && !template.getConstraints().trim().isEmpty()) {
             jobDesc.setConstraints(template.getConstraints());
         }
-        
+
         // Set required nodes (REST API: required_nodes array)
-        if (template.getRequiredNodes() != null && !template.getRequiredNodes().trim().isEmpty()) {
+        if (template.getRequiredNodes() != null
+                && !template.getRequiredNodes().trim().isEmpty()) {
             List<String> requiredNodesList = new ArrayList<>();
             for (String node : template.getRequiredNodes().split(",")) {
                 String trimmed = node.trim();
@@ -155,9 +159,10 @@ public class SlurmJobBuilder {
                 LOGGER.fine("Set required_nodes: " + requiredNodesList);
             }
         }
-        
+
         // Set excluded nodes (REST API: excluded_nodes array)
-        if (template.getExcludedNodes() != null && !template.getExcludedNodes().trim().isEmpty()) {
+        if (template.getExcludedNodes() != null
+                && !template.getExcludedNodes().trim().isEmpty()) {
             List<String> excludedNodesList = new ArrayList<>();
             for (String node : template.getExcludedNodes().split(",")) {
                 String trimmed = node.trim();
@@ -170,7 +175,7 @@ public class SlurmJobBuilder {
                 LOGGER.fine("Set excluded_nodes: " + excludedNodesList);
             }
         }
-        
+
         applyOptionalString(jobDesc::setComment, template.getComment());
         applyOptionalString(jobDesc::setPrefer, template.getPrefer());
         applyOptionalString(jobDesc::setReservation, template.getReservation());
@@ -253,15 +258,15 @@ public class SlurmJobBuilder {
             script = generateBatchScript();
         }
         jobDesc.setScript(script);
-        
-        LOGGER.info("Built Slurm job: " + jobDesc.getName() + 
-                   " (partition=" + jobDesc.getPartition() + 
-                   ", cpus=" + jobDesc.getCpusPerTask() + 
-                   ", memory=" + jobDesc.getMemoryPerNode() + "MB)");
-        
+
+        LOGGER.info("Built Slurm job: " + jobDesc.getName() + " (partition="
+                + jobDesc.getPartition() + ", cpus="
+                + jobDesc.getCpusPerTask() + ", memory="
+                + jobDesc.getMemoryPerNode() + "MB)");
+
         return jobDesc;
     }
-    
+
     private static void applyOptionalString(java.util.function.Consumer<String> setter, String value) {
         if (value != null && !value.trim().isEmpty()) {
             setter.accept(value);
@@ -288,26 +293,27 @@ public class SlurmJobBuilder {
      * Builds the environment variables for the job.
      * Ensures our required environment variables (PATH, LD_LIBRARY_PATH) are always present,
      * while also including any additional variables specified by the user in the template.
-     * 
+     *
      * @return List of environment variable strings in "KEY=value" format
      */
     private List<String> buildEnvironment() {
         List<String> env = new ArrayList<>();
-        
+
         // REQUIRED: These environment variables are always set for job submission through REST
         env.add("PATH=/usr/local/bin:/usr/bin:/bin");
         env.add("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib");
-        
+
         // Add user-specified environment variables from template (if any)
-        if (template.getEnvironment() != null && !template.getEnvironment().trim().isEmpty()) {
+        if (template.getEnvironment() != null
+                && !template.getEnvironment().trim().isEmpty()) {
             try {
                 // Parse the JSON array string from template
                 String envJson = template.getEnvironment().trim();
-                
+
                 // Simple parsing for JSON array format: ["VAR1=value1", "VAR2=value2"]
                 if (envJson.startsWith("[") && envJson.endsWith("]")) {
                     String content = envJson.substring(1, envJson.length() - 1);
-                    
+
                     // Split by comma, handling quoted strings
                     String[] entries = content.split(",");
                     for (String entry : entries) {
@@ -316,7 +322,7 @@ public class SlurmJobBuilder {
                         if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
                             trimmed = trimmed.substring(1, trimmed.length() - 1);
                         }
-                        
+
                         if (!trimmed.isEmpty() && trimmed.contains("=")) {
                             // Don't override our required PATH and LD_LIBRARY_PATH
                             String varName = trimmed.substring(0, trimmed.indexOf("="));
@@ -333,10 +339,10 @@ public class SlurmJobBuilder {
                 LOGGER.warning("Failed to parse environment variables from template: " + e.getMessage());
             }
         }
-        
+
         return env;
     }
-    
+
     /**
      * Validates that the template can generate an agent launcher script.
      */
@@ -345,14 +351,19 @@ public class SlurmJobBuilder {
         if (pyxis != null && pyxis.isConfigured()) {
             return;
         }
+        VmocsConfig vmocs = template.getVmocs();
+        if (vmocs != null && vmocs.isConfigured()) {
+            return;
+        }
         AgentLaunchConfig agent = getEffectiveAgent();
         if (agent != null && agent.isConfigured()) {
             agent.validateNativeLaunch();
             return;
         }
         throw new IllegalStateException(
-                "Agent launch is not configured. Enable Pyxis container support, configure native "
-                        + "Agent Launch on the cloud or template (jarPath or downloadJar), or supply a custom batch script.");
+                "Agent launch is not configured. Enable Pyxis container support, enable vmocs VM support, "
+                        + "configure native Agent Launch on the cloud or template (jarPath or downloadJar), "
+                        + "or supply a custom batch script.");
     }
 
     @CheckForNull
@@ -363,11 +374,17 @@ public class SlurmJobBuilder {
     /**
      * Generates the batch script for running the Jenkins inbound agent.
      *
-     * <p>Uses Pyxis container paths when configured; otherwise uses {@link AgentLaunchConfig}
-     * for native (host) launch.
+     * <p>Three launch modes are supported (priority order: Pyxis > vmocs > native):
+     * <ol>
+     *   <li><b>Pyxis</b> — wraps {@code srun} with {@code --container-*} flags; agent runs inside
+     *       the container on the compute node.</li>
+     *   <li><b>vmocs</b> — launches a QEMU/KVM VM via {@code vmocs launch}, waits for SSH
+     *       readiness, then starts the Jenkins agent inside the VM via SSH.</li>
+     *   <li><b>Native</b> — agent runs directly on the compute node via {@link AgentLaunchConfig}.</li>
+     * </ol>
      *
-     * <p>IMPORTANT: The Jenkins agent always runs on exactly 1 node with 1 task (-N1 -n1),
-     * regardless of the user's resource request.
+     * <p>IMPORTANT: For Pyxis and native modes the Jenkins agent always runs on exactly 1 node
+     * with 1 task ({@code srun -N1 -n1}), regardless of the user's resource request.
      *
      * @return The complete batch script content
      */
@@ -379,18 +396,26 @@ public class SlurmJobBuilder {
 
         if (template.getMinimumNodes() != null && template.getMinimumNodes() > 1) {
             LOGGER.info(String.format(
-                "Multi-node job allocation: %d nodes requested. " +
-                "Jenkins agent will run on head node (srun -N1 -n1). " +
-                "User's pipeline commands can access all %d nodes via srun.",
-                template.getMinimumNodes(), template.getMinimumNodes()
-            ));
+                    "Multi-node job allocation: %d nodes requested. "
+                            + "Jenkins agent will run on head node (srun -N1 -n1). "
+                            + "User's pipeline commands can access all %d nodes via srun.",
+                    template.getMinimumNodes(), template.getMinimumNodes()));
         }
 
         PyxisConfig pyxis = template.getPyxis();
+        VmocsConfig vmocs = template.getVmocs();
         boolean useContainer = pyxis != null && pyxis.isConfigured();
+        boolean useVm = !useContainer && vmocs != null && vmocs.isConfigured();
         AgentLaunchConfig agent = getEffectiveAgent();
 
-        if (!useContainer && agent != null && agent.getSetupScript() != null
+        if (useVm) {
+            LOGGER.fine("Using vmocs VM configuration: template=" + vmocs.getTemplateName());
+            return generateVmocsBatchScript(vmocs);
+        }
+
+        if (!useContainer
+                && agent != null
+                && agent.getSetupScript() != null
                 && !agent.getSetupScript().trim().isEmpty()) {
             for (String line : agent.getSetupScript().split("\\r?\\n")) {
                 String trimmed = line.trim();
@@ -414,7 +439,9 @@ public class SlurmJobBuilder {
             jarReference = AgentLaunchConfig.CONTAINER_JAR_PATH;
         } else if (agent != null && agent.getDownloadJar()) {
             javaPath = agent.getJavaPath();
-            script.append("AGENT_JAR=").append(shellQuote(workdir + "/agent.jar")).append("\n");
+            script.append("AGENT_JAR=")
+                    .append(shellQuote(workdir + "/agent.jar"))
+                    .append("\n");
             script.append("if [ ! -f \"$AGENT_JAR\" ]; then\n");
             script.append("  echo 'Downloading Jenkins agent JAR...'\n");
             script.append("  if command -v curl >/dev/null 2>&1; then\n");
@@ -462,17 +489,166 @@ public class SlurmJobBuilder {
         return script.toString();
     }
 
+    /**
+     * Generates the batch script for vmocs VM-based launch mode.
+     *
+     * <p>The script:
+     * <ol>
+     *   <li>Runs {@code vmocs launch} in the background, capturing its output to a temp file.</li>
+     *   <li>Waits for vmocs to print the SSH connection string ({@code ssh user@host -p PORT})
+     *       once the VM is ready.</li>
+     *   <li>Parses the SSH user, host, and port from the connection string.</li>
+     *   <li>If {@link VmocsConfig#getAgentJarPath()} is empty, downloads {@code agent.jar} from
+     *       the Jenkins controller and copies it into the VM via {@code scp}.</li>
+     *   <li>Starts the Jenkins inbound agent inside the VM via SSH (blocks until build ends).</li>
+     *   <li>Waits for vmocs to perform graceful VM shutdown when Slurm sends SIGTERM.</li>
+     * </ol>
+     */
+    private String generateVmocsBatchScript(VmocsConfig vmocs) {
+        StringBuilder s = new StringBuilder();
+
+        s.append("#!/bin/bash\n");
+        s.append("set -euo pipefail\n\n");
+
+        // Use SLURM_JOB_ID as the vmocs job identifier so vmocs list/stop can find it.
+        s.append("JOB_ID=\"${SLURM_JOB_ID:-$$}\"\n\n");
+
+        // Temp file to capture vmocs launch output (SSH connection string appears here).
+        s.append("VMOCS_OUT=$(mktemp /tmp/vmocs-XXXXXX)\n");
+        s.append("trap \"rm -f \\\"$VMOCS_OUT\\\"\" EXIT\n\n");
+
+        // Build the vmocs launch command.
+        s.append("# Launch VM in background; vmocs will print SSH connection info when ready\n");
+        String vmocsBin = shellQuote(vmocs.getVmocsBin());
+        s.append(vmocsBin);
+        if (vmocs.getConfigPath() != null && !vmocs.getConfigPath().trim().isEmpty()) {
+            s.append(" --config ").append(shellQuote(vmocs.getConfigPath()));
+        }
+        s.append(" launch ").append(shellQuote(vmocs.getTemplateName()));
+        if (vmocs.getCores() != null) {
+            s.append(" --cores ").append(vmocs.getCores());
+        }
+        if (vmocs.getMemoryMb() != null) {
+            s.append(" --memory ").append(vmocs.getMemoryMb());
+        }
+        // Expand comma-separated PCI devices into individual --pci flags.
+        if (vmocs.getPciDevices() != null && !vmocs.getPciDevices().trim().isEmpty()) {
+            for (String bdf : vmocs.getPciDevices().split(",")) {
+                String trimmed = bdf.trim();
+                if (!trimmed.isEmpty()) {
+                    s.append(" --pci ").append(shellQuote(trimmed));
+                }
+            }
+        }
+        s.append(" --job-id \"$JOB_ID\"");
+        s.append(" > \"$VMOCS_OUT\" 2>&1 &\n");
+        s.append("VMOCS_PID=$!\n\n");
+
+        // Wait for the SSH connection string to appear in the output.
+        int timeoutSec = vmocs.getVmBootTimeoutSec();
+        s.append("# Wait for VM SSH readiness (timeout: ").append(timeoutSec).append("s)\n");
+        s.append("TIMEOUT=").append(timeoutSec).append("\n");
+        s.append("ELAPSED=0\n");
+        s.append("while ! grep -q '^ssh ' \"$VMOCS_OUT\" 2>/dev/null; do\n");
+        s.append("  if ! kill -0 \"$VMOCS_PID\" 2>/dev/null; then\n");
+        s.append("    echo 'ERROR: vmocs exited unexpectedly. Output:' >&2\n");
+        s.append("    cat \"$VMOCS_OUT\" >&2\n");
+        s.append("    exit 1\n");
+        s.append("  fi\n");
+        s.append("  if [ \"$ELAPSED\" -ge \"$TIMEOUT\" ]; then\n");
+        s.append("    echo \"ERROR: VM did not become SSH-ready within ${TIMEOUT}s\" >&2\n");
+        s.append("    kill \"$VMOCS_PID\" 2>/dev/null || true\n");
+        s.append("    exit 1\n");
+        s.append("  fi\n");
+        s.append("  sleep 3\n");
+        s.append("  ELAPSED=$((ELAPSED + 3))\n");
+        s.append("done\n\n");
+
+        // Parse SSH connection details from the vmocs output line (e.g. "ssh ubuntu@localhost -p 60222").
+        s.append("# Parse SSH connection details from vmocs output\n");
+        s.append("SSH_LINE=$(grep '^ssh ' \"$VMOCS_OUT\" | head -1)\n");
+        s.append("SSH_PORT=$(echo \"$SSH_LINE\" | sed -n 's/.*-p \\([0-9]*\\).*/\\1/p')\n");
+        s.append("SSH_USER_HOST=$(echo \"$SSH_LINE\" | awk '{print $2}')\n");
+        s.append("SSH_USER=\"${SSH_USER_HOST%%@*}\"\n");
+        s.append("SSH_HOST=\"${SSH_USER_HOST##*@}\"\n\n");
+
+        s.append("SSH_OPTS=\"-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\"\n\n");
+
+        // Determine agent.jar location inside the VM.
+        String preinstalledJar = vmocs.getAgentJarPath();
+        boolean hasPreinstalledJar =
+                preinstalledJar != null && !preinstalledJar.trim().isEmpty();
+
+        if (hasPreinstalledJar) {
+            s.append("# Use pre-installed agent.jar in VM\n");
+            s.append("AGENT_JAR_VM=").append(shellQuote(preinstalledJar)).append("\n\n");
+        } else {
+            s.append("# Download agent.jar from Jenkins controller and copy into VM\n");
+            s.append("HOST_AGENT_JAR=$(mktemp /tmp/agent-XXXXXX.jar)\n");
+            s.append("trap \"rm -f \\\"$HOST_AGENT_JAR\\\" \\\"$VMOCS_OUT\\\"\" EXIT\n");
+            s.append("if command -v curl >/dev/null 2>&1; then\n");
+            s.append("  curl -fsSL -o \"$HOST_AGENT_JAR\" \"")
+                    .append(escapeForDoubleQuotedShell(jenkinsUrl))
+                    .append("jnlpJars/agent.jar\"\n");
+            s.append("elif command -v wget >/dev/null 2>&1; then\n");
+            s.append("  wget -q -O \"$HOST_AGENT_JAR\" \"")
+                    .append(escapeForDoubleQuotedShell(jenkinsUrl))
+                    .append("jnlpJars/agent.jar\"\n");
+            s.append("else\n");
+            s.append("  echo 'ERROR: curl or wget required to download agent.jar' >&2\n");
+            s.append("  kill \"$VMOCS_PID\" 2>/dev/null || true\n");
+            s.append("  exit 1\n");
+            s.append("fi\n");
+            s.append("scp $SSH_OPTS -P \"$SSH_PORT\" \"$HOST_AGENT_JAR\" ");
+            s.append("\"${SSH_USER}@${SSH_HOST}:~/agent.jar\"\n");
+            s.append("AGENT_JAR_VM='~/agent.jar'\n\n");
+        }
+
+        // Start Jenkins inbound agent inside the VM via SSH.
+        s.append("# Start Jenkins inbound agent inside the VM (blocks until build completes)\n");
+        s.append("ssh $SSH_OPTS -p \"$SSH_PORT\" \"${SSH_USER}@${SSH_HOST}\" \\\n");
+        s.append("  \"java -jar $AGENT_JAR_VM");
+        s.append(" -url ").append(shellEscapeDoubleQuoted(jenkinsUrl));
+        if (agentSecret != null && !agentSecret.isEmpty()) {
+            s.append(" -secret ").append(shellEscapeDoubleQuoted(agentSecret));
+        }
+        s.append(" -name ").append(shellEscapeDoubleQuoted(agentName));
+        s.append(" -webSocket");
+        s.append(" -workDir /tmp/").append(shellEscapeDoubleQuoted(agentName));
+        s.append("\"\n\n");
+
+        // Wait for vmocs background process (will receive SIGTERM from Slurm for graceful shutdown).
+        s.append("# SSH session ended; wait for vmocs graceful VM shutdown\n");
+        s.append("wait \"$VMOCS_PID\" || true\n");
+
+        LOGGER.fine("Generated vmocs batch script for agent " + agentName + ":\n" + s);
+        return s.toString();
+    }
+
+    private static String shellEscapeDoubleQuoted(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("$", "\\$")
+                .replace("`", "\\`");
+    }
+
     private static void appendPyxisFlags(StringBuilder script, PyxisConfig pyxis) {
-        if (pyxis.getContainerImage() != null && !pyxis.getContainerImage().trim().isEmpty()) {
+        if (pyxis.getContainerImage() != null
+                && !pyxis.getContainerImage().trim().isEmpty()) {
             script.append(" --container-image=").append(pyxis.getContainerImage());
         }
         if (pyxis.getContainerMountHome()) {
             script.append(" --container-mount-home");
         }
-        if (pyxis.getContainerMounts() != null && !pyxis.getContainerMounts().trim().isEmpty()) {
+        if (pyxis.getContainerMounts() != null
+                && !pyxis.getContainerMounts().trim().isEmpty()) {
             script.append(" --container-mounts=").append(pyxis.getContainerMounts());
         }
-        if (pyxis.getContainerWorkdir() != null && !pyxis.getContainerWorkdir().trim().isEmpty()) {
+        if (pyxis.getContainerWorkdir() != null
+                && !pyxis.getContainerWorkdir().trim().isEmpty()) {
             script.append(" --container-workdir=").append(pyxis.getContainerWorkdir());
         }
         if (pyxis.getContainerName() != null && !pyxis.getContainerName().trim().isEmpty()) {
@@ -499,10 +675,10 @@ public class SlurmJobBuilder {
         }
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
-    
+
     /**
      * Validates that the job description is ready for submission.
-     * 
+     *
      * @param jobDesc The job description to validate
      * @throws IllegalStateException if validation fails
      */
@@ -510,24 +686,23 @@ public class SlurmJobBuilder {
         if (jobDesc.getName() == null || jobDesc.getName().isEmpty()) {
             throw new IllegalStateException("Job name is required");
         }
-        
+
         if (jobDesc.getScript() == null || jobDesc.getScript().isEmpty()) {
             throw new IllegalStateException("Job script is required");
         }
-        
+
         // Warn about common configuration issues
         Uint64NoValStruct memory = jobDesc.getMemoryPerNode();
-        if (memory != null && Boolean.TRUE.equals(memory.getSet()) && 
-            memory.getNumber() != null && memory.getNumber() < 512) {
-            LOGGER.warning("Job " + jobDesc.getName() + " has very low memory: " + 
-                          memory.getNumber() + "MB");
+        if (memory != null
+                && Boolean.TRUE.equals(memory.getSet())
+                && memory.getNumber() != null
+                && memory.getNumber() < 512) {
+            LOGGER.warning("Job " + jobDesc.getName() + " has very low memory: " + memory.getNumber() + "MB");
         }
-        
+
         Uint32NoValStruct time = jobDesc.getTimeLimit();
-        if (time != null && Boolean.TRUE.equals(time.getSet()) && 
-            time.getNumber() != null && time.getNumber() < 10) {
-            LOGGER.warning("Job " + jobDesc.getName() + " has very short time limit: " + 
-                          time.getNumber() + " minutes");
+        if (time != null && Boolean.TRUE.equals(time.getSet()) && time.getNumber() != null && time.getNumber() < 10) {
+            LOGGER.warning("Job " + jobDesc.getName() + " has very short time limit: " + time.getNumber() + " minutes");
         }
     }
 }

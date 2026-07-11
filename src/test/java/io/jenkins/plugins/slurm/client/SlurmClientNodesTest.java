@@ -28,8 +28,7 @@ class SlurmClientNodesTest {
 
     @Test
     void resolveAllocatedNodes_fallsBackToAllocationNames() {
-        JobResNodes1 nodes = new JobResNodes1()
-                .allocation(java.util.List.of(new JobResNode().name("cgy-absol")));
+        JobResNodes1 nodes = new JobResNodes1().allocation(java.util.List.of(new JobResNode().name("cgy-absol")));
         JobRes resources = new JobRes().nodes(nodes);
         JobInfo jobInfo = new JobInfo().jobResources(resources);
 

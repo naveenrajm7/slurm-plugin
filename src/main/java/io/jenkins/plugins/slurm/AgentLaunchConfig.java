@@ -1,16 +1,15 @@
 package io.jenkins.plugins.slurm;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.model.AbstractDescribableImpl;
 import hudson.model.Descriptor;
+import java.io.Serializable;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
-import edu.umd.cs.findbugs.annotations.CheckForNull;
-import edu.umd.cs.findbugs.annotations.NonNull;
-
-import java.io.Serializable;
 
 /**
  * Configuration for launching the Jenkins inbound agent directly on Slurm compute nodes
@@ -103,9 +102,8 @@ public class AgentLaunchConfig extends AbstractDescribableImpl<AgentLaunchConfig
      */
     public void validateNativeLaunch() {
         if (!isConfigured()) {
-            throw new IllegalStateException(
-                    "Native agent launch requires agent.jarPath or agent.downloadJar=true. "
-                            + "Configure Agent Launch on the cloud or template, or enable Pyxis container support.");
+            throw new IllegalStateException("Native agent launch requires agent.jarPath or agent.downloadJar=true. "
+                    + "Configure Agent Launch on the cloud or template, or enable Pyxis container support.");
         }
     }
 
@@ -115,8 +113,8 @@ public class AgentLaunchConfig extends AbstractDescribableImpl<AgentLaunchConfig
      * downloadJar=true, or non-default javaPath).
      */
     @CheckForNull
-    public static AgentLaunchConfig merge(@CheckForNull AgentLaunchConfig cloud,
-                                          @CheckForNull AgentLaunchConfig template) {
+    public static AgentLaunchConfig merge(
+            @CheckForNull AgentLaunchConfig cloud, @CheckForNull AgentLaunchConfig template) {
         if (cloud == null && template == null) {
             return null;
         }
@@ -134,7 +132,8 @@ public class AgentLaunchConfig extends AbstractDescribableImpl<AgentLaunchConfig
         if (template.getDownloadJar()) {
             merged.setDownloadJar(true);
         }
-        if (template.getSetupScript() != null && !template.getSetupScript().trim().isEmpty()) {
+        if (template.getSetupScript() != null
+                && !template.getSetupScript().trim().isEmpty()) {
             merged.setSetupScript(template.getSetupScript());
         }
         if (!DEFAULT_JAVA_PATH.equals(template.getJavaPath())) {

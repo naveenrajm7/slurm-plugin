@@ -2,7 +2,6 @@ package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.Label;
 import hudson.slaves.Cloud;
@@ -34,7 +33,9 @@ class SlurmProvisioningLimitsTest {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 10);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-b", 2, template);
 
-        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 5).size());
+        assertEquals(
+                2,
+                SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 5).size());
     }
 
     @Test
@@ -42,7 +43,8 @@ class SlurmProvisioningLimitsTest {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("gpu", "gpu", 2);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-c", 10, template);
 
-        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "gpu", 5).size());
+        assertEquals(
+                2, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "gpu", 5).size());
     }
 
     @Test
@@ -53,7 +55,9 @@ class SlurmProvisioningLimitsTest {
         j.jenkins.addNode(SlurmTestHelper.createAgent("existing-1", cloud.name, template.getId()));
         j.jenkins.addNode(SlurmTestHelper.createAgent("existing-2", cloud.name, template.getId()));
 
-        assertEquals(3, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 10).size());
+        assertEquals(
+                3,
+                SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 10).size());
     }
 
     @Test
@@ -63,7 +67,13 @@ class SlurmProvisioningLimitsTest {
         SlurmCloud cloudOne = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cloud-one", 2, templateOne);
         SlurmCloud cloudTwo = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cloud-two", 3, templateTwo);
 
-        assertEquals(2, SlurmTestHelper.provisionAndAwait(cloudOne, j.jenkins, "linux-one", 10).size());
-        assertEquals(3, SlurmTestHelper.provisionAndAwait(cloudTwo, j.jenkins, "linux-two", 10).size());
+        assertEquals(
+                2,
+                SlurmTestHelper.provisionAndAwait(cloudOne, j.jenkins, "linux-one", 10)
+                        .size());
+        assertEquals(
+                3,
+                SlurmTestHelper.provisionAndAwait(cloudTwo, j.jenkins, "linux-two", 10)
+                        .size());
     }
 }

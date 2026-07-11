@@ -9,10 +9,13 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 public final class SlurmJobStatus {
 
     private final String jobId;
+
     @CheckForNull
     private final String state;
+
     @CheckForNull
     private final String stateReason;
+
     @CheckForNull
     private final String nodes;
 

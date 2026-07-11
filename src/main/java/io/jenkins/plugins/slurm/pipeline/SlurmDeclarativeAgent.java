@@ -7,8 +7,12 @@ import hudson.Util;
 import hudson.model.Label;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.slurm.PyxisConfig;
-import io.jenkins.plugins.slurm.AgentLaunchConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
+import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
 import jenkins.model.Jenkins;
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.Symbol;
@@ -18,19 +22,13 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
 
-import java.util.Map;
-import java.util.Objects;
-import java.util.TreeMap;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
-
 /**
  * Declarative Pipeline agent for Slurm.
- * 
+ *
  * Supports two modes:
  * 1. Property-based configuration (for simple use cases)
  * 2. JSON configuration using Slurm REST API format
- * 
+ *
  * Example 1: Property-based (simple fields)
  * <pre>
  * agent {
@@ -42,7 +40,7 @@ import java.util.stream.Collectors;
  *   }
  * }
  * </pre>
- * 
+ *
  * Example 2: JSON using REST API format (full control)
  * <pre>
  * agent {
@@ -70,14 +68,14 @@ import java.util.stream.Collectors;
  *   }
  * }
  * </pre>
- * 
+ *
  * The JSON format matches Slurm REST API job_desc_msg structure,
  * allowing users to copy configurations from working REST API calls.
  */
 public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclarativeAgent> {
-    
+
     private static final Logger LOGGER = Logger.getLogger(SlurmDeclarativeAgent.class.getName());
-    
+
     // Cloud and label configuration
     @CheckForNull
     private String cloud;
@@ -92,80 +90,80 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
      */
     @CheckForNull
     private String uniqueLabel;
-    
+
     @CheckForNull
     private String customWorkspace;
-    
+
     @CheckForNull
-    private String inheritFrom;  // Inherit from existing template
-    
+    private String inheritFrom; // Inherit from existing template
+
     // JSON configuration (alternative to property-based)
     @CheckForNull
     private String json;
-    
+
     @CheckForNull
-    private String jsonFile;  // Path to JSON file in SCM
-    
+    private String jsonFile; // Path to JSON file in SCM
+
     // Core Slurm job submission fields
     @CheckForNull
     private String partition;
-    
+
     @CheckForNull
     private String workingDir;
-    
+
     @CheckForNull
-    private Integer cpus;  // Maps to cpus_per_task
-    
+    private Integer cpus; // Maps to cpus_per_task
+
     @CheckForNull
-    private String memory;  // Memory (e.g., "32G", "4096M") - maps to memory_per_node
-    
+    private String memory; // Memory (e.g., "32G", "4096M") - maps to memory_per_node
+
     @CheckForNull
-    private String time;  // Time limit (e.g., "02:00:00", "120") - maps to time_limit
-    
+    private String time; // Time limit (e.g., "02:00:00", "120") - maps to time_limit
+
     @CheckForNull
-    private String gres;  // Generic resources (e.g., "gpu:gfx1030:1") - maps to tres_per_job
-    
+    private String gres; // Generic resources (e.g., "gpu:gfx1030:1") - maps to tres_per_job
+
     @CheckForNull
-    private String account;  // Slurm account
-    
+    private String account; // Slurm account
+
     @CheckForNull
-    private String qos;  // Quality of Service
-    
+    private String qos; // Quality of Service
+
     @CheckForNull
-    private String reservation;  // Reservation name
-    
+    private String reservation; // Reservation name
+
     @CheckForNull
-    private String constraints;  // Required features
-    
+    private String constraints; // Required features
+
     @CheckForNull
-    private String prefer;  // Preferred features
-    
+    private String prefer; // Preferred features
+
     // Resource allocation
     @CheckForNull
-    private String nodes;  // Node count (e.g., "1", "1-4:2")
-    
+    private String nodes; // Node count (e.g., "1", "1-4:2")
+
     @CheckForNull
-    private Integer tasks;  // Number of tasks
-    
+    private Integer tasks; // Number of tasks
+
     @CheckForNull
-    private Integer tasksPerNode;  // Tasks per node
-    
+    private Integer tasksPerNode; // Tasks per node
+
     @CheckForNull
-    private Integer ntasksPerTres;  // Tasks per TRES (e.g., per GPU)
-    
+    private Integer ntasksPerTres; // Tasks per TRES (e.g., per GPU)
+
     // Container support (Pyxis/Enroot)
     @CheckForNull
-    private String containerImage;  // Container image path or URI
-    
+    private String containerImage; // Container image path or URI
+
     @CheckForNull
-    private String containerMounts;  // Mount specifications
-    
+    private String containerMounts; // Mount specifications
+
     @CheckForNull
-    private Boolean containerMountHome;  // Mount home directory
-    
+    private Boolean containerMountHome; // Mount home directory
+
     @CheckForNull
-    private String containerWorkdir;  // Working directory in container
-    
+    private String containerWorkdir; // Working directory in container
+
     // Native agent launch (without Pyxis)
     @CheckForNull
     private String javaPath;
@@ -177,38 +175,38 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
 
     @CheckForNull
     private String setupScript;
-    
+
     // I/O redirection
     @CheckForNull
-    private String standardOutput;  // Path to stdout
-    
+    private String standardOutput; // Path to stdout
+
     @CheckForNull
-    private String standardError;  // Path to stderr
-    
+    private String standardError; // Path to stderr
+
     // Agent configuration
-    private int idleMinutes = 0;  // Idle timeout in minutes (default: 0 = terminate immediately after build)
-    
-    private boolean runOnce = true;  // Terminate after one build
-    
-    private boolean keepJobOnFailure = false;  // Keep Slurm job on failure for debugging
-    
+    private int idleMinutes = 0; // Idle timeout in minutes (default: 0 = terminate immediately after build)
+
+    private boolean runOnce = true; // Terminate after one build
+
+    private boolean keepJobOnFailure = false; // Keep Slurm job on failure for debugging
+
     @DataBoundConstructor
     public SlurmDeclarativeAgent() {}
-    
+
     // ====================
     // Cloud and Label
     // ====================
-    
+
     @CheckForNull
     public String getCloud() {
         return cloud;
     }
-    
+
     @DataBoundSetter
     public void setCloud(String cloud) {
         this.cloud = Util.fixEmpty(cloud);
     }
-    
+
     /**
      * Returns a stable unique label for this declarative agent invocation.
      * Appends a nanoTime hex suffix to the user-specified label so that two
@@ -226,62 +224,62 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         }
         return uniqueLabel;
     }
-    
+
     public String getLabelExpression() {
         return label != null
                 ? Label.parse(label).stream().map(Objects::toString).sorted().collect(Collectors.joining(" && "))
                 : null;
     }
-    
+
     @DataBoundSetter
     public void setLabel(String label) {
         this.label = Util.fixEmpty(label);
     }
-    
+
     @CheckForNull
     public String getCustomWorkspace() {
         return customWorkspace;
     }
-    
+
     @DataBoundSetter
     public void setCustomWorkspace(String customWorkspace) {
         this.customWorkspace = customWorkspace;
     }
-    
+
     @CheckForNull
     public String getInheritFrom() {
         return inheritFrom;
     }
-    
+
     @DataBoundSetter
     public void setInheritFrom(String inheritFrom) {
         this.inheritFrom = Util.fixEmpty(inheritFrom);
     }
-    
+
     // ====================
     // JSON Configuration
     // ====================
-    
+
     @CheckForNull
     public String getJson() {
         return json;
     }
-    
+
     @DataBoundSetter
     public void setJson(String json) {
         this.json = Util.fixEmpty(json);
     }
-    
+
     @CheckForNull
     public String getJsonFile() {
         return jsonFile;
     }
-    
+
     @DataBoundSetter
     public void setJsonFile(String jsonFile) {
         this.jsonFile = Util.fixEmpty(jsonFile);
     }
-    
+
     /**
      * Checks if this agent has SCM context (i.e., running in a job with SCM checkout).
      * Used to determine if we can read JSON files from the workspace.
@@ -289,8 +287,8 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     public boolean hasScmContext(Object script) {
         try {
             if (script instanceof org.jenkinsci.plugins.workflow.cps.CpsScript) {
-                org.jenkinsci.plugins.workflow.cps.CpsScript cpsScript = 
-                    (org.jenkinsci.plugins.workflow.cps.CpsScript) script;
+                org.jenkinsci.plugins.workflow.cps.CpsScript cpsScript =
+                        (org.jenkinsci.plugins.workflow.cps.CpsScript) script;
                 return cpsScript.getBinding().hasVariable("scm");
             }
         } catch (Exception e) {
@@ -298,209 +296,209 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         }
         return false;
     }
-    
+
     // ====================
     // Core Slurm Fields
     // ====================
-    
+
     @CheckForNull
     public String getPartition() {
         return partition;
     }
-    
+
     @DataBoundSetter
     public void setPartition(String partition) {
         this.partition = Util.fixEmpty(partition);
     }
-    
+
     @CheckForNull
     public String getWorkingDir() {
         return workingDir;
     }
-    
+
     @DataBoundSetter
     public void setWorkingDir(String workingDir) {
         this.workingDir = Util.fixEmpty(workingDir);
     }
-    
+
     @CheckForNull
     public Integer getCpus() {
         return cpus;
     }
-    
+
     @DataBoundSetter
     public void setCpus(Integer cpus) {
         this.cpus = cpus;
     }
-    
+
     @CheckForNull
     public String getMemory() {
         return memory;
     }
-    
+
     @DataBoundSetter
     public void setMemory(String memory) {
         this.memory = Util.fixEmpty(memory);
     }
-    
+
     @CheckForNull
     public String getTime() {
         return time;
     }
-    
+
     @DataBoundSetter
     public void setTime(String time) {
         this.time = Util.fixEmpty(time);
     }
-    
+
     @CheckForNull
     public String getGres() {
         return gres;
     }
-    
+
     @DataBoundSetter
     public void setGres(String gres) {
         this.gres = Util.fixEmpty(gres);
     }
-    
+
     @CheckForNull
     public String getAccount() {
         return account;
     }
-    
+
     @DataBoundSetter
     public void setAccount(String account) {
         this.account = Util.fixEmpty(account);
     }
-    
+
     @CheckForNull
     public String getQos() {
         return qos;
     }
-    
+
     @DataBoundSetter
     public void setQos(String qos) {
         this.qos = Util.fixEmpty(qos);
     }
-    
+
     @CheckForNull
     public String getReservation() {
         return reservation;
     }
-    
+
     @DataBoundSetter
     public void setReservation(String reservation) {
         this.reservation = Util.fixEmpty(reservation);
     }
-    
+
     @CheckForNull
     public String getConstraints() {
         return constraints;
     }
-    
+
     @DataBoundSetter
     public void setConstraints(String constraints) {
         this.constraints = Util.fixEmpty(constraints);
     }
-    
+
     @CheckForNull
     public String getPrefer() {
         return prefer;
     }
-    
+
     @DataBoundSetter
     public void setPrefer(String prefer) {
         this.prefer = Util.fixEmpty(prefer);
     }
-    
+
     // ====================
     // Resource Allocation
     // ====================
-    
+
     @CheckForNull
     public String getNodes() {
         return nodes;
     }
-    
+
     @DataBoundSetter
     public void setNodes(String nodes) {
         this.nodes = Util.fixEmpty(nodes);
     }
-    
+
     @CheckForNull
     public Integer getTasks() {
         return tasks;
     }
-    
+
     @DataBoundSetter
     public void setTasks(Integer tasks) {
         this.tasks = tasks;
     }
-    
+
     @CheckForNull
     public Integer getTasksPerNode() {
         return tasksPerNode;
     }
-    
+
     @DataBoundSetter
     public void setTasksPerNode(Integer tasksPerNode) {
         this.tasksPerNode = tasksPerNode;
     }
-    
+
     @CheckForNull
     public Integer getNtasksPerTres() {
         return ntasksPerTres;
     }
-    
+
     @DataBoundSetter
     public void setNtasksPerTres(Integer ntasksPerTres) {
         this.ntasksPerTres = ntasksPerTres;
     }
-    
+
     // ====================
     // Container Support
     // ====================
-    
+
     @CheckForNull
     public String getContainerImage() {
         return containerImage;
     }
-    
+
     @DataBoundSetter
     public void setContainerImage(String containerImage) {
         this.containerImage = Util.fixEmpty(containerImage);
     }
-    
+
     @CheckForNull
     public String getContainerMounts() {
         return containerMounts;
     }
-    
+
     @DataBoundSetter
     public void setContainerMounts(String containerMounts) {
         this.containerMounts = Util.fixEmpty(containerMounts);
     }
-    
+
     @CheckForNull
     public Boolean getContainerMountHome() {
         return containerMountHome;
     }
-    
+
     @DataBoundSetter
     public void setContainerMountHome(Boolean containerMountHome) {
         this.containerMountHome = containerMountHome;
     }
-    
+
     @CheckForNull
     public String getContainerWorkdir() {
         return containerWorkdir;
     }
-    
+
     @DataBoundSetter
     public void setContainerWorkdir(String containerWorkdir) {
         this.containerWorkdir = Util.fixEmpty(containerWorkdir);
     }
-    
+
     // ====================
     // Native Agent Launch
     // ====================
@@ -543,73 +541,73 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     public void setSetupScript(String setupScript) {
         this.setupScript = Util.fixEmpty(setupScript);
     }
-    
+
     // ====================
     // I/O Redirection
     // ====================
-    
+
     @CheckForNull
     public String getStandardOutput() {
         return standardOutput;
     }
-    
+
     @DataBoundSetter
     public void setStandardOutput(String standardOutput) {
         this.standardOutput = Util.fixEmpty(standardOutput);
     }
-    
+
     @CheckForNull
     public String getStandardError() {
         return standardError;
     }
-    
+
     @DataBoundSetter
     public void setStandardError(String standardError) {
         this.standardError = Util.fixEmpty(standardError);
     }
-    
+
     // ====================
     // Agent Configuration
     // ====================
-    
+
     public int getIdleMinutes() {
         return idleMinutes;
     }
-    
+
     @DataBoundSetter
     public void setIdleMinutes(int idleMinutes) {
         this.idleMinutes = idleMinutes;
     }
-    
+
     public boolean isRunOnce() {
         return runOnce;
     }
-    
+
     @DataBoundSetter
     public void setRunOnce(boolean runOnce) {
         this.runOnce = runOnce;
     }
-    
+
     public boolean isKeepJobOnFailure() {
         return keepJobOnFailure;
     }
-    
+
     @DataBoundSetter
     public void setKeepJobOnFailure(boolean keepJobOnFailure) {
         this.keepJobOnFailure = keepJobOnFailure;
     }
-    
+
     // ====================
     // Conversion to Arguments Map
     // ====================
-    
+
     /**
      * Convert this declarative agent configuration to arguments map
      * for the SlurmJobTemplateStep.
      */
     public Map<String, Object> getAsArgs() {
         Map<String, Object> argMap = new TreeMap<>();
-        
+
         if (!StringUtils.isEmpty(cloud)) {
             argMap.put("cloud", cloud);
         }
@@ -620,13 +618,13 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         if (!StringUtils.isEmpty(inheritFrom)) {
             argMap.put("inheritFrom", inheritFrom);
         }
-        
+
         // JSON configuration takes precedence
         if (!StringUtils.isEmpty(json)) {
             argMap.put("json", json);
-            return argMap;  // JSON mode - return early
+            return argMap; // JSON mode - return early
         }
-        
+
         // Property-based configuration
         if (!StringUtils.isEmpty(partition)) {
             argMap.put("partition", partition);
@@ -673,7 +671,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         if (ntasksPerTres != null) {
             argMap.put("ntasksPerTres", ntasksPerTres);
         }
-        
+
         // Container configuration
         if (!StringUtils.isEmpty(containerImage)) {
             PyxisConfig pyxis = new PyxisConfig();
@@ -703,7 +701,7 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         if (!StringUtils.isEmpty(setupScript)) {
             argMap.put("setupScript", setupScript);
         }
-        
+
         // I/O redirection
         if (!StringUtils.isEmpty(standardOutput)) {
             argMap.put("standardOutput", standardOutput);
@@ -711,27 +709,27 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         if (!StringUtils.isEmpty(standardError)) {
             argMap.put("standardError", standardError);
         }
-        
+
         // Agent configuration
-        if (idleMinutes != 0) {  // Only include if not default
+        if (idleMinutes != 0) { // Only include if not default
             argMap.put("idleMinutes", idleMinutes);
         }
         argMap.put("runOnce", runOnce);
         argMap.put("keepJobOnFailure", keepJobOnFailure);
-        
+
         return argMap;
     }
-    
+
     @Extension(optional = true)
     @Symbol("slurm")
     public static class DescriptorImpl extends DeclarativeAgentDescriptor<SlurmDeclarativeAgent> {
-        
+
         @NonNull
         @Override
         public String getDisplayName() {
             return "Slurm";
         }
-        
+
         @SuppressWarnings("unused") // used by stapler/jelly
         public ListBoxModel doFillCloudItems() {
             ListBoxModel model = new ListBoxModel();
@@ -742,26 +740,24 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
             }
             return model;
         }
-        
+
         @SuppressWarnings("unused") // used by stapler/jelly
         public ListBoxModel doFillInheritFromItems(@QueryParameter("cloud") String cloudName) {
             ListBoxModel model = new ListBoxModel();
             model.add("", "");
-            
+
             if (!StringUtils.isEmpty(cloudName)) {
                 Jenkins jenkins = Jenkins.get();
                 for (SlurmCloud cloud : jenkins.clouds.getAll(SlurmCloud.class)) {
                     if (cloudName.equals(cloud.name)) {
                         if (cloud.getTemplates() != null) {
-                            cloud.getTemplates().forEach(template -> 
-                                model.add(template.getName(), template.getId())
-                            );
+                            cloud.getTemplates().forEach(template -> model.add(template.getName(), template.getId()));
                         }
                         break;
                     }
                 }
             }
-            
+
             return model;
         }
     }

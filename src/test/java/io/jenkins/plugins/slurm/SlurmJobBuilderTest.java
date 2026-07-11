@@ -84,8 +84,7 @@ public class SlurmJobBuilderTest {
         cloudAgent.setJavaPath("/opt/jenkins/jdk-17/bin/java");
         cloudAgent.setJarPath("/opt/jenkins/agent.jar");
 
-        SlurmJobBuilder builder = new SlurmJobBuilder(
-                template, AGENT_NAME, JENKINS_URL, SECRET, cloudAgent);
+        SlurmJobBuilder builder = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloudAgent);
         String script = builder.build().getScript();
 
         assertTrue(script.contains("/opt/jenkins/jdk-17/bin/java"));
@@ -98,6 +97,144 @@ public class SlurmJobBuilderTest {
 
         SlurmJobBuilder builder = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET);
         assertThrows(IllegalStateException.class, builder::build);
+    }
+
+    // ------------------------------------------------------------------
+    // vmocs tests
+    // ------------------------------------------------------------------
+
+    @Test
+    public void testVmocsScriptLaunchesVmAndStartsAgentViaSsh() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("vmocs"), "script must invoke vmocs");
+        assertTrue(script.contains("launch"), "script must call vmocs launch");
+        assertTrue(script.contains("'base-ubuntu'"), "script must reference the VM template name");
+        assertTrue(script.contains("--job-id"), "script must pass --job-id to vmocs");
+        assertTrue(script.contains("grep -q '^ssh '"), "script must wait for SSH readiness");
+        assertTrue(script.contains("ssh "), "script must SSH into the VM");
+        assertTrue(script.contains("-webSocket"), "agent must use WebSocket connection");
+        assertTrue(script.contains(JENKINS_URL), "script must embed the Jenkins URL");
+        assertTrue(script.contains(AGENT_NAME), "script must embed the agent name");
+    }
+
+    @Test
+    public void testVmocsScriptIncludesCoresAndMemory() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        vmocs.setCores(8);
+        vmocs.setMemoryMb(16384);
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("--cores 8"), "script must pass --cores");
+        assertTrue(script.contains("--memory 16384"), "script must pass --memory");
+    }
+
+    @Test
+    public void testVmocsScriptExpandsPciDevices() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("gpu-vm");
+        vmocs.setPciDevices("0000:03:00.0,0000:03:00.1");
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("--pci '0000:03:00.0'"), "each BDF must become a --pci flag");
+        assertTrue(script.contains("--pci '0000:03:00.1'"), "second BDF must also become a --pci flag");
+    }
+
+    @Test
+    public void testVmocsScriptUsesCustomBinAndConfigPath() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        vmocs.setVmocsBin("/usr/local/bin/vmocs");
+        vmocs.setConfigPath("/etc/vmocs/vmocs.yaml");
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("'/usr/local/bin/vmocs'"), "script must use custom vmocs binary path");
+        assertTrue(script.contains("--config '/etc/vmocs/vmocs.yaml'"), "script must pass --config");
+    }
+
+    @Test
+    public void testVmocsScriptUsesPreinstalledJar() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        vmocs.setAgentJarPath("/opt/jenkins/agent.jar");
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("/opt/jenkins/agent.jar"), "script must reference pre-installed jar");
+        assertTrue(
+                !script.contains("jnlpJars/agent.jar"), "script must NOT download jar when pre-installed path is set");
+        assertTrue(
+                !script.contains("curl")
+                        || script.contains("curl") && script.indexOf("curl") > script.indexOf("agent.jar"),
+                "scp/download block should be absent when agentJarPath is set");
+    }
+
+    @Test
+    public void testVmocsScriptDownloadsJarWhenNoPreinstalledPath() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        // agentJarPath left empty → download from Jenkins
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        assertTrue(script.contains("jnlpJars/agent.jar"), "script must download agent.jar when no pre-installed path");
+        assertTrue(script.contains("scp "), "script must scp the jar into the VM");
+    }
+
+    @Test
+    public void testVmocsTakesPriorityOverNativeWhenBothConfigured() {
+        SlurmJobTemplate template = baseTemplate();
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        template.setVmocs(vmocs);
+
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        template.setAgent(agent);
+
+        String script = buildScript(template);
+
+        // vmocs wins — no srun invocation, SSH into VM instead
+        assertTrue(script.contains("vmocs"), "vmocs must be used when both vmocs and native are configured");
+        assertTrue(!script.contains("srun -N1 -n1"), "native srun must not be used when vmocs is configured");
+    }
+
+    @Test
+    public void testPyxisTakesPriorityOverVmocs() {
+        SlurmJobTemplate template = baseTemplate();
+
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/path/to/image.sqsh");
+        template.setPyxis(pyxis);
+
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setTemplateName("base-ubuntu");
+        template.setVmocs(vmocs);
+
+        String script = buildScript(template);
+
+        // Pyxis wins
+        assertTrue(script.contains("--container-image"), "Pyxis must take priority over vmocs");
+        assertTrue(!script.contains("vmocs launch"), "vmocs must not be used when Pyxis is configured");
     }
 
     private static SlurmJobTemplate baseTemplate() {

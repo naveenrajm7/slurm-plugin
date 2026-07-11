@@ -11,13 +11,13 @@ import java.util.stream.Collectors;
 
 /**
  * Default implementation of InProvisioning that queries actual node state.
- * 
+ *
  * This approach is more robust than manual tracking because:
  * - It reflects the actual state of nodes in Jenkins
  * - Self-healing: automatically corrects if tracking gets out of sync
  * - No need to maintain separate tracking maps
  * - Fewer places where bugs can be introduced
- * 
+ *
  * A node is considered "in provisioning" if it:
  * 1. Is a SlurmAgent instance
  * 2. Has a computer that either:
@@ -31,7 +31,7 @@ public class DefaultInProvisioning extends InProvisioning {
     /**
      * Checks if a node is not yet ready to accept tasks.
      * This indicates the node is still in the provisioning phase.
-     * 
+     *
      * @param n The node to check
      * @return true if the node is still provisioning (not ready)
      */
@@ -55,7 +55,8 @@ public class DefaultInProvisioning extends InProvisioning {
             // For unlabeled nodes, check all nodes
             return jenkins.model.Jenkins.get().getNodes().stream()
                     .filter(SlurmAgent.class::isInstance)
-                    .filter(node -> node.getLabelString() == null || node.getLabelString().isEmpty())
+                    .filter(node -> node.getLabelString() == null
+                            || node.getLabelString().isEmpty())
                     .filter(DefaultInProvisioning::isNotAcceptingTasks)
                     .map(Node::getNodeName)
                     .collect(Collectors.toSet());

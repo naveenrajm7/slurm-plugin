@@ -7,6 +7,17 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Open
 
+- [ ] **vmocs VM isolation support** (`cursor/vmocs-vm-isolation-support-4e48`)
+  - [x] **[HIGH]** `VmocsConfig` data model (templateName, vmocsBin, configPath, cores, memoryMb, pciDevices, agentJarPath, vmBootTimeoutSec)
+  - [x] **[HIGH]** `SlurmJobBuilder.generateVmocsBatchScript()` — launches VM via `vmocs launch`, parses SSH info, starts agent inside VM
+  - [x] **[HIGH]** `SlurmJobTemplate` — `VmocsConfig vmocs` field; three-mode priority: Pyxis > vmocs > native
+  - [x] **[HIGH]** `SlurmJobTemplateStep` — `"vmocs": {...}` JSON block in pipeline step + `setVmocs()` setter
+  - [x] **[HIGH]** `SlurmJobTemplate/config.jelly` — VM Configuration (vmocs) section with `optionalProperty`
+  - [x] **[HIGH]** `VmocsConfigTest` + vmocs cases in `SlurmJobBuilderTest`
+  - [ ] **[LOW]** `SlurmDeclarativeAgent` — expose `vmocs` property for `agent { slurm { vmocs { ... } } }` declarative syntax
+  - [ ] **[LOW]** Help HTML for vmocs config fields
+  - [ ] **[LOW]** JCasC round-trip test for VmocsConfig
+
 - [ ] **Multi cloud instance testing** (ref: K8s plugin comparison)
   - [x] **[HIGH]** Add multi-cloud test class — `SlurmQueueTaskDispatcherTest`, `SlurmFolderPropertyTest`, `SlurmProvisioningLimitsTest`
   - [x] **[HIGH]** Test folder property inheritance with multiple clouds — `SlurmFolderPropertyTest`

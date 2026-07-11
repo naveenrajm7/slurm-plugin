@@ -70,10 +70,8 @@ class SlurmQueueTaskDispatcherTest {
         FreeStyleProject projectB = folderB.createProject(FreeStyleProject.class, "buildJob");
 
         assertNull(canTake(dispatcher, agentA, projectA));
-        assertInstanceOf(
-                SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class, canTake(dispatcher, agentB, projectA));
-        assertInstanceOf(
-                SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class, canTake(dispatcher, agentA, projectB));
+        assertInstanceOf(SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class, canTake(dispatcher, agentB, projectA));
+        assertInstanceOf(SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class, canTake(dispatcher, agentA, projectB));
         assertNull(canTake(dispatcher, agentB, projectB));
     }
 
@@ -108,30 +106,25 @@ class SlurmQueueTaskDispatcherTest {
         setUpTwoClouds(j);
 
         WorkflowJob job = folderA.createProject(WorkflowJob.class, "pipeline");
-        ExecutorStepExecution.PlaceholderTask placeholderTask =
-                mock(ExecutorStepExecution.PlaceholderTask.class);
+        ExecutorStepExecution.PlaceholderTask placeholderTask = mock(ExecutorStepExecution.PlaceholderTask.class);
         when(placeholderTask.getOwnerTask()).thenReturn(job);
 
         SlurmQueueTaskDispatcher dispatcher = new SlurmQueueTaskDispatcher();
 
         assertNull(canTake(dispatcher, agentA, placeholderTask));
         assertInstanceOf(
-                SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class,
-                canTake(dispatcher, agentB, placeholderTask));
+                SlurmQueueTaskDispatcher.SlurmCloudNotAllowed.class, canTake(dispatcher, agentB, placeholderTask));
     }
 
     private CauseOfBlockage canTake(
             SlurmQueueTaskDispatcher dispatcher, hudson.model.Node node, hudson.model.Project<?, ?> project) {
         return dispatcher.canTake(
                 node,
-                new Queue.BuildableItem(
-                        new Queue.WaitingItem(Calendar.getInstance(), project, new ArrayList<>())));
+                new Queue.BuildableItem(new Queue.WaitingItem(Calendar.getInstance(), project, new ArrayList<>())));
     }
 
     private CauseOfBlockage canTake(SlurmQueueTaskDispatcher dispatcher, hudson.model.Node node, Queue.Task task) {
         return dispatcher.canTake(
-                node,
-                new Queue.BuildableItem(
-                        new Queue.WaitingItem(Calendar.getInstance(), task, new ArrayList<>())));
+                node, new Queue.BuildableItem(new Queue.WaitingItem(Calendar.getInstance(), task, new ArrayList<>())));
     }
 }

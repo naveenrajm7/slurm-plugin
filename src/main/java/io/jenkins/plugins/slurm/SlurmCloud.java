@@ -1,11 +1,11 @@
 package io.jenkins.plugins.slurm;
 
 import com.cloudbees.plugins.credentials.CredentialsProvider;
-import com.cloudbees.plugins.credentials.common.StandardCredentials;
 import com.cloudbees.plugins.credentials.common.StandardListBoxModel;
 import com.cloudbees.plugins.credentials.domains.DomainRequirement;
+import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
-import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Item;
 import hudson.model.Label;
@@ -17,21 +17,8 @@ import hudson.slaves.NodeProvisioner.PlannedNode;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import hudson.util.Secret;
-import jenkins.model.Jenkins;
-import net.sf.json.JSONObject;
-import net.sf.json.JSONArray;
-import org.jenkinsci.Symbol;
-import org.jenkinsci.plugins.plaincredentials.StringCredentials;
-import org.kohsuke.stapler.AncestorInPath;
-import org.kohsuke.stapler.DataBoundConstructor;
-import org.kohsuke.stapler.DataBoundSetter;
-import org.kohsuke.stapler.QueryParameter;
-
 import io.jenkins.plugins.slurm.client.SlurmClient;
 import io.jenkins.plugins.slurm.client.SlurmPingInfo;
-
-import edu.umd.cs.findbugs.annotations.CheckForNull;
-import edu.umd.cs.findbugs.annotations.NonNull;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -40,92 +27,101 @@ import java.util.List;
 import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
+import jenkins.model.Jenkins;
+import org.jenkinsci.Symbol;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
 import org.jenkinsci.plugins.cloudstats.TrackedPlannedNode;
+import org.jenkinsci.plugins.plaincredentials.StringCredentials;
+import org.kohsuke.stapler.AncestorInPath;
+import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.QueryParameter;
 
 /**
  * Slurm Cloud implementation for Jenkins.
- * 
+ *
  * This class represents a Slurm cluster as a Jenkins cloud provider,
  * allowing Jenkins to dynamically provision build agents by communicating
  * with the Slurm REST API (slurmrestd) for job submission, monitoring, and cancellation.
  */
 public class SlurmCloud extends AbstractCloudImpl {
-    
+
     private static final Logger LOGGER = Logger.getLogger(SlurmCloud.class.getName());
-    
+
     private final String slurmRestApiUrl;
     private final String credentialsId;
     private final String defaultPartition;
     private final int maxAgents;
     private final int agentTimeoutMinutes;
-    private String jenkinsUrl;  // Optional - if not set, will auto-detect
+    private String jenkinsUrl; // Optional - if not set, will auto-detect
     private List<SlurmJobTemplate> jobTemplates;
     private boolean usageRestricted = false;
     private AgentLaunchConfig agent;
-    
+
     @DataBoundConstructor
-    public SlurmCloud(String name,
-                      String slurmRestApiUrl,
-                      String credentialsId,
-                      String defaultPartition,
-                      int maxAgents,
-                      int agentTimeoutMinutes) {
+    public SlurmCloud(
+            String name,
+            String slurmRestApiUrl,
+            String credentialsId,
+            String defaultPartition,
+            int maxAgents,
+            int agentTimeoutMinutes) {
         super(name, String.valueOf(maxAgents > 0 ? maxAgents : 10));
-        this.slurmRestApiUrl = slurmRestApiUrl != null && !slurmRestApiUrl.trim().isEmpty() ? 
-                              slurmRestApiUrl : "http://localhost:6820";
+        this.slurmRestApiUrl =
+                slurmRestApiUrl != null && !slurmRestApiUrl.trim().isEmpty()
+                        ? slurmRestApiUrl
+                        : "http://localhost:6820";
         this.credentialsId = credentialsId;
         this.defaultPartition = defaultPartition;
         this.maxAgents = maxAgents > 0 ? maxAgents : 10;
         this.agentTimeoutMinutes = agentTimeoutMinutes > 0 ? agentTimeoutMinutes : 60;
-        this.jenkinsUrl = null;  // Will be set via DataBoundSetter or auto-detected
+        this.jenkinsUrl = null; // Will be set via DataBoundSetter or auto-detected
         this.jobTemplates = new ArrayList<>();
     }
-    
+
     // Getters for configuration values
     public String getSlurmRestApiUrl() {
         return slurmRestApiUrl;
     }
-    
+
     public String getCredentialsId() {
         return credentialsId;
     }
-    
+
     public String getDefaultPartition() {
         return defaultPartition;
     }
-    
+
     public int getMaxAgents() {
         return maxAgents;
     }
-    
+
     public int getAgentTimeoutMinutes() {
         return agentTimeoutMinutes;
     }
-    
+
     public String getJenkinsUrl() {
         return jenkinsUrl;
     }
-    
+
     @DataBoundSetter
     public void setJenkinsUrl(String jenkinsUrl) {
         this.jenkinsUrl = jenkinsUrl;
     }
-    
+
     public List<SlurmJobTemplate> getJobTemplates() {
         return jobTemplates != null ? jobTemplates : new ArrayList<>();
     }
-    
+
     @DataBoundSetter
     public void setJobTemplates(List<SlurmJobTemplate> jobTemplates) {
         this.jobTemplates = jobTemplates != null ? jobTemplates : new ArrayList<>();
     }
-    
+
     public boolean isUsageRestricted() {
         return usageRestricted;
     }
-    
+
     @DataBoundSetter
     public void setUsageRestricted(boolean usageRestricted) {
         this.usageRestricted = usageRestricted;
@@ -144,7 +140,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     public void setAgent(AgentLaunchConfig agent) {
         this.agent = agent;
     }
-    
+
     /**
      * Finds a suitable job template for the given label.
      * Uses the template utility class to get filtered templates.
@@ -152,37 +148,36 @@ public class SlurmCloud extends AbstractCloudImpl {
     public SlurmJobTemplate getJobTemplateFor(@CheckForNull Label label) {
         // Use utility class to get filtered templates
         SlurmJobTemplate template = SlurmJobTemplateUtils.getTemplateByLabel(this, label);
-        
+
         if (template != null) {
             return template;
         }
-        
+
         // No default fallback - require explicit template configuration
-        LOGGER.warning("No matching template found for label " + 
-                      (label != null ? label.getName() : "none"));
+        LOGGER.warning("No matching template found for label " + (label != null ? label.getName() : "none"));
         return null;
     }
-    
+
     /**
      * Adds a dynamic (temporary) job template to this cloud.
      * Used by pipeline steps to temporarily register templates.
-     * 
+     *
      * @param template The template to add
      */
     public synchronized void addDynamicTemplate(@NonNull SlurmJobTemplate template) {
         if (jobTemplates == null) {
             jobTemplates = new ArrayList<>();
         }
-        
+
         // Template label should be unique - we'll use that for identification
         LOGGER.fine("Adding dynamic template: " + template.getLabel());
         jobTemplates.add(template);
     }
-    
+
     /**
      * Removes a dynamic (temporary) job template from this cloud.
      * Used by pipeline steps to clean up after execution.
-     * 
+     *
      * @param template The template to remove
      */
     public synchronized void removeDynamicTemplate(@NonNull SlurmJobTemplate template) {
@@ -202,83 +197,79 @@ public class SlurmCloud extends AbstractCloudImpl {
         LOGGER.fine("Removing dynamic template by id: " + id);
         return jobTemplates.removeIf(t -> id.equals(t.getId()));
     }
-    
+
     /**
      * Gets all templates including both configured and dynamic ones.
-     * 
+     *
      * @return All templates
      */
     @NonNull
     public List<SlurmJobTemplate> getTemplates() {
         return getJobTemplates();
     }
-    
+
     @Override
-    public Collection<PlannedNode> provision(@NonNull Cloud.CloudState state,
-                                           int excessWorkload) {
+    public Collection<PlannedNode> provision(@NonNull Cloud.CloudState state, int excessWorkload) {
         // Extract label from state
         Label label = state.getLabel();
-        
+
         // Get currently provisioning agents for this label
         Set<String> allInProvisioning = InProvisioning.getAllInProvisioning(label);
-        LOGGER.log(Level.FINE, "In provisioning for label {0}: {1}", 
-            new Object[]{label, allInProvisioning});
-        
+        LOGGER.log(Level.FINE, "In provisioning for label {0}: {1}", new Object[] {label, allInProvisioning});
+
         // Calculate how many we actually need to provision
         // Subtract agents already being provisioned from excess workload
         int toBeProvisioned = Math.max(0, excessWorkload - allInProvisioning.size());
-        
-        LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
-                   ", excessWorkload=" + excessWorkload + 
-                   ", inProvisioning=" + allInProvisioning.size() +
-                   ", toBeProvisioned=" + toBeProvisioned);
-        
+
+        LOGGER.info("Slurm Cloud: Provision request for label=" + label + ", excessWorkload="
+                + excessWorkload + ", inProvisioning="
+                + allInProvisioning.size() + ", toBeProvisioned="
+                + toBeProvisioned);
+
         if (toBeProvisioned <= 0) {
             LOGGER.fine("Slurm Cloud: Nothing to provision - agents already being provisioned");
             return Collections.emptyList();
         }
-        
+
         // Get templates that match this label
         List<SlurmJobTemplate> templates = getTemplatesFor(label);
         if (templates.isEmpty()) {
-            LOGGER.warning("Slurm Cloud: No template configured for label: " + 
-                         (label != null ? label.getName() : "none"));
+            LOGGER.warning(
+                    "Slurm Cloud: No template configured for label: " + (label != null ? label.getName() : "none"));
             return Collections.emptyList();
         }
-        
+
         List<PlannedNode> plannedNodes = new ArrayList<>();
-        
+
         // Try each template until we satisfy the workload or run out of capacity
         for (SlurmJobTemplate jobTemplate : templates) {
-            LOGGER.log(Level.FINE, "Template for label \"{0}\": {1}", 
-                new Object[]{label, jobTemplate.getName()});
-            
+            LOGGER.log(Level.FINE, "Template for label \"{0}\": {1}", new Object[] {label, jobTemplate.getName()});
+
             // Check cloud-wide capacity
             int currentAgents = getCurrentAgentCount();
             if (currentAgents >= maxAgents) {
                 LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
-                break;  // Can't provision from any template
+                break; // Can't provision from any template
             }
-            
+
             // Check template-specific capacity
             // Count: online agents + in-provisioning agents for this template
             int templateOnlineCount = getCurrentTemplateAgentCount(jobTemplate);
             int templateInProvisioningCount = countInProvisioningForTemplate(jobTemplate, allInProvisioning);
             int templateCurrentTotal = templateOnlineCount + templateInProvisioningCount;
             int templateCapacity = jobTemplate.getInstanceCapStr();
-            
+
             if (templateCurrentTotal >= templateCapacity) {
-                LOGGER.fine("Slurm Cloud: Template '" + jobTemplate.getName() + 
-                           "' at capacity (" + templateCurrentTotal + "/" + templateCapacity + ")");
-                continue;  // Try next template
+                LOGGER.fine("Slurm Cloud: Template '" + jobTemplate.getName() + "' at capacity (" + templateCurrentTotal
+                        + "/" + templateCapacity + ")");
+                continue; // Try next template
             }
-            
+
             // Calculate how many we can provision with this template
             int templateAvailable = templateCapacity - templateCurrentTotal;
             int cloudAvailable = maxAgents - currentAgents;
-            int maxFromThisTemplate = Math.min(toBeProvisioned, 
-                                              Math.min(templateAvailable, cloudAvailable));
-            
+            int maxFromThisTemplate = Math.min(toBeProvisioned, Math.min(templateAvailable, cloudAvailable));
+
             // Provision agents from this template
             for (int i = 0; i < maxFromThisTemplate; i++) {
                 try {
@@ -288,11 +279,11 @@ public class SlurmCloud extends AbstractCloudImpl {
                         toBeProvisioned--;
                     }
                 } catch (Exception e) {
-                    LOGGER.warning("Failed to create planned node for template " + 
-                        jobTemplate.getName() + ": " + e.getMessage());
+                    LOGGER.warning("Failed to create planned node for template " + jobTemplate.getName() + ": "
+                            + e.getMessage());
                 }
             }
-            
+
             // Stop iterating if we've satisfied the full workload
             if (toBeProvisioned <= 0) {
                 break;
@@ -302,7 +293,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents");
         return plannedNodes;
     }
-    
+
     /**
      * Get all templates that can handle the given label.
      * Similar to K8s plugin's getTemplatesFor().
@@ -311,20 +302,20 @@ public class SlurmCloud extends AbstractCloudImpl {
     private List<SlurmJobTemplate> getTemplatesFor(@CheckForNull Label label) {
         List<SlurmJobTemplate> matchingTemplates = new ArrayList<>();
         List<SlurmJobTemplate> allTemplates = getJobTemplates();
-        
+
         if (allTemplates == null || allTemplates.isEmpty()) {
             return matchingTemplates;
         }
-        
+
         for (SlurmJobTemplate template : allTemplates) {
             if (template.canTake(label)) {
                 matchingTemplates.add(template);
             }
         }
-        
+
         return matchingTemplates;
     }
-    
+
     /**
      * Count how many agents for this template are currently in provisioning.
      * This checks the in-provisioning set to see how many agent names match
@@ -334,143 +325,143 @@ public class SlurmCloud extends AbstractCloudImpl {
         if (inProvisioning.isEmpty()) {
             return 0;
         }
-        
+
         // Agent names follow pattern: cloudName-templateName-timestamp
         String templatePrefix = name + "-" + template.getName() + "-";
         int count = 0;
-        
+
         for (String agentName : inProvisioning) {
             if (agentName.startsWith(templatePrefix)) {
                 count++;
             }
         }
-        
+
         return count;
     }
-    
+
     /**
      * Creates a planned node for the given job template and label.
      */
     private PlannedNode createPlannedNode(SlurmJobTemplate jobTemplate, @CheckForNull Label label) {
         String agentName = generateAgentName(jobTemplate);
-        
+
         // Create cloud-stats tracking ID for this provisioning activity
-        ProvisioningActivity.Id cloudStatsId = 
-            new ProvisioningActivity.Id(
-                this.name,                    // cloud name
-                jobTemplate.getName(),        // template name  
-                agentName                     // agent name
-            );
-        
+        ProvisioningActivity.Id cloudStatsId = new ProvisioningActivity.Id(
+                this.name, // cloud name
+                jobTemplate.getName(), // template name
+                agentName // agent name
+                );
+
         // Use cloud-stats' TrackedPlannedNode for automatic activity tracking
-        return new TrackedPlannedNode(cloudStatsId,
-                              1,  // numExecutors — always 1 per agent; cpusPerTask is a Slurm resource, not Jenkins concurrency
-                              java.util.concurrent.CompletableFuture.supplyAsync(() -> {
-                                  try {
-                                      LOGGER.info("Slurm Cloud: Creating agent " + agentName + 
-                                                 " with template " + jobTemplate.getName());
-                                      
-                                      // 1. Create the Slurm launcher (no-arg constructor)
-                                      SlurmLauncher launcher = new SlurmLauncher();
-                                      
-                                      // 2. Create retention strategy based on template configuration.
-                                      // Mirrors the Kubernetes plugin's determineRetentionStrategy():
-                                      // - runOnce=true (default): OnceRetentionStrategy — agent terminates after
-                                      //   the first build completes; idleMinutes is the grace period before
-                                      //   forced teardown. Prevents agent reuse across pipeline runs.
-                                      // - runOnce=false: CloudRetentionStrategy — agent stays alive for
-                                      //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
-                                      hudson.slaves.RetentionStrategy<?> retentionStrategy;
-                                      if (jobTemplate.isRunOnce()) {
-                                          // Kubernetes plugin uses a minimum of 5 minutes (DEFAULT_RETENTION_TIMEOUT_MINUTES).
-                                          // OnceRetentionStrategy(0) fires check() immediately when the agent goes online
-                                          // (NodeProvisioner.update() triggers it before any build is scheduled), so
-                                          // we enforce a minimum of 1 minute to give Jenkins time to assign the build.
-                                          int retentionTimeout = Math.max(1, jobTemplate.getIdleMinutes());
-                                          retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
-                                              .OnceRetentionStrategy(retentionTimeout);
-                                          LOGGER.info("Using OnceRetentionStrategy (retentionTimeout=" + retentionTimeout + ") for agent: " + agentName
-                                              + " — agent will not be reused after first build");
-                                      } else {
-                                          retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
-                                          LOGGER.info("Using CloudRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes() + ") for agent: " + agentName
-                                              + " — agent can be reused within idle window");
-                                      }
-                                      
-                                      // 3. Create the Slurm agent with proper constructor parameters
-                                      SlurmAgent agent = new SlurmAgent(
-                                          agentName,                                    // name
-                                          "Slurm agent from template " + jobTemplate.getName(),  // description
-                                          jobTemplate.getCurrentWorkingDirectory(),      // remoteFS
-                                          1,                                            // numExecutors — always 1; cpusPerTask is a Slurm resource, not Jenkins concurrency
-                                          jobTemplate.getNodeUsageMode(),               // mode
-                                          jobTemplate.getLabel(),                       // labelString
-                                          launcher,                                     // launcher
-                                          retentionStrategy,                            // retentionStrategy
-                                          new java.util.ArrayList<>(),                  // nodeProperties (empty)
-                                          this.name,                                    // cloudName
-                                          jobTemplate.getId(),                          // templateId
-                                          jobTemplate.getPartition(),                   // partition
-                                          cloudStatsId                                  // cloud-stats tracking ID
-                                      );
-                                      
-                                      // 4. Wire build console listener (K8s pattern)
-                                      // slurmJobTemplate() / declarative agent set it on the template;
-                                      // node('label') static-template provisioning needs a queue scan.
-                                      hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
-                                      if (buildListener == null && label != null) {
-                                          buildListener = JobUtils.findRunListenerForLabel(label.getName());
-                                      }
-                                      if (buildListener != null && buildListener != hudson.model.TaskListener.NULL) {
-                                          agent.setRunListener(buildListener);
-                                          LOGGER.fine("Set build TaskListener on agent for provisioning status");
-                                      }
-                                      
-                                      // 5. Add agent to Jenkins
-                                      Jenkins.get().addNode(agent);
-                                      
-                                      LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
-                                      
-                                      // 5. Get the computer and trigger the launcher to submit Slurm job
-                                      hudson.model.Computer computer = agent.toComputer();
-                                      if (computer == null) {
-                                          LOGGER.severe("Slurm Cloud: Computer is null for agent " + agentName);
-                                          // Remove the node since we can't launch it
-                                          Jenkins.get().removeNode(agent);
-                                          throw new IOException("Computer is null for agent " + agentName);
-                                      }
-                                      
-                                      LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
-                                      
-                                      // Trigger the launcher asynchronously (Kubernetes plugin pattern)
-                                      // The launcher will:
-                                      // 1. Submit Slurm job
-                                      // 2. Poll job status (RUNNING/FAILED)  
-                                      // 3. Wait for agent JNLP connection
-                                      // 4. On failure: cancel job, set offline, throw → removes from capacity
-                                      // 5. Write errors to build console via agent.getRunListener()
-                                      computer.connect(false);  // Starts async LaunchThread
-                                      
-                                      // Return immediately - don't block the provisioning thread
-                                      // The launcher handles all waiting and failure scenarios
-                                      LOGGER.info("Agent " + agentName + " created, launcher triggered");
-                                      return agent;
-                                      
-                                  } catch (Exception e) {
-                                      LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
-                                      e.printStackTrace();
-                                      throw new RuntimeException(e);
-                                  }
-                              }));
+        return new TrackedPlannedNode(
+                cloudStatsId,
+                1, // numExecutors — always 1 per agent; cpusPerTask is a Slurm resource, not Jenkins concurrency
+                java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    try {
+                        LOGGER.info(
+                                "Slurm Cloud: Creating agent " + agentName + " with template " + jobTemplate.getName());
+
+                        // 1. Create the Slurm launcher (no-arg constructor)
+                        SlurmLauncher launcher = new SlurmLauncher();
+
+                        // 2. Create retention strategy based on template configuration.
+                        // Mirrors the Kubernetes plugin's determineRetentionStrategy():
+                        // - runOnce=true (default): OnceRetentionStrategy — agent terminates after
+                        //   the first build completes; idleMinutes is the grace period before
+                        //   forced teardown. Prevents agent reuse across pipeline runs.
+                        // - runOnce=false: CloudRetentionStrategy — agent stays alive for
+                        //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
+                        hudson.slaves.RetentionStrategy<?> retentionStrategy;
+                        if (jobTemplate.isRunOnce()) {
+                            // Kubernetes plugin uses a minimum of 5 minutes (DEFAULT_RETENTION_TIMEOUT_MINUTES).
+                            // OnceRetentionStrategy(0) fires check() immediately when the agent goes online
+                            // (NodeProvisioner.update() triggers it before any build is scheduled), so
+                            // we enforce a minimum of 1 minute to give Jenkins time to assign the build.
+                            int retentionTimeout = Math.max(1, jobTemplate.getIdleMinutes());
+                            retentionStrategy = new org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy(
+                                    retentionTimeout);
+                            LOGGER.info("Using OnceRetentionStrategy (retentionTimeout=" + retentionTimeout
+                                    + ") for agent: " + agentName + " — agent will not be reused after first build");
+                        } else {
+                            retentionStrategy = new hudson.slaves.CloudRetentionStrategy(jobTemplate.getIdleMinutes());
+                            LOGGER.info("Using CloudRetentionStrategy (idleMinutes=" + jobTemplate.getIdleMinutes()
+                                    + ") for agent: " + agentName + " — agent can be reused within idle window");
+                        }
+
+                        // 3. Create the Slurm agent with proper constructor parameters
+                        SlurmAgent agent = new SlurmAgent(
+                                agentName, // name
+                                "Slurm agent from template " + jobTemplate.getName(), // description
+                                jobTemplate.getCurrentWorkingDirectory(), // remoteFS
+                                1, // numExecutors — always 1; cpusPerTask is a Slurm resource, not Jenkins concurrency
+                                jobTemplate.getNodeUsageMode(), // mode
+                                jobTemplate.getLabel(), // labelString
+                                launcher, // launcher
+                                retentionStrategy, // retentionStrategy
+                                new java.util.ArrayList<>(), // nodeProperties (empty)
+                                this.name, // cloudName
+                                jobTemplate.getId(), // templateId
+                                jobTemplate.getPartition(), // partition
+                                cloudStatsId // cloud-stats tracking ID
+                                );
+
+                        // 4. Wire build console listener (K8s pattern)
+                        // slurmJobTemplate() / declarative agent set it on the template;
+                        // node('label') static-template provisioning needs a queue scan.
+                        hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
+                        if (buildListener == null && label != null) {
+                            buildListener = JobUtils.findRunListenerForLabel(label.getName());
+                        }
+                        if (buildListener != null && buildListener != hudson.model.TaskListener.NULL) {
+                            agent.setRunListener(buildListener);
+                            LOGGER.fine("Set build TaskListener on agent for provisioning status");
+                        }
+
+                        // 5. Add agent to Jenkins
+                        Jenkins.get().addNode(agent);
+
+                        LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
+
+                        // 5. Get the computer and trigger the launcher to submit Slurm job
+                        hudson.model.Computer computer = agent.toComputer();
+                        if (computer == null) {
+                            LOGGER.severe("Slurm Cloud: Computer is null for agent " + agentName);
+                            // Remove the node since we can't launch it
+                            Jenkins.get().removeNode(agent);
+                            throw new IOException("Computer is null for agent " + agentName);
+                        }
+
+                        LOGGER.info("Slurm Cloud: Triggering launcher for agent " + agentName);
+
+                        // Trigger the launcher asynchronously (Kubernetes plugin pattern)
+                        // The launcher will:
+                        // 1. Submit Slurm job
+                        // 2. Poll job status (RUNNING/FAILED)
+                        // 3. Wait for agent JNLP connection
+                        // 4. On failure: cancel job, set offline, throw → removes from capacity
+                        // 5. Write errors to build console via agent.getRunListener()
+                        computer.connect(false); // Starts async LaunchThread
+
+                        // Return immediately - don't block the provisioning thread
+                        // The launcher handles all waiting and failure scenarios
+                        LOGGER.info("Agent " + agentName + " created, launcher triggered");
+                        return agent;
+
+                    } catch (Exception e) {
+                        LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
+                        e.printStackTrace();
+                        throw new RuntimeException(e);
+                    }
+                }));
     }
-    
+
     /**
      * Generates a unique agent name based on the job template.
      */
     private String generateAgentName(SlurmJobTemplate jobTemplate) {
         return name + "-" + jobTemplate.getName() + "-" + System.currentTimeMillis();
     }
-    
+
     /**
      * Gets the current number of agents using a specific job template.
      */
@@ -480,49 +471,47 @@ public class SlurmCloud extends AbstractCloudImpl {
             if (node instanceof SlurmAgent) {
                 SlurmAgent slurmAgent = (SlurmAgent) node;
                 // Check if this agent belongs to our cloud and uses this specific template
-                if (this.name.equals(slurmAgent.getCloudName()) && 
-                    jobTemplate.getId().equals(slurmAgent.getTemplateId())) {
+                if (this.name.equals(slurmAgent.getCloudName())
+                        && jobTemplate.getId().equals(slurmAgent.getTemplateId())) {
                     count++;
                 }
             }
         }
         return count;
     }
-    
+
     @Override
     public boolean canProvision(@NonNull Cloud.CloudState state) {
         // Get the label from the state
         Label label = state.getLabel();
-        
-        LOGGER.fine("canProvision called for label: " + 
-                   (label != null ? label.getName() : "none"));
-        
+
+        LOGGER.fine("canProvision called for label: " + (label != null ? label.getName() : "none"));
+
         // Check if we have a template that can handle this label
         SlurmJobTemplate template = getJobTemplateFor(label);
-        
+
         if (template == null) {
-            LOGGER.fine("No template available for label: " + 
-                       (label != null ? label.getName() : "none") + 
-                       ". Available templates: " + 
-                       (jobTemplates != null ? jobTemplates.size() : 0));
+            LOGGER.fine("No template available for label: " + (label != null ? label.getName() : "none")
+                    + ". Available templates: "
+                    + (jobTemplates != null ? jobTemplates.size() : 0));
             if (jobTemplates != null && !jobTemplates.isEmpty()) {
-                LOGGER.fine("Available template labels: " + 
-                           jobTemplates.stream().map(t -> t.getLabel()).toList());
+                LOGGER.fine("Available template labels: "
+                        + jobTemplates.stream().map(t -> t.getLabel()).toList());
             }
             return false;
         }
-        
+
         LOGGER.fine("Found matching template: " + template.getName());
-        
+
         // Check if we're at capacity
         if (getCurrentAgentCount() >= maxAgents) {
             LOGGER.fine("Cannot provision - at maximum agent capacity");
             return false;
         }
-        
+
         return true;
     }
-    
+
     /**
      * Gets the current number of Slurm agents.
      */
@@ -538,43 +527,44 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         return count;
     }
-    
+
     /**
      * Submits a Slurm job via the REST API.
-     * 
+     *
      * @param jobDesc The job description to submit
      * @param listener The task listener for logging
      * @return The Slurm job ID, or null if submission failed
      * @throws Exception if submission fails
      */
-    public String submitJob(io.jenkins.plugins.slurm.client.model.JobDescMsg jobDesc,
-                           hudson.model.TaskListener listener) throws Exception {
-        
+    public String submitJob(
+            io.jenkins.plugins.slurm.client.model.JobDescMsg jobDesc, hudson.model.TaskListener listener)
+            throws Exception {
+
         LOGGER.info("Submitting Slurm job with name: " + jobDesc.getName());
-        
+
         // Get the Slurm client for this cloud
         SlurmClient client = SlurmClientProvider.createClient(this);
-        
+
         if (client == null) {
             throw new Exception("Failed to create Slurm client - check cloud configuration");
         }
-        
+
         try {
             // Create job submit request
-            io.jenkins.plugins.slurm.client.model.JobSubmitReq submitReq = 
-                new io.jenkins.plugins.slurm.client.model.JobSubmitReq();
+            io.jenkins.plugins.slurm.client.model.JobSubmitReq submitReq =
+                    new io.jenkins.plugins.slurm.client.model.JobSubmitReq();
             submitReq.setJob(jobDesc);
-            
+
             // Submit the job
             io.jenkins.plugins.slurm.client.model.OpenapiJobSubmitResponse response = client.submitJob(submitReq);
-            
+
             if (response == null) {
                 throw new Exception("Job submission returned null response");
             }
-            
+
             // Extract job ID from response
             String jobId = extractJobId(response);
-            
+
             if (jobId != null && !jobId.isEmpty()) {
                 LOGGER.info("Slurm job submitted successfully: " + jobId);
                 listener.getLogger().println("Job submitted with ID: " + jobId);
@@ -582,7 +572,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             } else {
                 throw new Exception("Job submission succeeded but no job ID was returned");
             }
-            
+
         } catch (Exception e) {
             String failureMsg = e.getMessage() != null ? e.getMessage() : e.toString();
             LOGGER.severe("Failed to submit Slurm job: " + failureMsg);
@@ -591,7 +581,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             throw e;
         }
     }
-    
+
     /**
      * Extracts the job ID from a job submission response.
      */
@@ -600,7 +590,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         if (response.getJobId() != null) {
             return String.valueOf(response.getJobId());
         }
-        
+
         // Check errors list for information
         if (response.getErrors() != null && !response.getErrors().isEmpty()) {
             LOGGER.warning("Job submission response contains errors");
@@ -608,13 +598,13 @@ public class SlurmCloud extends AbstractCloudImpl {
                 LOGGER.warning("  Error: " + error.getError());
             }
         }
-        
+
         return null;
     }
-    
+
     /**
      * Cancels a Slurm job.
-     * 
+     *
      * @param jobId The Slurm job ID to cancel
      * @param listener Optional task listener for logging
      */
@@ -623,24 +613,24 @@ public class SlurmCloud extends AbstractCloudImpl {
             LOGGER.warning("Cannot cancel job - no job ID provided");
             return;
         }
-        
+
         LOGGER.info("Canceling Slurm job: " + jobId);
-        
+
         try {
             SlurmClient client = SlurmClientProvider.createClient(this);
-            
+
             if (client == null) {
                 LOGGER.warning("Failed to get Slurm client for job cancellation");
                 return;
             }
-            
+
             client.cancelJob(jobId);
-            
+
             LOGGER.info("Slurm job canceled: " + jobId);
             if (listener != null) {
                 listener.getLogger().println("Canceled Slurm job: " + jobId);
             }
-            
+
         } catch (Exception e) {
             LOGGER.warning("Failed to cancel Slurm job " + jobId + ": " + e.getMessage());
             if (listener != null) {
@@ -648,23 +638,23 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
         }
     }
-    
+
     // Template management methods for web UI navigation
-    
+
     /**
      * Gets the descriptor for SlurmJobTemplate for creating new templates.
      */
     public Descriptor<SlurmJobTemplate> getTemplateDescriptor() {
         return Jenkins.get().getDescriptor(SlurmJobTemplate.class);
     }
-    
+
     /**
      * Checks if the current user has manage permission.
      */
     public boolean hasManagePermission() {
         return Jenkins.get().hasPermission(Jenkins.MANAGE);
     }
-    
+
     /**
      * Creates a new job template.
      * Called from new.jelly form submission.
@@ -701,14 +691,14 @@ public class SlurmCloud extends AbstractCloudImpl {
 
         rsp.sendRedirect("templates");
     }
-    
+
     /**
      * Gets a specific job template by name.
      * Used for individual template configuration pages.
      */
     public SlurmJobTemplate getTemplate(String name) {
         if (jobTemplates == null) return null;
-        
+
         for (SlurmJobTemplate template : jobTemplates) {
             if (template.getName().equals(name)) {
                 return template;
@@ -716,14 +706,14 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         return null;
     }
-    
+
     /**
      * Gets a specific job template by ID (UUID).
      * Used by agents to look up their template.
      */
     public SlurmJobTemplate getTemplateById(String templateId) {
         if (jobTemplates == null || templateId == null) return null;
-        
+
         for (SlurmJobTemplate template : jobTemplates) {
             if (templateId.equals(template.getId())) {
                 return template;
@@ -731,7 +721,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         return null;
     }
-    
+
     /**
      * Removes a template from this cloud.
      * Called by the template's delete method.
@@ -741,7 +731,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             jobTemplates.removeIf(t -> t.getId().equals(template.getId()));
         }
     }
-    
+
     /**
      * Checks if the current user has manage permission.
      * Used by templates for permission checks.
@@ -749,7 +739,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     public void checkManagePermission() {
         Jenkins.get().checkPermission(Jenkins.MANAGE);
     }
-    
+
     /**
      * Gets the URL for the templates page.
      * Used for redirects after template operations.
@@ -757,7 +747,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     public String getTemplatesUrl() {
         return getUrl() + "templates";
     }
-    
+
     /**
      * Provides access to templates via URLs like /cloud/cloudname/template/templatename
      * This is the method that will be called when accessing template URLs.
@@ -768,7 +758,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         return null;
     }
-    
+
     /**
      * Inner class to handle template URL routing.
      */
@@ -777,21 +767,21 @@ public class SlurmCloud extends AbstractCloudImpl {
             return getTemplate(templateName);
         }
     }
-    
+
     @Extension
     @Symbol("slurm")
     public static class DescriptorImpl extends Descriptor<Cloud> {
-        
+
         @Override
         public String getDisplayName() {
             return "Slurm";
         }
-        
+
         public FormValidation doCheckSlurmRestApiUrl(@QueryParameter String value) {
             if (value == null || value.trim().isEmpty()) {
                 return FormValidation.error("Slurm REST API URL is required");
             }
-            
+
             // Basic URL validation
             try {
                 java.net.URL url = new java.net.URL(value);
@@ -803,7 +793,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 return FormValidation.error("Invalid URL format. Example: http://slurm-controller:6820");
             }
         }
-        
+
         public FormValidation doCheckMaxAgents(@QueryParameter String value) {
             try {
                 int max = Integer.parseInt(value);
@@ -815,7 +805,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 return FormValidation.error("Invalid number");
             }
         }
-        
+
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item item) {
             StandardListBoxModel result = new StandardListBoxModel();
             if (item == null) {
@@ -827,43 +817,43 @@ public class SlurmCloud extends AbstractCloudImpl {
                     return result.includeEmptyValue();
                 }
             }
-            
-            return result
-                    .includeEmptyValue()
+
+            return result.includeEmptyValue()
                     .includeAs(ACL.SYSTEM, item, StringCredentials.class)
                     .includeCurrentValue(null);
         }
-        
+
         /**
          * Test connection to Slurm REST API.
          * Similar to Kubernetes plugin's test connection functionality.
          */
-        public FormValidation doTestConnection(@QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
-                                             @QueryParameter("credentialsId") String credentialsId) {
+        public FormValidation doTestConnection(
+                @QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
+                @QueryParameter("credentialsId") String credentialsId) {
             Jenkins.get().checkPermission(Jenkins.MANAGE);
-            
+
             if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
                 return FormValidation.error("Slurm REST API URL is required");
             }
-            
+
             try {
                 // Validate URL format first
                 java.net.URL url = new java.net.URL(slurmRestApiUrl);
                 if (!"http".equals(url.getProtocol()) && !"https".equals(url.getProtocol())) {
                     return FormValidation.error("URL must use http or https protocol");
                 }
-                
+
                 // Test connection using ping endpoint
                 String pingResult = testSlurmConnection(slurmRestApiUrl, credentialsId);
                 return FormValidation.ok(pingResult);
-                
+
             } catch (java.net.MalformedURLException e) {
                 return FormValidation.error("Invalid URL format: " + e.getMessage());
             } catch (Exception e) {
                 return FormValidation.error("Connection failed: " + e.getMessage());
             }
         }
-        
+
         /**
          * Tests the connection to Slurm REST API using the ping endpoint with OpenAPI client.
          * Validates both REST API connectivity and JWT token authentication.
@@ -871,103 +861,114 @@ public class SlurmCloud extends AbstractCloudImpl {
         private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
             // Normalize API URL - ensure it doesn't end with slash
             String baseUrl = apiUrl.replaceAll("/+$", "");
-            
+
             LOGGER.info("Testing Slurm connection to: " + baseUrl);
-            
+
             // Retrieve JWT token from credentials
             String authToken = getAuthTokenFromCredentials(credentialsId);
             if (authToken == null || authToken.trim().isEmpty()) {
                 throw new Exception("No authentication token provided. Please configure JWT token credentials.");
             }
-            
+
             try {
                 SlurmClient client = new SlurmClient(baseUrl, authToken);
-                
+
                 // Test ping and get detailed controller information
                 SlurmPingInfo slurmInfo = client.getSlurmInfo();
-                
+
                 if (slurmInfo == null) {
-                    throw new Exception("Ping failed - no response from Slurm REST API. Check if slurmrestd is running.");
+                    throw new Exception(
+                            "Ping failed - no response from Slurm REST API. Check if slurmrestd is running.");
                 }
-                
+
                 // Check if controller is actually responding
                 if (slurmInfo.getResponding() == null || !slurmInfo.getResponding()) {
                     // REST API is up but controller is not responding - likely auth issue
                     StringBuilder errorMsg = new StringBuilder();
                     errorMsg.append("Slurm REST API is reachable but controller is not responding.\n\n");
-                    
+
                     if (slurmInfo.getPinged() != null && !slurmInfo.getPinged().isEmpty()) {
-                        errorMsg.append("Pinged: ").append(slurmInfo.getPinged()).append("\n\n");
+                        errorMsg.append("Pinged: ")
+                                .append(slurmInfo.getPinged())
+                                .append("\n\n");
                     }
-                    
+
                     errorMsg.append("This usually indicates:\n");
                     errorMsg.append("• Invalid or expired JWT token\n");
                     errorMsg.append("• Insufficient token permissions\n");
                     errorMsg.append("• slurmctld service is down\n\n");
                     errorMsg.append("Please verify your JWT token credentials.");
-                    
+
                     LOGGER.warning("Controller not responding: " + errorMsg.toString());
                     throw new Exception(errorMsg.toString());
                 }
-                
+
                 // Successfully connected - build detailed status message
                 StringBuilder statusMsg = new StringBuilder();
                 statusMsg.append("✓ Successfully connected to Slurm controller\n\n");
-                
+
                 // Controller information
                 if (slurmInfo.getHostname() != null) {
-                    statusMsg.append("Hostname: ").append(slurmInfo.getHostname()).append("\n");
+                    statusMsg
+                            .append("Hostname: ")
+                            .append(slurmInfo.getHostname())
+                            .append("\n");
                 }
-                
+
                 if (slurmInfo.getVersion() != null) {
                     statusMsg.append("Version: ").append(slurmInfo.getVersion()).append("\n");
                 }
-                
+
                 if (slurmInfo.getCluster() != null) {
                     statusMsg.append("Cluster: ").append(slurmInfo.getCluster()).append("\n");
                 }
-                
+
                 if (slurmInfo.getMode() != null) {
                     statusMsg.append("Mode: ").append(slurmInfo.getMode()).append("\n");
                 }
-                
+
                 if (slurmInfo.getPrimary() != null) {
-                    statusMsg.append("Primary Controller: ").append(slurmInfo.getPrimary() ? "Yes" : "No").append("\n");
+                    statusMsg
+                            .append("Primary Controller: ")
+                            .append(slurmInfo.getPrimary() ? "Yes" : "No")
+                            .append("\n");
                 }
-                
+
                 if (slurmInfo.getLatency() != null) {
                     statusMsg.append("Latency: ").append(slurmInfo.getLatency()).append(" µs\n");
                 }
-                
+
                 if (slurmInfo.getPinged() != null) {
-                    statusMsg.append("Ping Result: ").append(slurmInfo.getPinged()).append("\n");
+                    statusMsg
+                            .append("Ping Result: ")
+                            .append(slurmInfo.getPinged())
+                            .append("\n");
                 }
-                
+
                 statusMsg.append("\nAPI URL: ").append(baseUrl);
                 statusMsg.append("\nAuthentication: ✓ Valid JWT token");
-                
+
                 LOGGER.info("Slurm connection test successful");
                 return statusMsg.toString();
-                                   
+
             } catch (Exception e) {
                 LOGGER.warning("Slurm connection test failed: " + e.getMessage());
-                
+
                 // Re-throw with better context if not already formatted
-                if (e.getMessage().contains("controller is not responding") || 
-                    e.getMessage().contains("no response from Slurm REST API") ||
-                    e.getMessage().contains("No authentication token")) {
+                if (e.getMessage().contains("controller is not responding")
+                        || e.getMessage().contains("no response from Slurm REST API")
+                        || e.getMessage().contains("No authentication token")) {
                     throw e;
                 }
-                
-                throw new Exception("Failed to connect to Slurm REST API at " + baseUrl + 
-                                  ".\n\nError: " + e.getMessage() + 
-                                  "\n\nTroubleshooting:\n" +
-                                  "• Verify slurmrestd is running and accessible\n" +
-                                  "• Check network connectivity and firewall rules\n" +
-                                  "• Ensure URL format is correct (http://host:6820)");
+
+                throw new Exception("Failed to connect to Slurm REST API at " + baseUrl + ".\n\nError: "
+                        + e.getMessage() + "\n\nTroubleshooting:\n"
+                        + "• Verify slurmrestd is running and accessible\n"
+                        + "• Check network connectivity and firewall rules\n"
+                        + "• Ensure URL format is correct (http://host:6820)");
             }
         }
-        
+
         /**
          * Retrieves authentication token from Jenkins credentials.
          * Looks up Secret Text credentials containing JWT token.
@@ -977,16 +978,12 @@ public class SlurmCloud extends AbstractCloudImpl {
                 LOGGER.warning("No credentials ID provided for Slurm authentication");
                 return null;
             }
-            
+
             try {
                 // Use the lookupCredentials method instead
                 List<StringCredentials> credentials = CredentialsProvider.lookupCredentials(
-                    StringCredentials.class,
-                    (Item) null,
-                    ACL.SYSTEM,
-                    Collections.<DomainRequirement>emptyList()
-                );
-                
+                        StringCredentials.class, (Item) null, ACL.SYSTEM, Collections.<DomainRequirement>emptyList());
+
                 for (StringCredentials credential : credentials) {
                     if (credentialsId.equals(credential.getId())) {
                         Secret secret = credential.getSecret();
@@ -995,16 +992,14 @@ public class SlurmCloud extends AbstractCloudImpl {
                         return token;
                     }
                 }
-                
+
                 LOGGER.warning("Could not find Secret Text credentials with ID: " + credentialsId);
                 return null;
-                
+
             } catch (Exception e) {
                 LOGGER.severe("Failed to retrieve credentials: " + e.getMessage());
                 return null;
             }
         }
-        
-
     }
 }

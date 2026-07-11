@@ -115,8 +115,7 @@ public class SlurmFolderProperty extends AbstractFolderProperty<AbstractFolder<?
     public static void collectAllowedClouds(Set<String> allowedClouds, ItemGroup<?> itemGroup) {
         if (itemGroup instanceof AbstractFolder) {
             AbstractFolder<?> folder = (AbstractFolder<?>) itemGroup;
-            SlurmFolderProperty slurmFolderProperty =
-                    folder.getProperties().get(SlurmFolderProperty.class);
+            SlurmFolderProperty slurmFolderProperty = folder.getProperties().get(SlurmFolderProperty.class);
 
             if (slurmFolderProperty != null) {
                 allowedClouds.addAll(slurmFolderProperty.getPermittedClouds());
