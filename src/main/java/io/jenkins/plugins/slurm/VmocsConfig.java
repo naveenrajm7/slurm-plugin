@@ -12,23 +12,31 @@ import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 
 /**
- * Configuration for vmocs (Virtual Machine in Compute via Slurm) support.
+ * Configuration for vmocs (VM On Cluster Scheduling) support.
  *
- * <p>vmocs is a QEMU/KVM wrapper that launches and manages virtual machines inside Slurm jobs.
- * Each Jenkins build runs inside an isolated VM on the compute node, providing stronger isolation
- * than Pyxis containers — useful for workloads requiring custom kernels, full OS environments,
- * GPU passthrough via VFIO, or Windows guests.
+ * <p>vmocs is a Slurm SPANK plugin that transparently launches and manages QEMU/KVM virtual
+ * machines as Slurm jobs. The plugin registers the {@code --vm-image=} sbatch argument. When
+ * Slurm runs the job, the SPANK plugin starts the VM (via the vmocs CLI on the compute node),
+ * waits for it to become ready, and then executes the user's batch script.
  *
- * <p>The vmocs tool must be installed on the compute nodes and configured via {@code vmocs.yaml}
- * and {@code templates.yaml}. The plugin generates a batch script that:
+ * <p>Because the VM lifecycle is managed entirely by the SPANK plugin, our batch script does
+ * <em>not</em> invoke {@code vmocs} directly. Instead it:
  * <ol>
- *   <li>Launches the VM via {@code vmocs launch} (background, captures SSH connection info)</li>
- *   <li>Waits for SSH readiness</li>
- *   <li>Copies or locates {@code agent.jar} inside the VM</li>
- *   <li>Starts the Jenkins inbound agent inside the VM via SSH</li>
- *   <li>Waits for the build to complete (SSH session ends)</li>
- *   <li>Lets vmocs receive SIGTERM from Slurm for graceful shutdown</li>
+ *   <li>Includes {@code #SBATCH --vm-image=<vmImage>} in the script header so Slurm/SPANK
+ *       knows which image to start.</li>
+ *   <li>Waits until the VM's SSH port (by default 60222 on localhost) is reachable — the SPANK
+ *       plugin prints {@code "VM ready ... ssh -i <key> -p <port> <user>@127.0.0.1"} to stdout
+ *       when the VM is up.</li>
+ *   <li>Downloads or locates {@code agent.jar} and copies it into the VM via {@code scp}.</li>
+ *   <li>Starts the Jenkins inbound agent inside the VM via SSH, blocking until the build
+ *       completes.</li>
+ *   <li>Returns — the batch script exits, Slurm terminates the job, and the SPANK plugin
+ *       shuts the VM down.</li>
  * </ol>
+ *
+ * <p>Resource allocation (CPUs, memory, GPUs, partition, account…) is handled by the standard
+ * {@link SlurmJobTemplate} fields — not by vmocs. The only vmocs-specific input is the VM image
+ * name.
  *
  * @see <a href="https://naveenrajm7.github.io/vmocs/">vmocs Documentation</a>
  */
@@ -36,147 +44,132 @@ public class VmocsConfig extends AbstractDescribableImpl<VmocsConfig> implements
 
     private static final long serialVersionUID = 1L;
 
-    /** Default vmocs binary name (resolved via PATH on the compute node). */
-    public static final String DEFAULT_VMOCS_BIN = "vmocs";
+    /** Default SSH user inside vmocs-managed VMs (Vagrant convention). */
+    public static final String DEFAULT_SSH_USER = "vagrant";
 
-    /** Default timeout in seconds to wait for the VM to become SSH-ready. */
+    /** Default SSH port forwarded to the VM on the compute node. */
+    public static final int DEFAULT_SSH_PORT = 60222;
+
+    /** Default boot-readiness timeout in seconds. */
     public static final int DEFAULT_VM_BOOT_TIMEOUT_SEC = 300;
 
-    /** Path to agent.jar inside the standard jenkins/inbound-agent VM image, if pre-installed. */
-    public static final String DEFAULT_VM_AGENT_JAR_PATH = "";
-
-    @JsonProperty("template_name")
-    private String templateName;
-
-    @JsonProperty("vmocs_bin")
-    private String vmocsBin;
-
-    @JsonProperty("config_path")
-    private String configPath;
-
-    @JsonProperty("cores")
-    private Integer cores;
-
-    @JsonProperty("memory_mb")
-    private Integer memoryMb;
-
     /**
-     * Comma-separated list of PCI BDF addresses for device passthrough (e.g. GPU).
-     * Each entry has the form {@code DDDD:BB:DD.F} (e.g. {@code 0000:03:00.0}).
-     * Maps to one {@code --pci} flag per device in the {@code vmocs launch} invocation.
+     * VM image name passed as {@code --vm-image=<vmImage>} to the vmocs SPANK plugin via the
+     * {@code #SBATCH} directive in the batch script header.
+     *
+     * <p>Must match a template name known to the vmocs installation on the target partition
+     * (e.g. {@code windows11-gfx1101}, {@code base-ubuntu}).
      */
-    @JsonProperty("pci_devices")
-    private String pciDevices;
+    @JsonProperty("vm_image")
+    private String vmImage;
 
     /**
-     * Absolute path to a pre-installed {@code agent.jar} inside the VM image.
-     * When empty the plugin downloads {@code agent.jar} from the Jenkins controller
-     * and copies it into the VM via {@code scp} before starting the agent.
+     * SSH user inside the VM.  Defaults to {@value #DEFAULT_SSH_USER} (standard Vagrant
+     * convention used by vmocs-managed images).
+     */
+    @JsonProperty("ssh_user")
+    private String sshUser;
+
+    /**
+     * Host port on the compute node forwarded to the VM's SSH port (22).
+     * Defaults to {@value #DEFAULT_SSH_PORT}.  The vmocs SPANK plugin allocates this port
+     * when it starts the VM; the default matches the vmocs default port range.
+     */
+    @JsonProperty("ssh_port")
+    private Integer sshPort;
+
+    /**
+     * Absolute path to the SSH private key on the compute node used to log in to the VM.
+     * When empty, the SSH command uses the default key resolution (agent/config).
+     *
+     * <p>For Vagrant-based images the vmocs insecure key is typically located at
+     * {@code <vmocs_lib>/keys/vagrant_insecure_key}; set this path here so the script
+     * can authenticate without a password.
+     */
+    @JsonProperty("ssh_key_path")
+    private String sshKeyPath;
+
+    /**
+     * Absolute path to a pre-installed {@code agent.jar} <em>inside the VM image</em>.
+     *
+     * <p>When set the plugin uses this path directly — no download or {@code scp} is needed.
+     * When empty the plugin downloads {@code agent.jar} from the Jenkins controller at job
+     * start and copies it into the VM via {@code scp} before launching the agent.
      */
     @JsonProperty("agent_jar_path")
     private String agentJarPath;
 
     /**
-     * Seconds to wait for the VM to become SSH-ready after {@code vmocs launch}.
-     * Defaults to {@value #DEFAULT_VM_BOOT_TIMEOUT_SEC}.
+     * Maximum seconds to wait for the VM's SSH port to become reachable after the SPANK
+     * plugin starts the VM.  Defaults to {@value #DEFAULT_VM_BOOT_TIMEOUT_SEC}.
+     * Increase this for images that boot slowly or lack a vmocs snapshot.
      */
     @JsonProperty("vm_boot_timeout_sec")
     private Integer vmBootTimeoutSec;
 
     @DataBoundConstructor
     public VmocsConfig() {
-        this.templateName = "";
-        this.vmocsBin = DEFAULT_VMOCS_BIN;
-        this.configPath = "";
-        this.cores = null;
-        this.memoryMb = null;
-        this.pciDevices = "";
-        this.agentJarPath = DEFAULT_VM_AGENT_JAR_PATH;
+        this.vmImage = "";
+        this.sshUser = DEFAULT_SSH_USER;
+        this.sshPort = DEFAULT_SSH_PORT;
+        this.sshKeyPath = "";
+        this.agentJarPath = "";
         this.vmBootTimeoutSec = DEFAULT_VM_BOOT_TIMEOUT_SEC;
     }
 
     // -----------------------------------------------------------------------
-    // templateName
+    // vmImage
     // -----------------------------------------------------------------------
 
     @CheckForNull
-    public String getTemplateName() {
-        return templateName;
+    public String getVmImage() {
+        return vmImage;
     }
 
     @DataBoundSetter
-    public void setTemplateName(String templateName) {
-        this.templateName = templateName != null ? templateName.trim() : "";
+    public void setVmImage(String vmImage) {
+        this.vmImage = vmImage != null ? vmImage.trim() : "";
     }
 
     // -----------------------------------------------------------------------
-    // vmocsBin
+    // sshUser
     // -----------------------------------------------------------------------
 
     @NonNull
-    public String getVmocsBin() {
-        return (vmocsBin != null && !vmocsBin.trim().isEmpty()) ? vmocsBin.trim() : DEFAULT_VMOCS_BIN;
+    public String getSshUser() {
+        return (sshUser != null && !sshUser.trim().isEmpty()) ? sshUser.trim() : DEFAULT_SSH_USER;
     }
 
     @DataBoundSetter
-    public void setVmocsBin(String vmocsBin) {
-        this.vmocsBin = (vmocsBin != null && !vmocsBin.trim().isEmpty()) ? vmocsBin.trim() : DEFAULT_VMOCS_BIN;
+    public void setSshUser(String sshUser) {
+        this.sshUser = (sshUser != null && !sshUser.trim().isEmpty()) ? sshUser.trim() : DEFAULT_SSH_USER;
     }
 
     // -----------------------------------------------------------------------
-    // configPath
+    // sshPort
+    // -----------------------------------------------------------------------
+
+    public int getSshPort() {
+        return (sshPort != null && sshPort > 0) ? sshPort : DEFAULT_SSH_PORT;
+    }
+
+    @DataBoundSetter
+    public void setSshPort(Integer sshPort) {
+        this.sshPort = (sshPort != null && sshPort > 0) ? sshPort : DEFAULT_SSH_PORT;
+    }
+
+    // -----------------------------------------------------------------------
+    // sshKeyPath
     // -----------------------------------------------------------------------
 
     @CheckForNull
-    public String getConfigPath() {
-        return configPath;
+    public String getSshKeyPath() {
+        return sshKeyPath;
     }
 
     @DataBoundSetter
-    public void setConfigPath(String configPath) {
-        this.configPath = configPath != null ? configPath.trim() : "";
-    }
-
-    // -----------------------------------------------------------------------
-    // cores
-    // -----------------------------------------------------------------------
-
-    @CheckForNull
-    public Integer getCores() {
-        return cores;
-    }
-
-    @DataBoundSetter
-    public void setCores(Integer cores) {
-        this.cores = (cores != null && cores > 0) ? cores : null;
-    }
-
-    // -----------------------------------------------------------------------
-    // memoryMb
-    // -----------------------------------------------------------------------
-
-    @CheckForNull
-    public Integer getMemoryMb() {
-        return memoryMb;
-    }
-
-    @DataBoundSetter
-    public void setMemoryMb(Integer memoryMb) {
-        this.memoryMb = (memoryMb != null && memoryMb > 0) ? memoryMb : null;
-    }
-
-    // -----------------------------------------------------------------------
-    // pciDevices
-    // -----------------------------------------------------------------------
-
-    @CheckForNull
-    public String getPciDevices() {
-        return pciDevices;
-    }
-
-    @DataBoundSetter
-    public void setPciDevices(String pciDevices) {
-        this.pciDevices = pciDevices != null ? pciDevices.trim() : "";
+    public void setSshKeyPath(String sshKeyPath) {
+        this.sshKeyPath = sshKeyPath != null ? sshKeyPath.trim() : "";
     }
 
     // -----------------------------------------------------------------------
@@ -208,14 +201,14 @@ public class VmocsConfig extends AbstractDescribableImpl<VmocsConfig> implements
     }
 
     // -----------------------------------------------------------------------
-    // Utility methods
+    // Utility
     // -----------------------------------------------------------------------
 
     /**
-     * Returns {@code true} when the minimum required field — {@code templateName} — is set.
+     * Returns {@code true} when the minimum required field — {@code vmImage} — is non-empty.
      */
     public boolean isConfigured() {
-        return templateName != null && !templateName.trim().isEmpty();
+        return vmImage != null && !vmImage.trim().isEmpty();
     }
 
     @Extension

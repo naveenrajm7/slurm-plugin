@@ -2,7 +2,6 @@ package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -16,49 +15,41 @@ public class VmocsConfigTest {
     public void testDefaults() {
         VmocsConfig config = new VmocsConfig();
 
-        assertEquals("", config.getTemplateName());
-        assertEquals(VmocsConfig.DEFAULT_VMOCS_BIN, config.getVmocsBin());
-        assertEquals("", config.getConfigPath());
-        assertNull(config.getCores());
-        assertNull(config.getMemoryMb());
-        assertEquals("", config.getPciDevices());
-        assertEquals(VmocsConfig.DEFAULT_VM_AGENT_JAR_PATH, config.getAgentJarPath());
+        assertEquals("", config.getVmImage());
+        assertEquals(VmocsConfig.DEFAULT_SSH_USER, config.getSshUser());
+        assertEquals(VmocsConfig.DEFAULT_SSH_PORT, config.getSshPort());
+        assertEquals("", config.getSshKeyPath());
+        assertEquals("", config.getAgentJarPath());
         assertEquals(VmocsConfig.DEFAULT_VM_BOOT_TIMEOUT_SEC, config.getVmBootTimeoutSec());
     }
 
     @Test
-    public void testIsConfiguredRequiresTemplateName() {
+    public void testIsConfiguredRequiresVmImage() {
         VmocsConfig config = new VmocsConfig();
-        assertFalse(config.isConfigured(), "empty templateName → not configured");
+        assertFalse(config.isConfigured(), "empty vmImage → not configured");
 
-        config.setTemplateName("  ");
-        assertFalse(config.isConfigured(), "blank templateName → not configured");
+        config.setVmImage("  ");
+        assertFalse(config.isConfigured(), "blank vmImage → not configured");
 
-        config.setTemplateName("base-ubuntu");
-        assertTrue(config.isConfigured(), "non-empty templateName → configured");
+        config.setVmImage("base-ubuntu");
+        assertTrue(config.isConfigured(), "non-empty vmImage → configured");
     }
 
     @Test
     public void testSettersAndGetters() {
         VmocsConfig config = new VmocsConfig();
 
-        config.setTemplateName("base-ubuntu");
-        assertEquals("base-ubuntu", config.getTemplateName());
+        config.setVmImage("windows11-gfx1101");
+        assertEquals("windows11-gfx1101", config.getVmImage());
 
-        config.setVmocsBin("/usr/local/bin/vmocs");
-        assertEquals("/usr/local/bin/vmocs", config.getVmocsBin());
+        config.setSshUser("ubuntu");
+        assertEquals("ubuntu", config.getSshUser());
 
-        config.setConfigPath("/etc/vmocs/vmocs.yaml");
-        assertEquals("/etc/vmocs/vmocs.yaml", config.getConfigPath());
+        config.setSshPort(60300);
+        assertEquals(60300, config.getSshPort());
 
-        config.setCores(8);
-        assertEquals(8, config.getCores());
-
-        config.setMemoryMb(16384);
-        assertEquals(16384, config.getMemoryMb());
-
-        config.setPciDevices("0000:03:00.0,0000:03:00.1");
-        assertEquals("0000:03:00.0,0000:03:00.1", config.getPciDevices());
+        config.setSshKeyPath("/opt/vmocs/keys/vagrant_insecure_key");
+        assertEquals("/opt/vmocs/keys/vagrant_insecure_key", config.getSshKeyPath());
 
         config.setAgentJarPath("/opt/jenkins/agent.jar");
         assertEquals("/opt/jenkins/agent.jar", config.getAgentJarPath());
@@ -71,23 +62,14 @@ public class VmocsConfigTest {
     public void testNullHandling() {
         VmocsConfig config = new VmocsConfig();
 
-        config.setTemplateName(null);
-        assertEquals("", config.getTemplateName());
+        config.setVmImage(null);
+        assertEquals("", config.getVmImage());
 
-        config.setVmocsBin(null);
-        assertEquals(VmocsConfig.DEFAULT_VMOCS_BIN, config.getVmocsBin());
+        config.setSshUser(null);
+        assertEquals(VmocsConfig.DEFAULT_SSH_USER, config.getSshUser());
 
-        config.setConfigPath(null);
-        assertEquals("", config.getConfigPath());
-
-        config.setCores(null);
-        assertNull(config.getCores());
-
-        config.setMemoryMb(null);
-        assertNull(config.getMemoryMb());
-
-        config.setPciDevices(null);
-        assertEquals("", config.getPciDevices());
+        config.setSshKeyPath(null);
+        assertEquals("", config.getSshKeyPath());
 
         config.setAgentJarPath(null);
         assertEquals("", config.getAgentJarPath());
@@ -97,33 +79,30 @@ public class VmocsConfigTest {
     }
 
     @Test
-    public void testNonPositiveValuesNullified() {
+    public void testNonPositivePortAndTimeoutFallback() {
         VmocsConfig config = new VmocsConfig();
 
-        config.setCores(0);
-        assertNull(config.getCores(), "cores=0 should be treated as not set");
+        config.setSshPort(0);
+        assertEquals(VmocsConfig.DEFAULT_SSH_PORT, config.getSshPort(), "port=0 should fall back to default");
 
-        config.setCores(-1);
-        assertNull(config.getCores(), "cores<0 should be treated as not set");
-
-        config.setMemoryMb(0);
-        assertNull(config.getMemoryMb(), "memoryMb=0 should be treated as not set");
+        config.setSshPort(-1);
+        assertEquals(VmocsConfig.DEFAULT_SSH_PORT, config.getSshPort(), "port<0 should fall back to default");
 
         config.setVmBootTimeoutSec(0);
         assertEquals(
                 VmocsConfig.DEFAULT_VM_BOOT_TIMEOUT_SEC,
                 config.getVmBootTimeoutSec(),
-                "vmBootTimeoutSec=0 should fall back to default");
+                "timeout=0 should fall back to default");
     }
 
     @Test
-    public void testVmocsBinFallsBackToDefault() {
+    public void testSshUserFallsBackToDefault() {
         VmocsConfig config = new VmocsConfig();
 
-        config.setVmocsBin("");
-        assertEquals(VmocsConfig.DEFAULT_VMOCS_BIN, config.getVmocsBin());
+        config.setSshUser("");
+        assertEquals(VmocsConfig.DEFAULT_SSH_USER, config.getSshUser());
 
-        config.setVmocsBin("   ");
-        assertEquals(VmocsConfig.DEFAULT_VMOCS_BIN, config.getVmocsBin());
+        config.setSshUser("   ");
+        assertEquals(VmocsConfig.DEFAULT_SSH_USER, config.getSshUser());
     }
 }

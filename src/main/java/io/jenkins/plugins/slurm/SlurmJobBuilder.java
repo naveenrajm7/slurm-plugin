@@ -409,7 +409,7 @@ public class SlurmJobBuilder {
         AgentLaunchConfig agent = getEffectiveAgent();
 
         if (useVm) {
-            LOGGER.fine("Using vmocs VM configuration: template=" + vmocs.getTemplateName());
+            LOGGER.fine("Using vmocs VM configuration: vm-image=" + vmocs.getVmImage());
             return generateVmocsBatchScript(vmocs);
         }
 
@@ -504,75 +504,68 @@ public class SlurmJobBuilder {
      *   <li>Waits for vmocs to perform graceful VM shutdown when Slurm sends SIGTERM.</li>
      * </ol>
      */
+    /**
+     * Generates the batch script for vmocs VM-based launch mode.
+     *
+     * <p>The vmocs Slurm SPANK plugin registers {@code --vm-image=} as a native
+     * {@code sbatch} argument. When Slurm runs the job the SPANK plugin (not this script)
+     * starts the VM on the compute node. This script's only responsibilities are:
+     * <ol>
+     *   <li>Declare {@code #SBATCH --vm-image=<image>} in the header so Slurm/SPANK knows
+     *       which image to boot.</li>
+     *   <li>Poll {@code localhost:<sshPort>} until the VM's SSH service is reachable.
+     *       The SPANK plugin prints {@code "VM ready ... ssh -i <key> -p <port> <user>@127.0.0.1"}
+     *       to stdout once the VM is up.</li>
+     *   <li>If {@link VmocsConfig#getAgentJarPath()} is empty, download {@code agent.jar}
+     *       from the Jenkins controller and copy it into the VM via {@code scp}.</li>
+     *   <li>Start the Jenkins inbound agent inside the VM via SSH (blocks until build ends).</li>
+     *   <li>Exit — the Slurm job ends and the SPANK plugin shuts the VM down.</li>
+     * </ol>
+     *
+     * <p>Resource allocation (CPUs, memory, GPUs, partition, account) is set by the
+     * surrounding {@link SlurmJobTemplate} fields; vmocs only contributes the image name
+     * and SSH connection parameters.
+     */
     private String generateVmocsBatchScript(VmocsConfig vmocs) {
         StringBuilder s = new StringBuilder();
 
+        // #SBATCH --vm-image= must appear in the script header so the vmocs SPANK plugin
+        // picks it up at job submission time.
         s.append("#!/bin/bash\n");
+        s.append("#SBATCH --vm-image=").append(vmocs.getVmImage()).append("\n");
         s.append("set -euo pipefail\n\n");
 
-        // Use SLURM_JOB_ID as the vmocs job identifier so vmocs list/stop can find it.
-        s.append("JOB_ID=\"${SLURM_JOB_ID:-$$}\"\n\n");
-
-        // Temp file to capture vmocs launch output (SSH connection string appears here).
-        s.append("VMOCS_OUT=$(mktemp /tmp/vmocs-XXXXXX)\n");
-        s.append("trap \"rm -f \\\"$VMOCS_OUT\\\"\" EXIT\n\n");
-
-        // Build the vmocs launch command.
-        s.append("# Launch VM in background; vmocs will print SSH connection info when ready\n");
-        String vmocsBin = shellQuote(vmocs.getVmocsBin());
-        s.append(vmocsBin);
-        if (vmocs.getConfigPath() != null && !vmocs.getConfigPath().trim().isEmpty()) {
-            s.append(" --config ").append(shellQuote(vmocs.getConfigPath()));
-        }
-        s.append(" launch ").append(shellQuote(vmocs.getTemplateName()));
-        if (vmocs.getCores() != null) {
-            s.append(" --cores ").append(vmocs.getCores());
-        }
-        if (vmocs.getMemoryMb() != null) {
-            s.append(" --memory ").append(vmocs.getMemoryMb());
-        }
-        // Expand comma-separated PCI devices into individual --pci flags.
-        if (vmocs.getPciDevices() != null && !vmocs.getPciDevices().trim().isEmpty()) {
-            for (String bdf : vmocs.getPciDevices().split(",")) {
-                String trimmed = bdf.trim();
-                if (!trimmed.isEmpty()) {
-                    s.append(" --pci ").append(shellQuote(trimmed));
-                }
-            }
-        }
-        s.append(" --job-id \"$JOB_ID\"");
-        s.append(" > \"$VMOCS_OUT\" 2>&1 &\n");
-        s.append("VMOCS_PID=$!\n\n");
-
-        // Wait for the SSH connection string to appear in the output.
+        int sshPort = vmocs.getSshPort();
+        String sshUser = vmocs.getSshUser();
         int timeoutSec = vmocs.getVmBootTimeoutSec();
-        s.append("# Wait for VM SSH readiness (timeout: ").append(timeoutSec).append("s)\n");
+
+        // Build a reusable SSH options string (shared by ssh and scp below).
+        s.append("SSH_OPTS=\"-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null");
+        s.append(" -o ConnectTimeout=10");
+        if (vmocs.getSshKeyPath() != null && !vmocs.getSshKeyPath().trim().isEmpty()) {
+            s.append(" -i ").append(shellQuote(vmocs.getSshKeyPath()));
+        }
+        s.append("\"\n\n");
+
+        // Poll until the VM's SSH port is reachable on localhost.  The vmocs SPANK plugin
+        // starts the VM and prints "VM ready ... ssh -i <key> -p <port> <user>@127.0.0.1"
+        // to the job output once ready; we detect readiness by checking the port directly.
+        s.append("# Wait for the vmocs SPANK plugin to boot the VM and open SSH port ")
+                .append(sshPort)
+                .append("\n");
         s.append("TIMEOUT=").append(timeoutSec).append("\n");
         s.append("ELAPSED=0\n");
-        s.append("while ! grep -q '^ssh ' \"$VMOCS_OUT\" 2>/dev/null; do\n");
-        s.append("  if ! kill -0 \"$VMOCS_PID\" 2>/dev/null; then\n");
-        s.append("    echo 'ERROR: vmocs exited unexpectedly. Output:' >&2\n");
-        s.append("    cat \"$VMOCS_OUT\" >&2\n");
-        s.append("    exit 1\n");
-        s.append("  fi\n");
+        s.append("until nc -z 127.0.0.1 ").append(sshPort).append(" 2>/dev/null; do\n");
         s.append("  if [ \"$ELAPSED\" -ge \"$TIMEOUT\" ]; then\n");
-        s.append("    echo \"ERROR: VM did not become SSH-ready within ${TIMEOUT}s\" >&2\n");
-        s.append("    kill \"$VMOCS_PID\" 2>/dev/null || true\n");
+        s.append("    echo \"[vmocs] ERROR: VM SSH port ")
+                .append(sshPort)
+                .append(" not reachable within ${TIMEOUT}s\" >&2\n");
         s.append("    exit 1\n");
         s.append("  fi\n");
-        s.append("  sleep 3\n");
-        s.append("  ELAPSED=$((ELAPSED + 3))\n");
-        s.append("done\n\n");
-
-        // Parse SSH connection details from the vmocs output line (e.g. "ssh ubuntu@localhost -p 60222").
-        s.append("# Parse SSH connection details from vmocs output\n");
-        s.append("SSH_LINE=$(grep '^ssh ' \"$VMOCS_OUT\" | head -1)\n");
-        s.append("SSH_PORT=$(echo \"$SSH_LINE\" | sed -n 's/.*-p \\([0-9]*\\).*/\\1/p')\n");
-        s.append("SSH_USER_HOST=$(echo \"$SSH_LINE\" | awk '{print $2}')\n");
-        s.append("SSH_USER=\"${SSH_USER_HOST%%@*}\"\n");
-        s.append("SSH_HOST=\"${SSH_USER_HOST##*@}\"\n\n");
-
-        s.append("SSH_OPTS=\"-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null\"\n\n");
+        s.append("  sleep 5\n");
+        s.append("  ELAPSED=$((ELAPSED + 5))\n");
+        s.append("done\n");
+        s.append("echo '[vmocs] VM SSH port ").append(sshPort).append(" is ready'\n\n");
 
         // Determine agent.jar location inside the VM.
         String preinstalledJar = vmocs.getAgentJarPath();
@@ -580,12 +573,14 @@ public class SlurmJobBuilder {
                 preinstalledJar != null && !preinstalledJar.trim().isEmpty();
 
         if (hasPreinstalledJar) {
-            s.append("# Use pre-installed agent.jar in VM\n");
+            s.append("# Use pre-installed agent.jar inside the VM image\n");
             s.append("AGENT_JAR_VM=").append(shellQuote(preinstalledJar)).append("\n\n");
         } else {
-            s.append("# Download agent.jar from Jenkins controller and copy into VM\n");
+            // Download agent.jar from the Jenkins controller onto the compute node,
+            // then scp it into the VM (vm port is forwarded to localhost).
+            s.append("# Download agent.jar from Jenkins controller and copy into VM via scp\n");
             s.append("HOST_AGENT_JAR=$(mktemp /tmp/agent-XXXXXX.jar)\n");
-            s.append("trap \"rm -f \\\"$HOST_AGENT_JAR\\\" \\\"$VMOCS_OUT\\\"\" EXIT\n");
+            s.append("trap \"rm -f \\\"$HOST_AGENT_JAR\\\"\" EXIT\n");
             s.append("if command -v curl >/dev/null 2>&1; then\n");
             s.append("  curl -fsSL -o \"$HOST_AGENT_JAR\" \"")
                     .append(escapeForDoubleQuotedShell(jenkinsUrl))
@@ -595,19 +590,23 @@ public class SlurmJobBuilder {
                     .append(escapeForDoubleQuotedShell(jenkinsUrl))
                     .append("jnlpJars/agent.jar\"\n");
             s.append("else\n");
-            s.append("  echo 'ERROR: curl or wget required to download agent.jar' >&2\n");
-            s.append("  kill \"$VMOCS_PID\" 2>/dev/null || true\n");
+            s.append("  echo '[vmocs] ERROR: curl or wget required to download agent.jar' >&2\n");
             s.append("  exit 1\n");
             s.append("fi\n");
-            s.append("scp $SSH_OPTS -P \"$SSH_PORT\" \"$HOST_AGENT_JAR\" ");
-            s.append("\"${SSH_USER}@${SSH_HOST}:~/agent.jar\"\n");
+            // scp uses the same SSH options; -P (uppercase) sets the port for scp.
+            s.append("scp $SSH_OPTS -P ").append(sshPort).append(" \"$HOST_AGENT_JAR\" ");
+            s.append(shellQuote(sshUser + "@127.0.0.1")).append(":~/agent.jar\n");
             s.append("AGENT_JAR_VM='~/agent.jar'\n\n");
         }
 
-        // Start Jenkins inbound agent inside the VM via SSH.
-        s.append("# Start Jenkins inbound agent inside the VM (blocks until build completes)\n");
-        s.append("ssh $SSH_OPTS -p \"$SSH_PORT\" \"${SSH_USER}@${SSH_HOST}\" \\\n");
-        s.append("  \"java -jar $AGENT_JAR_VM");
+        // Start the Jenkins inbound agent inside the VM via SSH.
+        // This call blocks for the duration of the build.  When it returns the batch script
+        // exits, the Slurm job terminates, and the SPANK plugin shuts the VM down.
+        s.append("# Start Jenkins inbound agent inside VM (blocks until build completes)\n");
+        s.append("echo '[vmocs] Starting Jenkins agent inside VM...'\n");
+        s.append("ssh $SSH_OPTS -p ").append(sshPort).append(" ");
+        s.append(shellQuote(sshUser + "@127.0.0.1")).append(" \\\n");
+        s.append("  \"java -jar \\\"$AGENT_JAR_VM\\\"");
         s.append(" -url ").append(shellEscapeDoubleQuoted(jenkinsUrl));
         if (agentSecret != null && !agentSecret.isEmpty()) {
             s.append(" -secret ").append(shellEscapeDoubleQuoted(agentSecret));
@@ -617,9 +616,7 @@ public class SlurmJobBuilder {
         s.append(" -workDir /tmp/").append(shellEscapeDoubleQuoted(agentName));
         s.append("\"\n\n");
 
-        // Wait for vmocs background process (will receive SIGTERM from Slurm for graceful shutdown).
-        s.append("# SSH session ended; wait for vmocs graceful VM shutdown\n");
-        s.append("wait \"$VMOCS_PID\" || true\n");
+        s.append("# Script exits here → Slurm job ends → SPANK plugin shuts down the VM\n");
 
         LOGGER.fine("Generated vmocs batch script for agent " + agentName + ":\n" + s);
         return s.toString();

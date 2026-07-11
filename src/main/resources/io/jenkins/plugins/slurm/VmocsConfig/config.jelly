@@ -2,33 +2,23 @@
 <j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout"
          xmlns:t="/lib/hudson" xmlns:f="/lib/form">
 
-  <f:entry field="templateName" title="VM Template Name"
-           description="Name of the vmocs template to use (defined in templates.yaml on the compute nodes, e.g. 'base-ubuntu'). Required.">
+  <f:entry field="vmImage" title="VM Image"
+           description="VM image name passed as '--vm-image=&lt;name&gt;' to the vmocs Slurm SPANK plugin (e.g. 'windows11-gfx1101', 'base-ubuntu'). Must match a template known to the vmocs installation on the target partition. Required.">
     <f:textbox/>
   </f:entry>
 
-  <f:entry field="vmocsBin" title="vmocs Binary Path"
-           description="Path to the vmocs binary on the compute nodes. Default: 'vmocs' (resolved via PATH).">
-    <f:textbox default="vmocs"/>
+  <f:entry field="sshUser" title="SSH User"
+           description="SSH username inside the VM. Defaults to 'vagrant' (the standard Vagrant convention used by vmocs-managed images).">
+    <f:textbox default="vagrant"/>
   </f:entry>
 
-  <f:entry field="configPath" title="vmocs Config Path"
-           description="Path to vmocs.yaml on the compute nodes. Leave empty to use vmocs default resolution order (VMOCS_CONF env var, then confs/vmocs.yaml in the working directory, then /etc/vmocs/vmocs.yaml).">
-    <f:textbox/>
+  <f:entry field="sshPort" title="SSH Port"
+           description="Host port on the compute node forwarded to the VM's SSH service. The vmocs SPANK plugin allocates this port when it starts the VM. Default: 60222.">
+    <f:number default="60222" min="1" max="65535"/>
   </f:entry>
 
-  <f:entry field="cores" title="vCPU Count"
-           description="Number of virtual CPUs to allocate to the VM. Leave empty to use the template default (vmocs default: 2).">
-    <f:number min="1"/>
-  </f:entry>
-
-  <f:entry field="memoryMb" title="VM Memory (MB)"
-           description="RAM in megabytes to allocate to the VM. Leave empty to use the template default (vmocs default: 2048 MB).">
-    <f:number min="256"/>
-  </f:entry>
-
-  <f:entry field="pciDevices" title="PCI Passthrough Devices"
-           description="Comma-separated PCI bus-device-function (BDF) addresses for device passthrough into the VM (e.g. '0000:03:00.0' for a GPU). Each address becomes a separate --pci flag. Leave empty for no passthrough.">
+  <f:entry field="sshKeyPath" title="SSH Private Key Path"
+           description="Absolute path to the SSH private key on the compute node used to authenticate into the VM (e.g. '/opt/vmocs/keys/vagrant_insecure_key'). Leave empty to use the default SSH key resolution (agent or ~/.ssh/id_*).">
     <f:textbox/>
   </f:entry>
 
@@ -38,7 +28,7 @@
   </f:entry>
 
   <f:entry field="vmBootTimeoutSec" title="VM Boot Timeout (seconds)"
-           description="Maximum seconds to wait for the VM to become SSH-ready after launch. Default: 300. Increase for slow-booting images or images without snapshots.">
+           description="Maximum seconds to wait for the VM's SSH port to become reachable after the vmocs SPANK plugin starts the VM. Default: 300. Increase for images that boot slowly or lack a vmocs snapshot.">
     <f:number default="300" min="30"/>
   </f:entry>
 
