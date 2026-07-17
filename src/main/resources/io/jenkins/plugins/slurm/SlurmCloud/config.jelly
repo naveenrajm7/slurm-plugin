@@ -44,7 +44,9 @@
     
   </f:section>
 
-  <f:section title="Default Agent Launch">
+    <f:section title="Default Agent Launch">
     <f:optionalProperty field="agent" title="Native agent defaults (without Pyxis)"/>
   </f:section>
+
+  <f:optionalProperty field="garbageCollection" title="Enable orphaned Slurm job garbage collection"/>
 </j:jelly>

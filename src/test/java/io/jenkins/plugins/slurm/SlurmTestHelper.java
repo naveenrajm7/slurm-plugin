@@ -38,6 +38,17 @@ final class SlurmTestHelper {
     }
 
     static SlurmAgent createAgent(String agentName, String cloudName, String templateId) throws Exception {
+        return createAgent(agentName, cloudName, templateId, new SlurmLauncher());
+    }
+
+    /** Creates an agent that stays in Jenkins without submitting a Slurm job (for capacity tests). */
+    static SlurmAgent createStaticAgent(String agentName, String cloudName, String templateId) throws Exception {
+        return createAgent(agentName, cloudName, templateId, new NoLaunchLauncher());
+    }
+
+    static SlurmAgent createAgent(
+            String agentName, String cloudName, String templateId, hudson.slaves.ComputerLauncher launcher)
+            throws Exception {
         return new SlurmAgent(
                 agentName,
                 "test agent",
@@ -45,7 +56,7 @@ final class SlurmTestHelper {
                 1,
                 Node.Mode.NORMAL,
                 "linux",
-                new SlurmLauncher(),
+                launcher,
                 RetentionStrategy.INSTANCE,
                 Collections.emptyList(),
                 cloudName,

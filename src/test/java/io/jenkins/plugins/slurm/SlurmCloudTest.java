@@ -205,9 +205,16 @@ public class SlurmCloudTest {
         void retentionStrategyType_runOnce_isOnceRetentionStrategy() {
             SlurmJobTemplate template = templateWith(true, 1);
             hudson.slaves.RetentionStrategy<?> strategy = template.isRunOnce()
-                    ? new OnceRetentionStrategy(template.getIdleMinutes())
+                    ? new OnceRetentionStrategy(Math.max(SlurmCloud.MIN_ONCE_RETENTION_IDLE_MINUTES, template.getIdleMinutes()))
                     : new CloudRetentionStrategy(template.getIdleMinutes());
             assertInstanceOf(OnceRetentionStrategy.class, strategy);
+        }
+
+        @Test
+        void onceRetention_idleMinutesZero_usesMinimumGrace() {
+            SlurmJobTemplate template = templateWith(true, 0);
+            int retentionTimeout = Math.max(SlurmCloud.MIN_ONCE_RETENTION_IDLE_MINUTES, template.getIdleMinutes());
+            assertEquals(SlurmCloud.MIN_ONCE_RETENTION_IDLE_MINUTES, retentionTimeout);
         }
 
         @Test

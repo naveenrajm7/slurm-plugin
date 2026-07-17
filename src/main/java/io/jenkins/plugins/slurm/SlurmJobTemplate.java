@@ -927,6 +927,26 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
 
     /**
+     * Space-separated label string for {@link SlurmAgent} assignment.
+     * Uses explicit atom splitting so compound template labels are never collapsed.
+     */
+    @NonNull
+    public String getAgentLabelString() {
+        Set<LabelAtom> atoms = getLabelAtoms();
+        if (atoms.isEmpty()) {
+            return label != null ? label : "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (LabelAtom atom : atoms) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append(atom.getName());
+        }
+        return sb.toString();
+    }
+
+    /**
      * Checks if this template can satisfy the given label requirement (expression or atom).
      */
     public boolean canTake(@CheckForNull Label required) {

@@ -1,0 +1,7 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:f="/lib/form">
+  <f:entry title="Timeout (seconds)" field="timeoutSeconds"
+           description="Cancel plugin Slurm jobs with no live Jenkins agent heartbeat for longer than this interval. Minimum 300 seconds.">
+    <f:number min="300" default="600"/>
+  </f:entry>
+</j:jelly>

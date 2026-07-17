@@ -1,6 +1,7 @@
 package io.jenkins.plugins.slurm.client;
 
 import edu.umd.cs.findbugs.annotations.CheckForNull;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import io.jenkins.plugins.slurm.client.api.SlurmApi;
 import io.jenkins.plugins.slurm.client.model.OpenapiPingArrayResp;
 import io.jenkins.plugins.slurm.client.model.ControllerPing;
@@ -224,6 +225,18 @@ public class SlurmClient {
     }
     
     /**
+     * List active Slurm jobs visible to the REST API user.
+     */
+    @NonNull
+    public java.util.List<JobInfo> listJobs() throws ApiException {
+        io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response = api.slurmGetJobs(null, null);
+        if (response == null || response.getJobs() == null) {
+            return java.util.List.of();
+        }
+        return response.getJobs();
+    }
+
+    /**
      * Get the state of a Slurm job, checking both state and exit code
      * @param jobId The Slurm job ID to check
      * @return The job state as a string (PENDING, RUNNING, COMPLETED, FAILED, etc.), or null if job not found
@@ -252,8 +265,8 @@ public class SlurmClient {
 
             if (response != null && response.getJobs() != null && !response.getJobs().isEmpty()) {
                 io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = response.getJobs().get(0);
-                if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
-                    String state = jobInfo.getJobState().get(0).toString();
+                String state = resolveJobState(jobInfo);
+                if (state != null) {
                     Integer exitCode = getExitCode(jobInfo);
 
                     LOGGER.info("Job " + jobId + " state: " + state +
@@ -327,6 +340,19 @@ public class SlurmClient {
                 .map(JobResNode::getName)
                 .filter(name -> name != null && !name.isBlank())
                 .collect(Collectors.joining(","));
+    }
+
+    /**
+     * Resolves Slurm job state from REST job info. When slurmrestd returns a job record
+     * without {@code job_state} populated yet, treat as PENDING rather than missing.
+     */
+    @CheckForNull
+    public static String resolveJobState(@NonNull io.jenkins.plugins.slurm.client.model.JobInfo jobInfo) {
+        if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
+            return jobInfo.getJobState().get(0).toString();
+        }
+        LOGGER.fine("Job record present but job_state empty - treating as PENDING");
+        return "PENDING";
     }
     
     /**

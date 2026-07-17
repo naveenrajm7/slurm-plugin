@@ -3,6 +3,7 @@ package io.jenkins.plugins.slurm;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import hudson.Extension;
 import hudson.model.Descriptor;
+import hudson.model.Queue;
 import hudson.model.TaskListener;
 import hudson.slaves.ComputerLauncher;
 import hudson.slaves.JNLPLauncher;
@@ -41,6 +42,13 @@ public class SlurmLauncher extends JNLPLauncher {
     // How often to log progress (30 seconds)
     private static final long PROGRESS_LOG_INTERVAL_MS = 30000;
 
+    /**
+     * Grace period after job submit before treating a missing REST job status as terminal.
+     * slurmrestd may return 404 or an empty {@code job_state} briefly after POST /job/submit
+     * even while the job is already running in Slurm.
+     */
+    private static final long JOB_STATUS_VISIBILITY_GRACE_MS = 60_000;
+
     private volatile boolean launched = false;
 
     /**
@@ -51,7 +59,12 @@ public class SlurmLauncher extends JNLPLauncher {
     private transient Throwable problem;
 
     @Override
-    public void launch(SlaveComputer computer, TaskListener listener) {
+    public boolean isLaunchSupported() {
+        return !launched;
+    }
+
+    @Override
+    public synchronized void launch(SlaveComputer computer, TaskListener listener) {
         LOGGER.info("=== Slurm Launcher: launch() called for computer: " + computer.getName() + " ===");
 
         if (!(computer instanceof SlurmComputer)) {
@@ -85,25 +98,50 @@ public class SlurmLauncher extends JNLPLauncher {
         // Kubernetes pattern: if already launched, just activate and return
         if (launched) {
             LOGGER.info("Agent already launched, activating: " + agent.getNodeName());
-            computer.setAcceptingTasks(true);
+            markAgentReady(computer);
+            return;
+        }
+        if (computer.isOnline() && agent.getSlurmJobId() != null) {
+            LOGGER.info("Agent already connected for: " + agent.getNodeName());
+            markAgentReady(computer);
+            launched = true;
+            return;
+        }
+
+        SlurmCloud cloud = agent.getSlurmCloud();
+        SlurmJobTemplate template = cloud.getTemplateById(agent.getTemplateId());
+        if (template == null) {
+            throw new IllegalStateException("Template not found with ID: " + agent.getTemplateId());
+        }
+
+        // OnceRetentionStrategy may call connect() again while the Slurm job is already running.
+        // Never submit a second job for the same agent node.
+        String existingJobId = agent.getSlurmJobId();
+        if (existingJobId != null) {
+            LOGGER.info("Slurm job already submitted for " + agent.getNodeName() + " (job " + existingJobId
+                    + "); waiting for agent connection only");
+            listener.getLogger().println("Slurm job already submitted with ID: " + existingJobId);
+            slurmComputer.setLaunching(true);
+            try {
+                long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
+                waitForAgentConnection(
+                        slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs, listener);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Launch interrupted", e);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to wait for Slurm agent connection", e);
+            } finally {
+                slurmComputer.setLaunching(false);
+            }
             return;
         }
 
         LOGGER.info("Launching Slurm agent: " + agent.getNodeName());
         listener.getLogger().println("Launching Slurm agent: " + agent.getNodeName());
 
-        SlurmCloud cloud = null; // Declare in method scope for catch blocks
         try {
-            // Get the cloud
-            cloud = agent.getSlurmCloud();
             LOGGER.info("Got cloud: " + cloud.name);
-
-            // Get the template by ID
-            SlurmJobTemplate template = cloud.getTemplateById(agent.getTemplateId());
-            if (template == null) {
-                LOGGER.severe("Template not found with ID: " + agent.getTemplateId());
-                throw new IllegalStateException("Template not found with ID: " + agent.getTemplateId());
-            }
 
             LOGGER.info("Using template: " + template.getName());
             listener.getLogger().println("Using template: " + template.getName());
@@ -124,16 +162,24 @@ public class SlurmLauncher extends JNLPLauncher {
                 JobDescMsg jobDesc = builder.build();
                 LOGGER.info("Job description built successfully");
 
-                // Submit the job
-                LOGGER.info("Submitting job to Slurm...");
-                listener.getLogger().println("Submitting job to Slurm...");
-                String jobId = cloud.submitJob(jobDesc, console);
-
-                // Store the job ID in the agent
-                agent.setSlurmJobId(jobId);
-                SlurmCloudStats.attachLaunchingOk(agent, "Submitted Slurm job " + jobId);
-                LOGGER.info("Slurm job submitted with ID: " + jobId);
-                listener.getLogger().println("Slurm job submitted with ID: " + jobId);
+                // Submit the job once — OnceRetentionStrategy may call launch() concurrently
+                String jobId;
+                synchronized (this) {
+                    jobId = agent.getSlurmJobId();
+                    if (jobId == null) {
+                        LOGGER.info("Submitting job to Slurm...");
+                        listener.getLogger().println("Submitting job to Slurm...");
+                        jobId = cloud.submitJob(jobDesc, console);
+                        agent.setSlurmJobId(jobId);
+                        recordSubmittedJob(agent, jobId);
+                        SlurmCloudStats.attachLaunchingOk(agent, "Submitted Slurm job " + jobId);
+                        LOGGER.info("Slurm job submitted with ID: " + jobId);
+                        listener.getLogger().println("Slurm job submitted with ID: " + jobId);
+                    } else {
+                        LOGGER.info("Slurm job already submitted for " + agent.getNodeName() + " (job " + jobId + ")");
+                        listener.getLogger().println("Slurm job already submitted with ID: " + jobId);
+                    }
+                }
 
                 // Wait for the agent to connect with active status checking
                 long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
@@ -398,6 +444,23 @@ public class SlurmLauncher extends JNLPLauncher {
         return (url != null && !url.isEmpty()) ? url : "<jenkins-url>";
     }
 
+    /**
+     * Marks the agent schedulable and nudges the queue so pipeline {@code node('label')} blocks
+     * assign work promptly after JNLP connect (before OnceRetentionStrategy idle teardown).
+     */
+    private void markAgentReady(SlaveComputer computer) {
+        computer.setAcceptingTasks(true);
+        SlurmAgent agent = computer instanceof SlurmComputer slurmComputer ? slurmComputer.getNode() : null;
+        if (agent != null && agent.getSlurmJobId() != null) {
+            SlurmJobHeartbeats.refresh(agent.getCloudName(), agent.getSlurmJobId(), agent.getNodeName());
+        }
+        Queue.getInstance().maintain();
+    }
+
+    private void recordSubmittedJob(SlurmAgent agent, String jobId) {
+        SlurmJobHeartbeats.refresh(agent.getCloudName(), jobId, agent.getNodeName());
+    }
+
     private TaskListener consoleListener(SlurmAgent agent, TaskListener launchListener) {
         TaskListener runListener = agent.getRunListener();
         return runListener == TaskListener.NULL ? launchListener : runListener;
@@ -416,6 +479,13 @@ public class SlurmLauncher extends JNLPLauncher {
             console.getLogger().println(new SlurmJobStatus(jobId, "RUNNING", null, nodes).formatConnectionMessage());
             agent.refreshNodeDescription();
         }
+    }
+
+    private static boolean shouldTreatJobAsMissing(SlurmComputer computer, long submitTimeMs) {
+        if (computer.isOnline()) {
+            return false;
+        }
+        return System.currentTimeMillis() - submitTimeMs > JOB_STATUS_VISIBILITY_GRACE_MS;
     }
 
     private void handleMissingSlurmJob(
@@ -541,86 +611,106 @@ public class SlurmLauncher extends JNLPLauncher {
                     SlurmJobStatus status = client.getJobStatus(jobId);
 
                     if (status == null) {
-                        handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
-                    }
+                        if (shouldTreatJobAsMissing(computer, startTime)) {
+                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                        } else {
+                            long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                            console.getLogger()
+                                    .println("[Slurm] Job status not yet visible from slurmrestd ("
+                                            + elapsed + "s since submit), waiting...");
+                            LOGGER.fine("Job " + jobId + " status not visible yet; within grace period");
+                            lastStatusCheck = System.currentTimeMillis();
+                            // fall through to online check below
+                        }
+                    } else {
+                        lastKnownStatus = status;
+                        computer.updateProvisioningStatus(status);
+                        SlurmCloudStats.attachJobStatus(agent, status, startTime, attachedJobStatusKeys);
+                        String statusLine = status.formatForDisplay();
+                        if (!statusLine.equals(lastLoggedStatus)) {
+                            console.getLogger().println(status.formatForConsole());
+                            lastLoggedStatus = statusLine;
+                        }
 
-                    lastKnownStatus = status;
-                    computer.updateProvisioningStatus(status);
-                    SlurmCloudStats.attachJobStatus(agent, status, startTime, attachedJobStatusKeys);
-                    String statusLine = status.formatForDisplay();
-                    if (!statusLine.equals(lastLoggedStatus)) {
-                        console.getLogger().println(status.formatForConsole());
-                        lastLoggedStatus = statusLine;
-                    }
+                        String jobState = status.getState();
+                        if (jobState != null) {
+                            if (jobState.equals("RUNNING")) {
+                                if (!jobRunning) {
+                                    jobRunning = true;
+                                    console.getLogger().println(status.formatForConsole());
+                                    LOGGER.info("Slurm job " + jobId + " reached RUNNING state");
+                                }
+                            }
 
-                    String jobState = status.getState();
-                    if (jobState != null) {
-                        if (jobState.equals("RUNNING")) {
-                            if (!jobRunning) {
-                                jobRunning = true;
-                                console.getLogger().println(status.formatForConsole());
-                                LOGGER.info("Slurm job " + jobId + " reached RUNNING state");
+                            if ("CANCELLED".equals(jobState)) {
+                                String errorMsg = "Slurm job was cancelled (job ID: " + jobId + ")";
+                                failProvisioning(
+                                        computer,
+                                        agent,
+                                        cloud,
+                                        template,
+                                        jobId,
+                                        jobState,
+                                        errorMsg,
+                                        listener,
+                                        false,
+                                        () -> logProvisioningFailure(console, jobId, jobState, template));
+                            }
+
+                            if (SlurmClient.isFailedState(jobState)) {
+                                String errorMsg = "Slurm job " + jobId + " failed with state: " + jobState + ". "
+                                        + "Agent will not connect. Check Slurm logs: slurm-" + jobId + ".out";
+                                LOGGER.severe("FAIL-FAST: Job " + jobId + " entered FAILED state: " + jobState);
+                                failProvisioning(
+                                        computer,
+                                        agent,
+                                        cloud,
+                                        template,
+                                        jobId,
+                                        jobState,
+                                        errorMsg,
+                                        listener,
+                                        true,
+                                        () -> logProvisioningFailure(console, jobId, jobState, template));
+                            }
+
+                            if (jobState.equals("COMPLETED") && !computer.isOnline()) {
+                                String errorMsg = "Slurm job " + jobId + " completed but agent failed to connect. "
+                                        + "This usually means the startup script failed. Check Slurm logs: slurm-"
+                                        + jobId + ".out";
+                                LOGGER.severe("FAIL-FAST: Job " + jobId + " COMPLETED but agent never connected");
+                                failProvisioning(
+                                        computer,
+                                        agent,
+                                        cloud,
+                                        template,
+                                        jobId,
+                                        jobState,
+                                        errorMsg,
+                                        listener,
+                                        false,
+                                        () -> logAgentConnectionFailure(console, jobId, template));
                             }
                         }
 
-                        if ("CANCELLED".equals(jobState)) {
-                            String errorMsg = "Slurm job was cancelled (job ID: " + jobId + ")";
-                            failProvisioning(
-                                    computer,
-                                    agent,
-                                    cloud,
-                                    template,
-                                    jobId,
-                                    jobState,
-                                    errorMsg,
-                                    listener,
-                                    false,
-                                    () -> logProvisioningFailure(console, jobId, jobState, template));
-                        }
-
-                        if (SlurmClient.isFailedState(jobState)) {
-                            String errorMsg = "Slurm job " + jobId + " failed with state: " + jobState + ". "
-                                    + "Agent will not connect. Check Slurm logs: slurm-" + jobId + ".out";
-                            LOGGER.severe("FAIL-FAST: Job " + jobId + " entered FAILED state: " + jobState);
-                            failProvisioning(
-                                    computer,
-                                    agent,
-                                    cloud,
-                                    template,
-                                    jobId,
-                                    jobState,
-                                    errorMsg,
-                                    listener,
-                                    true,
-                                    () -> logProvisioningFailure(console, jobId, jobState, template));
-                        }
-
-                        if (jobState.equals("COMPLETED") && !computer.isOnline()) {
-                            String errorMsg = "Slurm job " + jobId + " completed but agent failed to connect. "
-                                    + "This usually means the startup script failed. Check Slurm logs: slurm-" + jobId
-                                    + ".out";
-                            LOGGER.severe("FAIL-FAST: Job " + jobId + " COMPLETED but agent never connected");
-                            failProvisioning(
-                                    computer,
-                                    agent,
-                                    cloud,
-                                    template,
-                                    jobId,
-                                    jobState,
-                                    errorMsg,
-                                    listener,
-                                    false,
-                                    () -> logAgentConnectionFailure(console, jobId, template));
-                        }
+                        lastStatusCheck = System.currentTimeMillis();
                     }
-
-                    lastStatusCheck = System.currentTimeMillis();
 
                 } catch (ApiException e) {
                     if (e.getCode() == 404) {
-                        handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                        if (shouldTreatJobAsMissing(computer, startTime)) {
+                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                        } else {
+                            long elapsed = (System.currentTimeMillis() - startTime) / 1000;
+                            console.getLogger()
+                                    .println("[Slurm] Job status not yet visible from slurmrestd (HTTP 404, "
+                                            + elapsed + "s since submit), waiting...");
+                            LOGGER.fine("Job " + jobId + " returned 404; within grace period");
+                            lastStatusCheck = System.currentTimeMillis();
+                        }
+                    } else {
+                        LOGGER.log(Level.FINE, "Failed to check job status for " + jobId, e);
                     }
-                    LOGGER.log(Level.FINE, "Failed to check job status for " + jobId, e);
                 } catch (IOException ioe) {
                     throw ioe;
                 }
@@ -635,26 +725,30 @@ public class SlurmLauncher extends JNLPLauncher {
                 lastProgressLog = System.currentTimeMillis();
             }
 
-            // Check if agent is online
-            // Kubernetes pattern: Both conditions must be met:
-            // 1. Job is RUNNING (like pod ready)
-            // 2. Computer is online (JNLP channel established)
-            if (jobRunning && computer.isOnline()) {
+            // Agent online means the batch script started remoting; accept even if slurmrestd
+            // status polling is delayed or returns empty job_state.
+            if (computer.isOnline()) {
+                if (!jobRunning) {
+                    LOGGER.info("Agent " + agent.getNodeName() + " connected before slurmrestd reported RUNNING");
+                    jobRunning = true;
+                }
                 long elapsed = (System.currentTimeMillis() - startTime) / 1000;
                 finalizeAgentPlacement(agent, lastKnownStatus, console);
                 console.getLogger()
                         .println("Agent connected successfully after " + elapsed
-                                + " seconds (job RUNNING + JNLP connected)");
+                                + " seconds (JNLP connected"
+                                + (lastKnownStatus != null && "RUNNING".equals(lastKnownStatus.getState())
+                                        ? ", job RUNNING" : "")
+                                + ")");
                 LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + elapsed
-                        + " seconds (job RUNNING + JNLP connected)");
+                        + " seconds");
                 SlurmCloudStats.attachLaunchingOk(
                         agent, "Agent connected after " + elapsed + "s (Slurm job " + jobId + ")");
 
                 computer.clearProvisioningStatus();
-                computer.setAcceptingTasks(true);
+                markAgentReady(computer);
                 launched = true;
 
-                // Kubernetes pattern: persist the launched state
                 try {
                     agent.save();
                 } catch (IOException e) {
@@ -673,9 +767,6 @@ public class SlurmLauncher extends JNLPLauncher {
                                     "Job is RUNNING, waiting for JNLP connection... (" + elapsed + " seconds elapsed)");
                     lastProgressLog = System.currentTimeMillis();
                 }
-            } else if (!jobRunning && computer.isOnline()) {
-                // This shouldn't normally happen but log if it does
-                LOGGER.warning("Agent connected but job not in RUNNING state yet");
             }
 
             // Sleep before next check
