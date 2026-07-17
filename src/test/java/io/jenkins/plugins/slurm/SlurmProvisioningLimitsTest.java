@@ -11,19 +11,32 @@ import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 /**
- * Verifies per-cloud {@code maxAgents} and per-template {@code instanceCap} limits during provisioning.
- * Slurm enforces limits inline in {@link SlurmCloud} rather than via a separate tracker class.
+ * Verifies per-cloud {@code maxAgents} and per-template {@code instanceCap} limits during provisioning
+ * via {@link SlurmProvisioningLimits}.
  */
 @WithJenkins
 class SlurmProvisioningLimitsTest {
+
+    @Test
+    void register_respectsCloudAndTemplateCaps(JenkinsRule j) {
+        SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 1);
+        SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "limits-cloud", 1, template);
+        SlurmProvisioningLimits limits = SlurmProvisioningLimits.get();
+
+        assertTrue(limits.register(cloud, template, 1));
+        assertFalse(limits.register(cloud, template, 1));
+
+        limits.unregister(cloud, template, 1);
+        assertTrue(limits.register(cloud, template, 1));
+    }
 
     @Test
     void canProvision_falseWhenCloudAtCapacity(JenkinsRule j) throws Exception {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 5);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-a", 2, template);
 
-        j.jenkins.addNode(SlurmTestHelper.createAgent("agent-1", cloud.name, template.getId()));
-        j.jenkins.addNode(SlurmTestHelper.createAgent("agent-2", cloud.name, template.getId()));
+        j.jenkins.addNode(SlurmTestHelper.createStaticAgent("agent-1", cloud.name, template.getId()));
+        j.jenkins.addNode(SlurmTestHelper.createStaticAgent("agent-2", cloud.name, template.getId()));
 
         Cloud.CloudState state = new Cloud.CloudState(Label.get("linux"), 0);
         assertFalse(cloud.canProvision(state));
@@ -50,8 +63,8 @@ class SlurmProvisioningLimitsTest {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 5);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "cluster-d", 5, template);
 
-        j.jenkins.addNode(SlurmTestHelper.createAgent("existing-1", cloud.name, template.getId()));
-        j.jenkins.addNode(SlurmTestHelper.createAgent("existing-2", cloud.name, template.getId()));
+        j.jenkins.addNode(SlurmTestHelper.createStaticAgent("existing-1", cloud.name, template.getId()));
+        j.jenkins.addNode(SlurmTestHelper.createStaticAgent("existing-2", cloud.name, template.getId()));
 
         assertEquals(3, SlurmTestHelper.provisionAndAwait(cloud, j.jenkins, "linux", 10).size());
     }
