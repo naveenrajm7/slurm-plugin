@@ -22,7 +22,8 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - **Partial fix:** `JobUtils.findRunListenerForLabel()` + queue scan wired in `SlurmCloud.createPlannedNode()` (same PR as job status visibility). Error messages during provisioning should now reach the build console for `node('label')`; verify edge cases remain.
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
-  - [ ] **[MED]** Consider periodic cleanup for orphaned Slurm jobs — K8s has `GarbageCollection` class that cleans orphaned pods
+  - [x] **[MED]** Periodic cleanup for orphaned Slurm jobs — `SlurmGarbageCollection` (opt-in per cloud; cancels stale `{cloudName}-*` jobs not tracked by live agents)
+  - [ ] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
 - [ ] **Slurm compute node visibility** (discovered during CK workload validation — agent page shows Jenkins synthetic name, not where the job landed)
   - [ ] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
