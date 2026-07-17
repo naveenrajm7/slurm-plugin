@@ -41,4 +41,12 @@ public class SlurmJobTemplateLabelTest {
 
         assertTrue(t.canTake("(rocmtest || miopen) && gfx942"));
     }
+
+    @Test
+    void getAgentLabelString_splitsCompoundLabel(JenkinsRule j) {
+        SlurmJobTemplate t = new SlurmJobTemplate();
+        t.setLabel("legato-compile ubuntu24-therrock");
+        assertEquals("legato-compile ubuntu24-therrock", t.getAgentLabelString());
+        assertEquals(2, t.getLabelAtoms().size());
+    }
 }

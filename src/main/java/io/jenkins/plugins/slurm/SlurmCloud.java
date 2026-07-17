@@ -54,6 +54,13 @@ import org.jenkinsci.plugins.cloudstats.TrackedPlannedNode;
 public class SlurmCloud extends AbstractCloudImpl {
     
     private static final Logger LOGGER = Logger.getLogger(SlurmCloud.class.getName());
+
+    /**
+     * Minimum idle window for {@code OnceRetentionStrategy} before the first build is assigned.
+     * Prevents tearing down an agent (and orphaning its Slurm job) while {@code node('label')}
+     * is still waiting to schedule.
+     */
+    static final int MIN_ONCE_RETENTION_IDLE_MINUTES = 5;
     
     private final String slurmRestApiUrl;
     private final String credentialsId;
@@ -64,6 +71,7 @@ public class SlurmCloud extends AbstractCloudImpl {
     private List<SlurmJobTemplate> jobTemplates;
     private boolean usageRestricted = false;
     private AgentLaunchConfig agent;
+    private SlurmGarbageCollection garbageCollection;
     
     @DataBoundConstructor
     public SlurmCloud(String name,
@@ -144,6 +152,16 @@ public class SlurmCloud extends AbstractCloudImpl {
     public void setAgent(AgentLaunchConfig agent) {
         this.agent = agent;
     }
+
+    @CheckForNull
+    public SlurmGarbageCollection getGarbageCollection() {
+        return garbageCollection;
+    }
+
+    @DataBoundSetter
+    public void setGarbageCollection(@CheckForNull SlurmGarbageCollection garbageCollection) {
+        this.garbageCollection = garbageCollection;
+    }
     
     /**
      * Finds a suitable job template for the given label.
@@ -216,6 +234,19 @@ public class SlurmCloud extends AbstractCloudImpl {
     @Override
     public Collection<PlannedNode> provision(@NonNull Cloud.CloudState state,
                                            int excessWorkload) {
+        SlurmLimitRegistrationResults limitRegistrationResults = new SlurmLimitRegistrationResults(this);
+        try {
+            return doProvision(state, excessWorkload, limitRegistrationResults);
+        } catch (RuntimeException e) {
+            limitRegistrationResults.unregisterAll();
+            throw e;
+        }
+    }
+
+    private Collection<PlannedNode> doProvision(
+            @NonNull Cloud.CloudState state,
+            int excessWorkload,
+            @NonNull SlurmLimitRegistrationResults limitRegistrationResults) {
         // Extract label from state
         Label label = state.getLabel();
         
@@ -225,12 +256,14 @@ public class SlurmCloud extends AbstractCloudImpl {
             new Object[]{label, allInProvisioning});
         
         // Calculate how many we actually need to provision
-        // Subtract agents already being provisioned from excess workload
-        int toBeProvisioned = Math.max(0, excessWorkload - allInProvisioning.size());
+        // Subtract agents already being provisioned and idle executors already online for this label
+        int availableExecutors = countAvailableExecutorsForLabel(label);
+        int toBeProvisioned = Math.max(0, excessWorkload - allInProvisioning.size() - availableExecutors);
         
         LOGGER.info("Slurm Cloud: Provision request for label=" + label + 
                    ", excessWorkload=" + excessWorkload + 
                    ", inProvisioning=" + allInProvisioning.size() +
+                   ", availableExecutors=" + availableExecutors +
                    ", toBeProvisioned=" + toBeProvisioned);
         
         if (toBeProvisioned <= 0) {
@@ -252,44 +285,20 @@ public class SlurmCloud extends AbstractCloudImpl {
         for (SlurmJobTemplate jobTemplate : templates) {
             LOGGER.log(Level.FINE, "Template for label \"{0}\": {1}", 
                 new Object[]{label, jobTemplate.getName()});
-            
-            // Check cloud-wide capacity
-            int currentAgents = getCurrentAgentCount();
-            if (currentAgents >= maxAgents) {
-                LOGGER.info("Slurm Cloud: Cannot provision - at maximum agent limit (" + maxAgents + ")");
-                break;  // Can't provision from any template
-            }
-            
-            // Check template-specific capacity
-            // Count: online agents + in-provisioning agents for this template
-            int templateOnlineCount = getCurrentTemplateAgentCount(jobTemplate);
-            int templateInProvisioningCount = countInProvisioningForTemplate(jobTemplate, allInProvisioning);
-            int templateCurrentTotal = templateOnlineCount + templateInProvisioningCount;
-            int templateCapacity = jobTemplate.getInstanceCapStr();
-            
-            if (templateCurrentTotal >= templateCapacity) {
-                LOGGER.fine("Slurm Cloud: Template '" + jobTemplate.getName() + 
-                           "' at capacity (" + templateCurrentTotal + "/" + templateCapacity + ")");
-                continue;  // Try next template
-            }
-            
-            // Calculate how many we can provision with this template
-            int templateAvailable = templateCapacity - templateCurrentTotal;
-            int cloudAvailable = maxAgents - currentAgents;
-            int maxFromThisTemplate = Math.min(toBeProvisioned, 
-                                              Math.min(templateAvailable, cloudAvailable));
-            
-            // Provision agents from this template
-            for (int i = 0; i < maxFromThisTemplate; i++) {
+
+            while (toBeProvisioned > 0) {
+                SlurmLimitRegistrationResults.Registration registration =
+                        limitRegistrationResults.register(jobTemplate, 1);
+                if (registration == null) {
+                    break;
+                }
                 try {
-                    PlannedNode plannedNode = createPlannedNode(jobTemplate, label);
-                    if (plannedNode != null) {
-                        plannedNodes.add(plannedNode);
-                        toBeProvisioned--;
-                    }
-                } catch (Exception e) {
-                    LOGGER.warning("Failed to create planned node for template " + 
-                        jobTemplate.getName() + ": " + e.getMessage());
+                    PlannedNode plannedNode = createPlannedNode(jobTemplate, label, registration);
+                    plannedNodes.add(plannedNode);
+                    toBeProvisioned--;
+                } catch (RuntimeException e) {
+                    registration.release(this);
+                    throw e;
                 }
             }
             
@@ -301,6 +310,32 @@ public class SlurmCloud extends AbstractCloudImpl {
 
         LOGGER.info("Slurm Cloud: Planned " + plannedNodes.size() + " agents");
         return plannedNodes;
+    }
+
+    /**
+     * Counts idle executors on online Slurm agents that already satisfy {@code label}.
+     * Used as a safety net when Jenkins still reports excess workload while an agent is
+     * connected but not yet picked up by the queue.
+     */
+    private int countAvailableExecutorsForLabel(@CheckForNull Label label) {
+        if (label == null) {
+            return 0;
+        }
+        int available = 0;
+        for (Node node : label.getNodes()) {
+            if (!(node instanceof SlurmAgent slurmAgent)) {
+                continue;
+            }
+            if (!name.equals(slurmAgent.getCloudName())) {
+                continue;
+            }
+            Computer computer = node.toComputer();
+            if (computer == null || !computer.isOnline() || computer.isOffline() || !node.isAcceptingTasks()) {
+                continue;
+            }
+            available += computer.countIdle();
+        }
+        return available;
     }
     
     /**
@@ -351,7 +386,10 @@ public class SlurmCloud extends AbstractCloudImpl {
     /**
      * Creates a planned node for the given job template and label.
      */
-    private PlannedNode createPlannedNode(SlurmJobTemplate jobTemplate, @CheckForNull Label label) {
+    private PlannedNode createPlannedNode(
+            SlurmJobTemplate jobTemplate,
+            @CheckForNull Label label,
+            @NonNull SlurmLimitRegistrationResults.Registration registration) {
         String agentName = generateAgentName(jobTemplate);
         
         // Create cloud-stats tracking ID for this provisioning activity
@@ -382,11 +420,11 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       //   idleMinutes and can serve multiple consecutive builds (opt-in reuse).
                                       hudson.slaves.RetentionStrategy<?> retentionStrategy;
                                       if (jobTemplate.isRunOnce()) {
-                                          // Kubernetes plugin uses a minimum of 5 minutes (DEFAULT_RETENTION_TIMEOUT_MINUTES).
                                           // OnceRetentionStrategy(0) fires check() immediately when the agent goes online
                                           // (NodeProvisioner.update() triggers it before any build is scheduled), so
-                                          // we enforce a minimum of 1 minute to give Jenkins time to assign the build.
-                                          int retentionTimeout = Math.max(1, jobTemplate.getIdleMinutes());
+                                          // we enforce a minimum idle window to give Jenkins time to assign the build.
+                                          int retentionTimeout = Math.max(
+                                                  MIN_ONCE_RETENTION_IDLE_MINUTES, jobTemplate.getIdleMinutes());
                                           retentionStrategy = new org.jenkinsci.plugins.durabletask.executors
                                               .OnceRetentionStrategy(retentionTimeout);
                                           LOGGER.info("Using OnceRetentionStrategy (retentionTimeout=" + retentionTimeout + ") for agent: " + agentName
@@ -404,7 +442,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                           jobTemplate.getCurrentWorkingDirectory(),      // remoteFS
                                           1,                                            // numExecutors — always 1; cpusPerTask is a Slurm resource, not Jenkins concurrency
                                           jobTemplate.getNodeUsageMode(),               // mode
-                                          jobTemplate.getLabel(),                       // labelString
+                                          jobTemplate.getAgentLabelString(),            // labelString
                                           launcher,                                     // launcher
                                           retentionStrategy,                            // retentionStrategy
                                           new java.util.ArrayList<>(),                  // nodeProperties (empty)
@@ -419,7 +457,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       // node('label') static-template provisioning needs a queue scan.
                                       hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
                                       if (buildListener == null && label != null) {
-                                          buildListener = JobUtils.findRunListenerForLabel(label.getName());
+                                          buildListener = JobUtils.findRunListenerForLabel(jobTemplate.getAgentLabelString());
                                       }
                                       if (buildListener != null && buildListener != hudson.model.TaskListener.NULL) {
                                           agent.setRunListener(buildListener);
@@ -457,8 +495,8 @@ public class SlurmCloud extends AbstractCloudImpl {
                                       return agent;
                                       
                                   } catch (Exception e) {
+                                      registration.release(SlurmCloud.this);
                                       LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
-                                      e.printStackTrace();
                                       throw new RuntimeException(e);
                                   }
                               }));
@@ -513,30 +551,18 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
         
         LOGGER.fine("Found matching template: " + template.getName());
-        
-        // Check if we're at capacity
-        if (getCurrentAgentCount() >= maxAgents) {
+
+        SlurmProvisioningLimits limits = SlurmProvisioningLimits.get();
+        if (limits.isCloudAtCapacity(this)) {
             LOGGER.fine("Cannot provision - at maximum agent capacity");
             return false;
         }
-        
-        return true;
-    }
-    
-    /**
-     * Gets the current number of Slurm agents.
-     */
-    private int getCurrentAgentCount() {
-        int count = 0;
-        for (Node node : Jenkins.get().getNodes()) {
-            if (node instanceof SlurmAgent) {
-                SlurmAgent slurmAgent = (SlurmAgent) node;
-                if (this.name.equals(slurmAgent.getCloudName())) {
-                    count++;
-                }
-            }
+        if (limits.isTemplateAtCapacity(this, template)) {
+            LOGGER.fine("Cannot provision - template instance cap reached");
+            return false;
         }
-        return count;
+
+        return true;
     }
     
     /**

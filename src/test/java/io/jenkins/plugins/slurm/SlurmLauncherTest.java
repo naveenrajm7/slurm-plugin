@@ -20,6 +20,11 @@ class SlurmLauncherTest {
     }
 
     @Test
+    void isLaunchSupported_trueForNewLauncher() {
+        assertTrue(new SlurmLauncher().isLaunchSupported());
+    }
+
+    @Test
     void getProblem_defaultsToNull() {
         SlurmLauncher launcher = new SlurmLauncher();
         assertEquals(null, launcher.getProblem());

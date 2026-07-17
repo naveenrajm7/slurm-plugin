@@ -63,7 +63,7 @@ public final class JobUtils {
             if (assignedLabel == null) {
                 continue;
             }
-            if (!labelString.equals(assignedLabel.getName())) {
+            if (!labelMatches(labelString, assignedLabel)) {
                 continue;
             }
 
@@ -76,6 +76,16 @@ public final class JobUtils {
         }
 
         return TaskListener.NULL;
+    }
+
+    /**
+     * Returns true when a template/node label string satisfies a queued pipeline label expression.
+     */
+    static boolean labelMatches(@NonNull String templateLabelString, @NonNull Label assignedLabel) {
+        if (templateLabelString.equals(assignedLabel.getName())) {
+            return true;
+        }
+        return assignedLabel.matches(new java.util.LinkedHashSet<>(Label.parse(templateLabelString.trim())));
     }
 
     @CheckForNull
@@ -159,10 +169,9 @@ public final class JobUtils {
                         return false;
                     }
                     
-                    // Match if the assigned label name equals our label string
-                    // This handles both single labels and multi-label scenarios
+                    // Match template labels against the queue item's assigned label expression
                     String assignedLabelName = assignedLabel.getName();
-                    return assignedLabelName != null && assignedLabelName.equals(labelString);
+                    return assignedLabelName != null && labelMatches(labelString, assignedLabel);
                 })
                 .findFirst()
                 .ifPresentOrElse(
