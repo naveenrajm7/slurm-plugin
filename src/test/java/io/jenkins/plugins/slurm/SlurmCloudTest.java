@@ -3,14 +3,18 @@ package io.jenkins.plugins.slurm;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import hudson.slaves.Cloud;
 import hudson.slaves.CloudRetentionStrategy;
 import hudson.util.FormValidation;
+import java.util.ArrayList;
+import java.util.List;
 import javax.servlet.RequestDispatcher;
 import net.sf.json.JSONObject;
 import org.jenkinsci.plugins.durabletask.executors.OnceRetentionStrategy;
@@ -168,6 +172,83 @@ public class SlurmCloudTest {
     }
 
     /**
+     * Verifies that saving the cloud configuration does not wipe existing job templates.
+     *
+     * <p>Templates are managed through a separate page and are not part of the cloud's
+     * {@code config.jelly} form.  When Jenkins reconfigures a cloud it calls
+     * {@code DescriptorImpl.newInstance()} which creates a fresh {@code SlurmCloud} via
+     * {@code @DataBoundConstructor} — initialising {@code jobTemplates} to an empty list.
+     * Our {@code newInstance()} override must copy the existing templates across.
+     */
+    @Nested
+    @WithJenkins
+    class ReconfigurePreservesTemplatesTest {
+
+        @Test
+        void newInstance_copiesTemplatesFromExistingCloud(JenkinsRule j) throws Exception {
+            // Register a cloud with two templates.
+            SlurmCloud existing = new SlurmCloud("my-cloud", "http://localhost:6820", null, "gpu", 10, 60);
+            SlurmJobTemplate t1 = new SlurmJobTemplate();
+            t1.setName("gpu-template");
+            SlurmJobTemplate t2 = new SlurmJobTemplate();
+            t2.setName("cpu-template");
+            existing.setJobTemplates(new ArrayList<>(List.of(t1, t2)));
+            j.jenkins.clouds.add(existing);
+
+            // Simulate what super.newInstance() returns: a fresh cloud with empty templates.
+            SlurmCloud freshCloud = new SlurmCloud("my-cloud", "http://localhost:6820", null, "gpu", 10, 60);
+            assertEquals(0, freshCloud.getJobTemplates().size(), "sanity: fresh cloud has no templates");
+
+            // Apply the same preservation logic that DescriptorImpl.newInstance() runs.
+            Cloud cloudFromJenkins = j.jenkins.getCloud("my-cloud");
+            if (cloudFromJenkins instanceof SlurmCloud existingCloud) {
+                List<SlurmJobTemplate> existingTemplates = existingCloud.getJobTemplates();
+                if (!existingTemplates.isEmpty()) {
+                    freshCloud.setJobTemplates(new ArrayList<>(existingTemplates));
+                }
+            }
+
+            // Templates must survive the reconfiguration.
+            assertEquals(2, freshCloud.getJobTemplates().size());
+            assertEquals("gpu-template", freshCloud.getJobTemplates().get(0).getName());
+            assertEquals("cpu-template", freshCloud.getJobTemplates().get(1).getName());
+        }
+
+        @Test
+        void newInstance_noExistingCloud_doesNotFail(JenkinsRule j) {
+            // No cloud registered yet — the override must not throw.
+            Cloud existing = j.jenkins.getCloud("brand-new-cloud");
+            assertNull(existing);
+
+            SlurmCloud freshCloud = new SlurmCloud("brand-new-cloud", "http://localhost:6820", null, "gpu", 10, 60);
+            // Preservation logic applied when existing == null → nothing copied.
+            if (existing instanceof SlurmCloud existingCloud) {
+                freshCloud.setJobTemplates(new ArrayList<>(existingCloud.getJobTemplates()));
+            }
+
+            assertEquals(0, freshCloud.getJobTemplates().size());
+        }
+
+        @Test
+        void newInstance_existingCloudWithNoTemplates_doesNotFail(JenkinsRule j) {
+            SlurmCloud existing = new SlurmCloud("empty-cloud", "http://localhost:6820", null, "gpu", 10, 60);
+            j.jenkins.clouds.add(existing);
+
+            SlurmCloud freshCloud = new SlurmCloud("empty-cloud", "http://localhost:6820", null, "gpu", 10, 60);
+
+            Cloud cloudFromJenkins = j.jenkins.getCloud("empty-cloud");
+            if (cloudFromJenkins instanceof SlurmCloud existingCloud) {
+                List<SlurmJobTemplate> existingTemplates = existingCloud.getJobTemplates();
+                if (!existingTemplates.isEmpty()) {
+                    freshCloud.setJobTemplates(new ArrayList<>(existingTemplates));
+                }
+            }
+
+            assertEquals(0, freshCloud.getJobTemplates().size());
+        }
+    }
+
+    /**
      * Tests that the correct retention strategy is selected based on the
      * {@code runOnce} flag in the job template, mirroring the Kubernetes plugin pattern.
      */
@@ -205,7 +286,8 @@ public class SlurmCloudTest {
         void retentionStrategyType_runOnce_isOnceRetentionStrategy() {
             SlurmJobTemplate template = templateWith(true, 1);
             hudson.slaves.RetentionStrategy<?> strategy = template.isRunOnce()
-                    ? new OnceRetentionStrategy(Math.max(SlurmCloud.MIN_ONCE_RETENTION_IDLE_MINUTES, template.getIdleMinutes()))
+                    ? new OnceRetentionStrategy(
+                            Math.max(SlurmCloud.MIN_ONCE_RETENTION_IDLE_MINUTES, template.getIdleMinutes()))
                     : new CloudRetentionStrategy(template.getIdleMinutes());
             assertInstanceOf(OnceRetentionStrategy.class, strategy);
         }

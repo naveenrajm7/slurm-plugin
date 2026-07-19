@@ -169,18 +169,29 @@
 
   </f:section>
 
-  <!-- Agent Launch (native, without Pyxis) -->
-  <f:section title="Agent Launch (without container)">
-    
-    <f:optionalProperty field="agent" title="Enable Native Agent Launch"/>
-    
-  </f:section>
+  <!-- Agent Launch Mode – mutually exclusive: native (no container) or Pyxis/Enroot container -->
+  <f:section title="Agent Launch Mode">
 
-  <!-- Container Configuration (Pyxis/Enroot) -->
-  <f:section title="Container Configuration (Pyxis)">
-    
-    <f:optionalProperty field="pyxis" title="Enable Pyxis Container Support"/>
-    
+    <f:radioBlock name="launchMode" value="NATIVE"
+                  title="Native (no container)"
+                  checked="${instance == null || instance.nativeLaunch}">
+      <f:description>
+        Launch the Jenkins agent directly on the compute node host.
+        Requires either a pre-installed agent.jar path or &quot;Download Agent JAR&quot; enabled.
+      </f:description>
+      <f:property field="agent"/>
+    </f:radioBlock>
+
+    <f:radioBlock name="launchMode" value="PYXIS"
+                  title="Pyxis / Enroot container"
+                  checked="${instance != null &amp;&amp; instance.pyxisLaunch}">
+      <f:description>
+        Launch the Jenkins agent inside a Pyxis (Enroot) container.
+        Requires the Pyxis SPANK plugin on the cluster.
+      </f:description>
+      <f:property field="pyxis"/>
+    </f:radioBlock>
+
   </f:section>
 
   <!-- Agent Management -->

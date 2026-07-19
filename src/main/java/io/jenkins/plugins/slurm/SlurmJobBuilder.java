@@ -3,90 +3,90 @@ package io.jenkins.plugins.slurm;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import io.jenkins.plugins.slurm.client.model.*;
-
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Logger;
 
 /**
  * Builder class for creating Slurm job descriptions.
- * 
+ *
  * This class takes a {@link SlurmJobTemplate} and converts it into a
  * {@link JobDescMsg} suitable for submission to the Slurm REST API.
  *
  * Similar to Kubernetes plugin's PodTemplateBuilder.
  */
 public class SlurmJobBuilder {
-    
+
     private static final Logger LOGGER = Logger.getLogger(SlurmJobBuilder.class.getName());
-    
+
     private final SlurmJobTemplate template;
     private final String agentName;
     private final String jenkinsUrl;
     private final String agentSecret;
     private final AgentLaunchConfig cloudAgent;
-    
+
     /**
      * Creates a new job builder.
-     * 
+     *
      * @param template The job template to build from
      * @param agentName The unique name for this agent/job
      * @param jenkinsUrl The Jenkins URL for agent connection
      * @param agentSecret The secret for agent authentication
      */
-    public SlurmJobBuilder(@NonNull SlurmJobTemplate template, 
-                          @NonNull String agentName,
-                          @NonNull String jenkinsUrl,
-                          @CheckForNull String agentSecret) {
+    public SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret) {
         this(template, agentName, jenkinsUrl, agentSecret, null);
     }
 
     /**
      * Creates a new job builder with cloud-level agent launch defaults.
      */
-    public SlurmJobBuilder(@NonNull SlurmJobTemplate template,
-                          @NonNull String agentName,
-                          @NonNull String jenkinsUrl,
-                          @CheckForNull String agentSecret,
-                          @CheckForNull AgentLaunchConfig cloudAgent) {
+    public SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret,
+            @CheckForNull AgentLaunchConfig cloudAgent) {
         this.template = template;
         this.agentName = agentName;
         this.jenkinsUrl = jenkinsUrl;
         this.agentSecret = agentSecret;
         this.cloudAgent = cloudAgent;
     }
-    
+
     /**
      * Builds the JobDescMsg for submission to Slurm.
-     * 
+     *
      * @return The job description message ready for submission
      */
     @NonNull
     public JobDescMsg build() {
         LOGGER.info("Building Slurm job for agent: " + agentName);
-        
+
         JobDescMsg jobDesc = new JobDescMsg();
-        
+
         // Set job name (required)
         jobDesc.setName(agentName);
-        
+
         // Set partition if specified
         if (template.getPartition() != null && !template.getPartition().trim().isEmpty()) {
             jobDesc.setPartition(template.getPartition());
         }
-        
+
         // Set working directory
-        if (template.getCurrentWorkingDirectory() != null && !template.getCurrentWorkingDirectory().trim().isEmpty()) {
+        if (template.getCurrentWorkingDirectory() != null
+                && !template.getCurrentWorkingDirectory().trim().isEmpty()) {
             jobDesc.setCurrentWorkingDirectory(template.getCurrentWorkingDirectory());
         }
-        
+
         // Set CPU resources
         if (template.getCpusPerTask() != null && template.getCpusPerTask() > 0) {
             jobDesc.setCpusPerTask(template.getCpusPerTask());
         }
-        
+
         // Set memory per node (in MB)
         if (template.getMemoryPerNode() != null && template.getMemoryPerNode() > 0) {
             Uint64NoValStruct memory = new Uint64NoValStruct();
@@ -95,7 +95,7 @@ public class SlurmJobBuilder {
             memory.setNumber(template.getMemoryPerNode());
             jobDesc.setMemoryPerNode(memory);
         }
-        
+
         // Set time limit (in minutes)
         if (template.getTimeLimit() != null && template.getTimeLimit() > 0) {
             Uint32NoValStruct time = new Uint32NoValStruct();
@@ -104,45 +104,49 @@ public class SlurmJobBuilder {
             time.setNumber(template.getTimeLimit());
             jobDesc.setTimeLimit(time);
         }
-        
+
         // Set node count
         if (template.getMinimumNodes() != null && template.getMinimumNodes() > 0) {
             jobDesc.setMinimumNodes(template.getMinimumNodes());
         }
-        
+
         // Set task count
         if (template.getTasks() != null && template.getTasks() > 0) {
             jobDesc.setTasks(template.getTasks());
         }
-        
+
         // Set TRES for GPUs and other trackable resources
         if (template.getTresPerJob() != null && !template.getTresPerJob().trim().isEmpty()) {
             jobDesc.setTresPerJob(template.getTresPerJob());
         }
-        if (template.getTresPerNode() != null && !template.getTresPerNode().trim().isEmpty()) {
+        if (template.getTresPerNode() != null
+                && !template.getTresPerNode().trim().isEmpty()) {
             jobDesc.setTresPerNode(template.getTresPerNode());
         }
-        if (template.getTresPerTask() != null && !template.getTresPerTask().trim().isEmpty()) {
+        if (template.getTresPerTask() != null
+                && !template.getTresPerTask().trim().isEmpty()) {
             jobDesc.setTresPerTask(template.getTresPerTask());
         }
-        
+
         // Set account if specified
         if (template.getAccount() != null && !template.getAccount().trim().isEmpty()) {
             jobDesc.setAccount(template.getAccount());
         }
-        
+
         // Set QoS if specified
         if (template.getQos() != null && !template.getQos().trim().isEmpty()) {
             jobDesc.setQos(template.getQos());
         }
-        
+
         // Set constraints (features) if specified
-        if (template.getConstraints() != null && !template.getConstraints().trim().isEmpty()) {
+        if (template.getConstraints() != null
+                && !template.getConstraints().trim().isEmpty()) {
             jobDesc.setConstraints(template.getConstraints());
         }
-        
+
         // Set required nodes (REST API: required_nodes array)
-        if (template.getRequiredNodes() != null && !template.getRequiredNodes().trim().isEmpty()) {
+        if (template.getRequiredNodes() != null
+                && !template.getRequiredNodes().trim().isEmpty()) {
             List<String> requiredNodesList = new ArrayList<>();
             for (String node : template.getRequiredNodes().split(",")) {
                 String trimmed = node.trim();
@@ -155,9 +159,10 @@ public class SlurmJobBuilder {
                 LOGGER.fine("Set required_nodes: " + requiredNodesList);
             }
         }
-        
+
         // Set excluded nodes (REST API: excluded_nodes array)
-        if (template.getExcludedNodes() != null && !template.getExcludedNodes().trim().isEmpty()) {
+        if (template.getExcludedNodes() != null
+                && !template.getExcludedNodes().trim().isEmpty()) {
             List<String> excludedNodesList = new ArrayList<>();
             for (String node : template.getExcludedNodes().split(",")) {
                 String trimmed = node.trim();
@@ -170,7 +175,7 @@ public class SlurmJobBuilder {
                 LOGGER.fine("Set excluded_nodes: " + excludedNodesList);
             }
         }
-        
+
         applyOptionalString(jobDesc::setComment, template.getComment());
         applyOptionalString(jobDesc::setPrefer, template.getPrefer());
         applyOptionalString(jobDesc::setReservation, template.getReservation());
@@ -253,15 +258,15 @@ public class SlurmJobBuilder {
             script = generateBatchScript();
         }
         jobDesc.setScript(script);
-        
-        LOGGER.info("Built Slurm job: " + jobDesc.getName() + 
-                   " (partition=" + jobDesc.getPartition() + 
-                   ", cpus=" + jobDesc.getCpusPerTask() + 
-                   ", memory=" + jobDesc.getMemoryPerNode() + "MB)");
-        
+
+        LOGGER.info("Built Slurm job: " + jobDesc.getName() + " (partition="
+                + jobDesc.getPartition() + ", cpus="
+                + jobDesc.getCpusPerTask() + ", memory="
+                + jobDesc.getMemoryPerNode() + "MB)");
+
         return jobDesc;
     }
-    
+
     private static void applyOptionalString(java.util.function.Consumer<String> setter, String value) {
         if (value != null && !value.trim().isEmpty()) {
             setter.accept(value);
@@ -288,26 +293,27 @@ public class SlurmJobBuilder {
      * Builds the environment variables for the job.
      * Ensures our required environment variables (PATH, LD_LIBRARY_PATH) are always present,
      * while also including any additional variables specified by the user in the template.
-     * 
+     *
      * @return List of environment variable strings in "KEY=value" format
      */
     private List<String> buildEnvironment() {
         List<String> env = new ArrayList<>();
-        
+
         // REQUIRED: These environment variables are always set for job submission through REST
         env.add("PATH=/usr/local/bin:/usr/bin:/bin");
         env.add("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib");
-        
+
         // Add user-specified environment variables from template (if any)
-        if (template.getEnvironment() != null && !template.getEnvironment().trim().isEmpty()) {
+        if (template.getEnvironment() != null
+                && !template.getEnvironment().trim().isEmpty()) {
             try {
                 // Parse the JSON array string from template
                 String envJson = template.getEnvironment().trim();
-                
+
                 // Simple parsing for JSON array format: ["VAR1=value1", "VAR2=value2"]
                 if (envJson.startsWith("[") && envJson.endsWith("]")) {
                     String content = envJson.substring(1, envJson.length() - 1);
-                    
+
                     // Split by comma, handling quoted strings
                     String[] entries = content.split(",");
                     for (String entry : entries) {
@@ -316,7 +322,7 @@ public class SlurmJobBuilder {
                         if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
                             trimmed = trimmed.substring(1, trimmed.length() - 1);
                         }
-                        
+
                         if (!trimmed.isEmpty() && trimmed.contains("=")) {
                             // Don't override our required PATH and LD_LIBRARY_PATH
                             String varName = trimmed.substring(0, trimmed.indexOf("="));
@@ -333,26 +339,34 @@ public class SlurmJobBuilder {
                 LOGGER.warning("Failed to parse environment variables from template: " + e.getMessage());
             }
         }
-        
+
         return env;
     }
-    
+
     /**
      * Validates that the template can generate an agent launcher script.
      */
     void validateLaunchConfiguration() {
-        PyxisConfig pyxis = template.getPyxis();
-        if (pyxis != null && pyxis.isConfigured()) {
+        String mode = template.getLaunchMode();
+        if ("PYXIS".equals(mode)) {
+            PyxisConfig pyxis = template.getPyxis();
+            if (pyxis == null || !pyxis.isConfigured()) {
+                throw new IllegalStateException("Pyxis launch mode is selected but no container image is configured. "
+                        + "Set a container image in the Pyxis configuration, or switch "
+                        + "to Native launch mode and configure an agent.jar path.");
+            }
             return;
         }
+        // NATIVE mode
         AgentLaunchConfig agent = getEffectiveAgent();
         if (agent != null && agent.isConfigured()) {
             agent.validateNativeLaunch();
             return;
         }
-        throw new IllegalStateException(
-                "Agent launch is not configured. Enable Pyxis container support, configure native "
-                        + "Agent Launch on the cloud or template (jarPath or downloadJar), or supply a custom batch script.");
+        throw new IllegalStateException("Native launch mode is selected but agent launch is not configured. "
+                + "Enable Pyxis container support, configure native "
+                + "Agent Launch on the cloud or template (jarPath or downloadJar), "
+                + "or supply a custom batch script.");
     }
 
     @CheckForNull
@@ -379,18 +393,19 @@ public class SlurmJobBuilder {
 
         if (template.getMinimumNodes() != null && template.getMinimumNodes() > 1) {
             LOGGER.info(String.format(
-                "Multi-node job allocation: %d nodes requested. " +
-                "Jenkins agent will run on head node (srun -N1 -n1). " +
-                "User's pipeline commands can access all %d nodes via srun.",
-                template.getMinimumNodes(), template.getMinimumNodes()
-            ));
+                    "Multi-node job allocation: %d nodes requested. "
+                            + "Jenkins agent will run on head node (srun -N1 -n1). "
+                            + "User's pipeline commands can access all %d nodes via srun.",
+                    template.getMinimumNodes(), template.getMinimumNodes()));
         }
 
         PyxisConfig pyxis = template.getPyxis();
-        boolean useContainer = pyxis != null && pyxis.isConfigured();
+        boolean useContainer = "PYXIS".equals(template.getLaunchMode()) && pyxis != null && pyxis.isConfigured();
         AgentLaunchConfig agent = getEffectiveAgent();
 
-        if (!useContainer && agent != null && agent.getSetupScript() != null
+        if (!useContainer
+                && agent != null
+                && agent.getSetupScript() != null
                 && !agent.getSetupScript().trim().isEmpty()) {
             for (String line : agent.getSetupScript().split("\\r?\\n")) {
                 String trimmed = line.trim();
@@ -414,7 +429,9 @@ public class SlurmJobBuilder {
             jarReference = AgentLaunchConfig.CONTAINER_JAR_PATH;
         } else if (agent != null && agent.getDownloadJar()) {
             javaPath = agent.getJavaPath();
-            script.append("AGENT_JAR=").append(shellQuote(workdir + "/agent.jar")).append("\n");
+            script.append("AGENT_JAR=")
+                    .append(shellQuote(workdir + "/agent.jar"))
+                    .append("\n");
             script.append("if [ ! -f \"$AGENT_JAR\" ]; then\n");
             script.append("  echo 'Downloading Jenkins agent JAR...'\n");
             script.append("  if command -v curl >/dev/null 2>&1; then\n");
@@ -463,16 +480,19 @@ public class SlurmJobBuilder {
     }
 
     private static void appendPyxisFlags(StringBuilder script, PyxisConfig pyxis) {
-        if (pyxis.getContainerImage() != null && !pyxis.getContainerImage().trim().isEmpty()) {
+        if (pyxis.getContainerImage() != null
+                && !pyxis.getContainerImage().trim().isEmpty()) {
             script.append(" --container-image=").append(pyxis.getContainerImage());
         }
         if (pyxis.getContainerMountHome()) {
             script.append(" --container-mount-home");
         }
-        if (pyxis.getContainerMounts() != null && !pyxis.getContainerMounts().trim().isEmpty()) {
+        if (pyxis.getContainerMounts() != null
+                && !pyxis.getContainerMounts().trim().isEmpty()) {
             script.append(" --container-mounts=").append(pyxis.getContainerMounts());
         }
-        if (pyxis.getContainerWorkdir() != null && !pyxis.getContainerWorkdir().trim().isEmpty()) {
+        if (pyxis.getContainerWorkdir() != null
+                && !pyxis.getContainerWorkdir().trim().isEmpty()) {
             script.append(" --container-workdir=").append(pyxis.getContainerWorkdir());
         }
         if (pyxis.getContainerName() != null && !pyxis.getContainerName().trim().isEmpty()) {
@@ -499,10 +519,10 @@ public class SlurmJobBuilder {
         }
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
-    
+
     /**
      * Validates that the job description is ready for submission.
-     * 
+     *
      * @param jobDesc The job description to validate
      * @throws IllegalStateException if validation fails
      */
@@ -510,24 +530,23 @@ public class SlurmJobBuilder {
         if (jobDesc.getName() == null || jobDesc.getName().isEmpty()) {
             throw new IllegalStateException("Job name is required");
         }
-        
+
         if (jobDesc.getScript() == null || jobDesc.getScript().isEmpty()) {
             throw new IllegalStateException("Job script is required");
         }
-        
+
         // Warn about common configuration issues
         Uint64NoValStruct memory = jobDesc.getMemoryPerNode();
-        if (memory != null && Boolean.TRUE.equals(memory.getSet()) && 
-            memory.getNumber() != null && memory.getNumber() < 512) {
-            LOGGER.warning("Job " + jobDesc.getName() + " has very low memory: " + 
-                          memory.getNumber() + "MB");
+        if (memory != null
+                && Boolean.TRUE.equals(memory.getSet())
+                && memory.getNumber() != null
+                && memory.getNumber() < 512) {
+            LOGGER.warning("Job " + jobDesc.getName() + " has very low memory: " + memory.getNumber() + "MB");
         }
-        
+
         Uint32NoValStruct time = jobDesc.getTimeLimit();
-        if (time != null && Boolean.TRUE.equals(time.getSet()) && 
-            time.getNumber() != null && time.getNumber() < 10) {
-            LOGGER.warning("Job " + jobDesc.getName() + " has very short time limit: " + 
-                          time.getNumber() + " minutes");
+        if (time != null && Boolean.TRUE.equals(time.getSet()) && time.getNumber() != null && time.getNumber() < 10) {
+            LOGGER.warning("Job " + jobDesc.getName() + " has very short time limit: " + time.getNumber() + " minutes");
         }
     }
 }
