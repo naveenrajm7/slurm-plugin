@@ -390,7 +390,21 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     public Long getMemoryPerNode() {
         return memoryPerNode;
     }
-    
+
+    /**
+     * Returns a human-readable memory string for display in the templates list (e.g. "2 GB" or "512 MB").
+     * Called by the {@code ${template.memory}} EL expression in {@code templates.jelly}.
+     */
+    public String getMemory() {
+        if (memoryPerNode == null) {
+            return "";
+        }
+        if (memoryPerNode >= 1024 && memoryPerNode % 1024 == 0) {
+            return (memoryPerNode / 1024) + " GB";
+        }
+        return memoryPerNode + " MB";
+    }
+
     @DataBoundSetter
     public void setMemoryPerNode(Long memoryPerNode) {
         this.memoryPerNode = memoryPerNode != null && memoryPerNode > 0 ? memoryPerNode : 1024L;
