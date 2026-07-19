@@ -133,29 +133,36 @@ public class SlurmJobTemplateTest {
     }
 
     @Test
-    public void testGetGpuRequestPriority() {
+    public void testGetGpuRequestShowsAllTresFields() {
         SlurmJobTemplate template = new SlurmJobTemplate();
 
         // No TRES configured → empty
         assertEquals("", template.getGpuRequest());
 
-        // tresPerJob takes priority
+        // Only tresPerJob set
         template.setTresPerJob("gres/gpu:a100:2");
-        assertEquals("gres/gpu:a100:2", template.getGpuRequest());
+        assertEquals("job:gres/gpu:a100:2", template.getGpuRequest());
 
-        // tresPerNode used when tresPerJob is empty
+        // Only tresPerNode set
         template.setTresPerJob("");
         template.setTresPerNode("gres/gpu:1");
-        assertEquals("gres/gpu:1", template.getGpuRequest());
+        assertEquals("node:gres/gpu:1", template.getGpuRequest());
 
-        // tresPerTask used when both above are empty
+        // Only tresPerTask set
         template.setTresPerNode("");
         template.setTresPerTask("gres/gpu:v100:4");
-        assertEquals("gres/gpu:v100:4", template.getGpuRequest());
+        assertEquals("task:gres/gpu:v100:4", template.getGpuRequest());
 
-        // tresPerJob wins even when others are also set
+        // All three set → all shown with their prefixes
         template.setTresPerJob("gres/gpu:a100:2");
-        assertEquals("gres/gpu:a100:2", template.getGpuRequest());
+        template.setTresPerNode("gres/gpu:1");
+        template.setTresPerTask("gres/gpu:v100:4");
+        assertEquals("job:gres/gpu:a100:2, node:gres/gpu:1, task:gres/gpu:v100:4",
+                template.getGpuRequest());
+
+        // Two set → both shown
+        template.setTresPerTask("");
+        assertEquals("job:gres/gpu:a100:2, node:gres/gpu:1", template.getGpuRequest());
     }
 
     @Test

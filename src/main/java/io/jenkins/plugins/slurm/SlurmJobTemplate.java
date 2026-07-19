@@ -406,23 +406,26 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
 
     /**
-     * Returns the GPU / TRES request string for display in the templates list.
-     * Checks {@code tresPerJob} first (most common for GPU requests), then
-     * {@code tresPerNode}, then {@code tresPerTask}.  Returns an empty string
-     * when no TRES resource has been configured.
+     * Returns all configured TRES resource strings for display in the templates list,
+     * combining {@code tresPerJob}, {@code tresPerNode}, and {@code tresPerTask}
+     * (each prefixed with its scope) when more than one is set.
+     * Returns an empty string when no TRES resource has been configured.
      * Called by the {@code ${template.gpuRequest}} EL expression in {@code templates.jelly}.
      */
     public String getGpuRequest() {
+        StringBuilder sb = new StringBuilder();
         if (tresPerJob != null && !tresPerJob.isEmpty()) {
-            return tresPerJob;
+            sb.append("job:").append(tresPerJob);
         }
         if (tresPerNode != null && !tresPerNode.isEmpty()) {
-            return tresPerNode;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("node:").append(tresPerNode);
         }
         if (tresPerTask != null && !tresPerTask.isEmpty()) {
-            return tresPerTask;
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("task:").append(tresPerTask);
         }
-        return "";
+        return sb.toString();
     }
 
     @DataBoundSetter
