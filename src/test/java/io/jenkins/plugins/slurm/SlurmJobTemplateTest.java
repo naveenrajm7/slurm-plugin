@@ -133,6 +133,32 @@ public class SlurmJobTemplateTest {
     }
 
     @Test
+    public void testGetGpuRequestPriority() {
+        SlurmJobTemplate template = new SlurmJobTemplate();
+
+        // No TRES configured → empty
+        assertEquals("", template.getGpuRequest());
+
+        // tresPerJob takes priority
+        template.setTresPerJob("gres/gpu:a100:2");
+        assertEquals("gres/gpu:a100:2", template.getGpuRequest());
+
+        // tresPerNode used when tresPerJob is empty
+        template.setTresPerJob("");
+        template.setTresPerNode("gres/gpu:1");
+        assertEquals("gres/gpu:1", template.getGpuRequest());
+
+        // tresPerTask used when both above are empty
+        template.setTresPerNode("");
+        template.setTresPerTask("gres/gpu:v100:4");
+        assertEquals("gres/gpu:v100:4", template.getGpuRequest());
+
+        // tresPerJob wins even when others are also set
+        template.setTresPerJob("gres/gpu:a100:2");
+        assertEquals("gres/gpu:a100:2", template.getGpuRequest());
+    }
+
+    @Test
     public void testIdleMinutes() {
         SlurmJobTemplate template = new SlurmJobTemplate();
         

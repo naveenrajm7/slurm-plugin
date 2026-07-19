@@ -405,6 +405,26 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return memoryPerNode + " MB";
     }
 
+    /**
+     * Returns the GPU / TRES request string for display in the templates list.
+     * Checks {@code tresPerJob} first (most common for GPU requests), then
+     * {@code tresPerNode}, then {@code tresPerTask}.  Returns an empty string
+     * when no TRES resource has been configured.
+     * Called by the {@code ${template.gpuRequest}} EL expression in {@code templates.jelly}.
+     */
+    public String getGpuRequest() {
+        if (tresPerJob != null && !tresPerJob.isEmpty()) {
+            return tresPerJob;
+        }
+        if (tresPerNode != null && !tresPerNode.isEmpty()) {
+            return tresPerNode;
+        }
+        if (tresPerTask != null && !tresPerTask.isEmpty()) {
+            return tresPerTask;
+        }
+        return "";
+    }
+
     @DataBoundSetter
     public void setMemoryPerNode(Long memoryPerNode) {
         this.memoryPerNode = memoryPerNode != null && memoryPerNode > 0 ? memoryPerNode : 1024L;
