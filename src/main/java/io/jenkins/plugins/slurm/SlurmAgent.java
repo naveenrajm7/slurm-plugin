@@ -132,11 +132,12 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Sets the Slurm job ID after job submission.
+     * Sets the Slurm job ID after job submission and exposes it as a build environment variable.
      */
     public void setSlurmJobId(@NonNull String slurmJobId) {
         this.slurmJobId = slurmJobId;
-        LOGGER.log(Level.FINE, "Set Slurm job ID for agent {0}: {1}", 
+        updateSlurmEnvProp();
+        LOGGER.log(Level.FINE, "Set Slurm job ID for agent {0}: {1}",
                   new Object[]{getNodeName(), slurmJobId});
     }
     
@@ -158,12 +159,43 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
     
     /**
-     * Sets the Slurm node list after job starts.
+     * Sets the Slurm node list after job starts and exposes it as a build environment variable.
      */
     public void setNodeList(@NonNull String nodeList) {
         this.nodeList = nodeList;
-        LOGGER.log(Level.FINE, "Set node list for agent {0}: {1}", 
+        updateSlurmEnvProp();
+        LOGGER.log(Level.FINE, "Set node list for agent {0}: {1}",
                   new Object[]{getNodeName(), nodeList});
+    }
+
+    /**
+     * Keeps the {@link SlurmEnvironmentNodeProperty} on this agent in sync with the latest
+     * Slurm job placement info ({@code SLURM_JOB_ID}, {@code SLURM_NODELIST}).
+     *
+     * <p>Called whenever {@code slurmJobId} or {@code nodeList} is updated so that pipeline
+     * steps can access these values via {@code env.SLURM_JOB_ID} / {@code env.SLURM_NODELIST}
+     * in Groovy, or {@code $SLURM_JOB_ID} / {@code $SLURM_NODELIST} in shell steps.
+     */
+    void updateSlurmEnvProp() {
+        SlurmEnvironmentNodeProperty prop = null;
+        for (NodeProperty<?> p : getNodeProperties()) {
+            if (p instanceof SlurmEnvironmentNodeProperty) {
+                prop = (SlurmEnvironmentNodeProperty) p;
+                break;
+            }
+        }
+        if (prop == null) {
+            prop = new SlurmEnvironmentNodeProperty();
+            try {
+                getNodeProperties().add(prop);
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING,
+                        "Failed to add SlurmEnvironmentNodeProperty to agent " + getNodeName(), e);
+                return;
+            }
+        }
+        prop.setSlurmJobId(slurmJobId);
+        prop.setSlurmNodeList(nodeList);
     }
 
     /**

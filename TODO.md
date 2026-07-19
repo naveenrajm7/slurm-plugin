@@ -23,9 +23,10 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [x] **[MED]** Periodic cleanup for orphaned Slurm jobs — `SlurmGarbageCollection` (opt-in per cloud; cancels stale `{cloudName}-*` jobs not tracked by live agents)
-  - [ ] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
+  - [x] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
 - [ ] **Slurm compute node visibility** (discovered during CK workload validation — agent page shows Jenkins synthetic name, not where the job landed)
-  - [ ] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
+  - [x] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
+    - Implemented via `SlurmEnvironmentNodeProperty`: automatically added to the agent node when `slurmJobId` / `nodeList` are set; available as `env.SLURM_JOB_ID` and `env.SLURM_NODELIST` in pipeline Groovy and `$SLURM_JOB_ID` / `$SLURM_NODELIST` in shell steps.
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
 
 ## Done
