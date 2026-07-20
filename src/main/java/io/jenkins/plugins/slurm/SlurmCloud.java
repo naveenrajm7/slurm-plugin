@@ -809,13 +809,42 @@ public class SlurmCloud extends AbstractCloudImpl {
          * override the default {@code newInstance()} would reconstruct the cloud from
          * {@code @DataBoundConstructor}, initialising {@code jobTemplates} to an empty
          * list and silently discarding every template the user had saved.
+         *
+         * <p>Three cases handled:
+         * <ol>
+         *   <li>Normal edit (no rename): {@code getCloud(newName)} finds the existing cloud.</li>
+         *   <li>Rename: {@code getCloud(newName)} returns null; the old cloud is found by
+         *       walking the Stapler request ancestor stack.</li>
+         *   <li>JCasC / programmatic: {@code super.newInstance()} may already have bound
+         *       templates (e.g. from YAML).  In that case the bound templates are kept
+         *       and the copy is skipped entirely.</li>
+         * </ol>
          */
         @Override
         public Cloud newInstance(org.kohsuke.stapler.StaplerRequest req, net.sf.json.JSONObject formData)
                 throws FormException {
             SlurmCloud newCloud = (SlurmCloud) super.newInstance(req, formData);
-            String cloudName = newCloud.name;
-            Cloud existing = Jenkins.get().getCloud(cloudName);
+
+            // If super already bound templates (JCasC / test injection), keep them as-is.
+            if (!newCloud.getJobTemplates().isEmpty()) {
+                return newCloud;
+            }
+
+            // Locate the existing cloud whose templates should be preserved.
+            // 1. Same-name edit: look up directly by the new (unchanged) name.
+            Cloud existing = Jenkins.get().getCloud(newCloud.name);
+
+            // 2. Rename: the new name has no match; find the old SlurmCloud via the
+            //    Stapler ancestor stack (present when editing from /cloud/<name>/configure).
+            if (!(existing instanceof SlurmCloud) && req != null) {
+                for (org.kohsuke.stapler.Ancestor ancestor : req.getAncestors()) {
+                    if (ancestor.getObject() instanceof SlurmCloud sc) {
+                        existing = sc;
+                        break;
+                    }
+                }
+            }
+
             if (existing instanceof SlurmCloud existingCloud) {
                 List<SlurmJobTemplate> existingTemplates = existingCloud.getJobTemplates();
                 if (!existingTemplates.isEmpty()) {
