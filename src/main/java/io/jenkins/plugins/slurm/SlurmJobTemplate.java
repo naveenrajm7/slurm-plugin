@@ -406,10 +406,14 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
 
     /**
-     * Returns all configured TRES resource strings for display in the templates list,
-     * combining {@code tresPerJob}, {@code tresPerNode}, and {@code tresPerTask}
-     * (each prefixed with its scope) when more than one is set.
-     * Returns an empty string when no TRES resource has been configured.
+     * Returns the GPU/TRES resource summary for display in the templates list.
+     * Combines {@code tresPerJob}, {@code tresPerNode}, and {@code tresPerTask}
+     * (each prefixed with its scope, e.g. {@code "job:gres/gpu:a100:2"}) when more
+     * than one is set, separated by {@code ", "}.
+     * {@code tresPerSocket} is intentionally omitted — it is a low-level binding
+     * directive rather than a resource quantity, and is not typically used for GPU
+     * allocation.
+     * Returns an empty string when none of the three fields is configured.
      * Called by the {@code ${template.gpuRequest}} EL expression in {@code templates.jelly}.
      */
     public String getGpuRequest() {
