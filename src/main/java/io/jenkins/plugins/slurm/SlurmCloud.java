@@ -37,6 +37,7 @@ import org.kohsuke.stapler.AncestorInPath;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.interceptor.RequirePOST;
 
 /**
  * Slurm Cloud implementation for Jenkins.
@@ -909,6 +910,7 @@ public class SlurmCloud extends AbstractCloudImpl {
          * Test connection to Slurm REST API.
          * Similar to Kubernetes plugin's test connection functionality.
          */
+        @RequirePOST
         public FormValidation doTestConnection(
                 @QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
                 @QueryParameter("credentialsId") String credentialsId) {
