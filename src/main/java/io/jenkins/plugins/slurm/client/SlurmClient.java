@@ -189,7 +189,22 @@ public class SlurmClient {
     }
     
     /**
-     * Cancel a Slurm job by job ID
+     * Cancel a Slurm job by job ID.
+     *
+     * <p>Uses the <b>plural</b> {@code DELETE /slurm/v0.0.42/jobs/} endpoint
+     * ({@code slurm_v0042_delete_jobs}) rather than the singular
+     * {@code DELETE /slurm/v0.0.42/job/{job_id}} endpoint. The singular handler
+     * ({@code op_handler_job}) rejects any job ID {@code >= MAX_JOB_ID}
+     * (0x03FFFFFF / 67,108,863) <em>before</em> contacting {@code slurmctld}, and
+     * federated Slurm encodes the origin cluster ID in the top 6 bits of the job
+     * ID, so every job on a federation member cluster has a raw ID above that
+     * bound and is rejected with {@code 2017 Invalid JobID}. The plural handler
+     * ({@code _signal_jobs}) has no such guard and calls the federation-aware
+     * {@code slurm_kill_jobs()}.
+     *
+     * <p>The plural handler does not apply the singular path's SIGKILL/FULL_JOB
+     * defaults, so {@code signal} is set to {@code SIGKILL} explicitly.
+     *
      * @param jobId The Slurm job ID to cancel
      * @throws ApiException if cancellation fails
      */
@@ -201,17 +216,38 @@ public class SlurmClient {
         LOGGER.info("Canceling Slurm job: " + jobId);
         
         try {
-            // The API expects job ID as a string
-            io.jenkins.plugins.slurm.client.model.OpenapiKillJobResp response = 
-                api.slurmDeleteJob(jobId, null, null);
-            
+            io.jenkins.plugins.slurm.client.model.KillJobsMsg killMsg =
+                new io.jenkins.plugins.slurm.client.model.KillJobsMsg()
+                    .jobs(java.util.List.of(jobId))
+                    .signal("SIGKILL");
+
+            io.jenkins.plugins.slurm.client.model.OpenapiKillJobsResp response =
+                api.slurmDeleteJobs(killMsg);
+
             if (response != null) {
+                boolean hadError = false;
+
                 if (response.getErrors() != null && !response.getErrors().isEmpty()) {
+                    hadError = true;
                     LOGGER.warning("Job cancellation returned errors:");
                     for (io.jenkins.plugins.slurm.client.model.OpenapiError error : response.getErrors()) {
                         LOGGER.warning("  - " + error.getError());
                     }
-                } else {
+                }
+
+                if (response.getStatus() != null) {
+                    for (io.jenkins.plugins.slurm.client.model.KillJobsRespJob jobResult : response.getStatus()) {
+                        io.jenkins.plugins.slurm.client.model.KillJobsRespJobError jobError = jobResult.getError();
+                        if (jobError != null && jobError.getCode() != null && jobError.getCode() != 0) {
+                            hadError = true;
+                            LOGGER.warning("Failed to signal job " + jobResult.getStepId()
+                                + ": " + jobError.getMessage()
+                                + " (code " + jobError.getCode() + ")");
+                        }
+                    }
+                }
+
+                if (!hadError) {
                     LOGGER.info("Job " + jobId + " canceled successfully");
                 }
             }
@@ -260,11 +296,19 @@ public class SlurmClient {
         }
 
         try {
+            // Use the plural GET /slurm/v0.0.42/jobs/state/ endpoint
+            // (slurm_v0042_get_jobs_state) with server-side job_id filtering rather
+            // than the singular GET /slurm/v0.0.42/job/{job_id}. The singular handler
+            // (op_handler_job) rejects any job ID >= MAX_JOB_ID (0x03FFFFFF) before
+            // reaching slurmctld; federated job IDs encode the cluster ID in their top
+            // bits and therefore always exceed that bound (2017 Invalid JobID). The
+            // state endpoint (op_handler_job_states) has no such guard and filters by a
+            // job_id list server-side, so it is federation-safe and lightweight.
             io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response =
-                api.slurmGetJob(jobId, null, null);
+                api.slurmGetJobsState(jobId);
 
             if (response != null && response.getJobs() != null && !response.getJobs().isEmpty()) {
-                io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = response.getJobs().get(0);
+                io.jenkins.plugins.slurm.client.model.JobInfo jobInfo = selectJob(response.getJobs(), jobId);
                 String state = resolveJobState(jobInfo);
                 if (state != null) {
                     Integer exitCode = getExitCode(jobInfo);
@@ -299,6 +343,32 @@ public class SlurmClient {
                       " - " + e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Selects the job record matching the requested job ID from a filtered response.
+     *
+     * <p>The state endpoint filters server-side, but a federated query can return
+     * multiple sibling records; prefer the entry whose {@code job_id} matches the
+     * requested ID and fall back to the first record otherwise.
+     */
+    @NonNull
+    static JobInfo selectJob(@NonNull List<JobInfo> jobs, @NonNull String jobId) {
+        Integer requestedId = null;
+        try {
+            requestedId = Integer.valueOf(jobId.trim());
+        } catch (NumberFormatException ignored) {
+            // Non-numeric identifier (unexpected) - fall back to the first record.
+        }
+
+        if (requestedId != null) {
+            for (JobInfo job : jobs) {
+                if (requestedId.equals(job.getJobId())) {
+                    return job;
+                }
+            }
+        }
+        return jobs.get(0);
     }
 
     /**

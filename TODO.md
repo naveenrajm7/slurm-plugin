@@ -30,6 +30,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Federated Slurm: job status & cancel fail (issue #28)** (`cursor/fix-federated-job-status-cancel`)
+  - Singular `/job/{id}` GET/DELETE reject federated job IDs (`>= MAX_JOB_ID`) before reaching `slurmctld` → status polling and cancellation fail, jobs leak after builds
+  - `SlurmClient.cancelJob()` now uses plural `DELETE /slurm/v0.0.42/jobs/` (`slurmDeleteJobs`) with `jobs=[id]` + explicit `SIGKILL`; inspects per-job signal errors
+  - `SlurmClient.getJobStatus()` now uses `GET /slurm/v0.0.42/jobs/state/` (`slurmGetJobsState`) with server-side `job_id` filtering (no `MAX_JOB_ID` guard, federation-safe)
+
 - [x] **Slurm compute node visibility** (`feature/slurm-compute-node-visibility`)
   - Resolve allocated nodes from `job_resources.nodes` when top-level `nodes` is absent (live slurmrestd on 24.11)
   - Build console: `[Slurm] Slurm job <id> on node(s) <host>` when agent connects; status polls include nodes when known
