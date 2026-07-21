@@ -397,6 +397,47 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return memoryPerNode;
     }
 
+    /**
+     * Returns a human-readable memory string for display in the templates list (e.g. "2 GB" or "512 MB").
+     * Called by the {@code ${template.memory}} EL expression in {@code templates.jelly}.
+     */
+    public String getMemory() {
+        if (memoryPerNode == null) {
+            return "";
+        }
+        if (memoryPerNode >= 1024 && memoryPerNode % 1024 == 0) {
+            return (memoryPerNode / 1024) + " GB";
+        }
+        return memoryPerNode + " MB";
+    }
+
+    /**
+     * Returns the GPU/TRES resource summary for display in the templates list.
+     * Combines {@code tresPerJob}, {@code tresPerNode}, and {@code tresPerTask}
+     * (each prefixed with its scope, e.g. {@code "job:gres/gpu:a100:2"}) when more
+     * than one is set, separated by {@code ", "}.
+     * {@code tresPerSocket} is intentionally omitted — it is a low-level binding
+     * directive rather than a resource quantity, and is not typically used for GPU
+     * allocation.
+     * Returns an empty string when none of the three fields is configured.
+     * Called by the {@code ${template.gpuRequest}} EL expression in {@code templates.jelly}.
+     */
+    public String getGpuRequest() {
+        StringBuilder sb = new StringBuilder();
+        if (tresPerJob != null && !tresPerJob.isEmpty()) {
+            sb.append("job:").append(tresPerJob);
+        }
+        if (tresPerNode != null && !tresPerNode.isEmpty()) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("node:").append(tresPerNode);
+        }
+        if (tresPerTask != null && !tresPerTask.isEmpty()) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append("task:").append(tresPerTask);
+        }
+        return sb.toString();
+    }
+
     @DataBoundSetter
     public void setMemoryPerNode(Long memoryPerNode) {
         this.memoryPerNode = memoryPerNode != null && memoryPerNode > 0 ? memoryPerNode : 1024L;

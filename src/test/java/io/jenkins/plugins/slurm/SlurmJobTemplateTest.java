@@ -111,6 +111,61 @@ public class SlurmJobTemplateTest {
     }
 
     @Test
+    public void testGetMemoryFormatsCorrectly() {
+        SlurmJobTemplate template = new SlurmJobTemplate();
+
+        // Default is 1024 MB → 1 GB
+        assertEquals("1 GB", template.getMemory());
+
+        // Round gigabyte values
+        template.setMemoryPerNode(2048L);
+        assertEquals("2 GB", template.getMemory());
+
+        template.setMemoryPerNode(4096L);
+        assertEquals("4 GB", template.getMemory());
+
+        // Non-round MB values stay in MB
+        template.setMemoryPerNode(512L);
+        assertEquals("512 MB", template.getMemory());
+
+        template.setMemoryPerNode(1500L);
+        assertEquals("1500 MB", template.getMemory());
+    }
+
+    @Test
+    public void testGetGpuRequestShowsAllTresFields() {
+        SlurmJobTemplate template = new SlurmJobTemplate();
+
+        // No TRES configured → empty
+        assertEquals("", template.getGpuRequest());
+
+        // Only tresPerJob set
+        template.setTresPerJob("gres/gpu:a100:2");
+        assertEquals("job:gres/gpu:a100:2", template.getGpuRequest());
+
+        // Only tresPerNode set
+        template.setTresPerJob("");
+        template.setTresPerNode("gres/gpu:1");
+        assertEquals("node:gres/gpu:1", template.getGpuRequest());
+
+        // Only tresPerTask set
+        template.setTresPerNode("");
+        template.setTresPerTask("gres/gpu:v100:4");
+        assertEquals("task:gres/gpu:v100:4", template.getGpuRequest());
+
+        // All three set → all shown with their prefixes
+        template.setTresPerJob("gres/gpu:a100:2");
+        template.setTresPerNode("gres/gpu:1");
+        template.setTresPerTask("gres/gpu:v100:4");
+        assertEquals("job:gres/gpu:a100:2, node:gres/gpu:1, task:gres/gpu:v100:4",
+                template.getGpuRequest());
+
+        // Two set → both shown
+        template.setTresPerTask("");
+        assertEquals("job:gres/gpu:a100:2, node:gres/gpu:1", template.getGpuRequest());
+    }
+
+    @Test
     public void testIdleMinutes() {
         SlurmJobTemplate template = new SlurmJobTemplate();
         
