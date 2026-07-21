@@ -24,11 +24,20 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [x] **[MED]** Periodic cleanup for orphaned Slurm jobs — `SlurmGarbageCollection` (opt-in per cloud; cancels stale `{cloudName}-*` jobs not tracked by live agents)
   - [ ] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
+- [ ] **Federated `getJobStatus()` reports coarse state (validated on `ctr2-alola-ctrl-01`, PR #28 follow-up)** (`SlurmClient.getJobStatus` / `resolveJobState`)
+  - Verified end-to-end on a real federated cluster: job ID `67561473` (> `MAX_JOB_ID` `0x03FFFFFF`). Old singular `GET /job/{id}` returns `2017 Invalid JobID` (repro); new plural path works, build succeeds, and cancel works — Slurm shows `JobState=CANCELLED`, `squeue` empty, **no leak**. Core fix confirmed.
+  - **[MED]** Nuance: the plural `GET /jobs/state/?job_id=<fedId>` returns a record whose `job_state` is empty/absent for a **terminal federated job** (while still in `slurmctld` memory), so `resolveJobState()` falls through to its `PENDING` default. Result: a just-cancelled federated job briefly reports `PENDING` instead of `CANCELLED`/`COMPLETED`, then returns `null` once it ages out. State granularity is effectively exists→`PENDING` vs gone→`null` for federated jobs. Does not affect provisioning (gated by JNLP connect) or cancellation (targets the ID directly), but status display is inaccurate.
+  - Possible follow-up: for terminal detection, cross-check via a fuller endpoint (e.g. `GET /jobs/?job_id=` or accounting) or don't default empty `job_state` to `PENDING` once the job was previously seen RUNNING/connected.
 - [ ] **Slurm compute node visibility** (discovered during CK workload validation — agent page shows Jenkins synthetic name, not where the job landed)
   - [ ] **[LOW]** Optional env injection — expose `SLURM_JOB_ID` / `SLURM_NODELIST` on the Jenkins agent node for pipeline `echo $SLURM_NODELIST` / debugging
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
 
 ## Done
+
+- [x] **Federated Slurm: job status & cancel fail (issue #28)** (`cursor/fix-federated-job-status-cancel`)
+  - Singular `/job/{id}` GET/DELETE reject federated job IDs (`>= MAX_JOB_ID`) before reaching `slurmctld` → status polling and cancellation fail, jobs leak after builds
+  - `SlurmClient.cancelJob()` now uses plural `DELETE /slurm/v0.0.42/jobs/` (`slurmDeleteJobs`) with `jobs=[id]` + explicit `SIGKILL`; inspects per-job signal errors
+  - `SlurmClient.getJobStatus()` now uses `GET /slurm/v0.0.42/jobs/state/` (`slurmGetJobsState`) with server-side `job_id` filtering (no `MAX_JOB_ID` guard, federation-safe)
 
 - [x] **Slurm compute node visibility** (`feature/slurm-compute-node-visibility`)
   - Resolve allocated nodes from `job_resources.nodes` when top-level `nodes` is absent (live slurmrestd on 24.11)

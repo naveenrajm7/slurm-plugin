@@ -26,8 +26,15 @@ The build generates these key classes **without version prefixes**:
 - `JobDescMsg`, `JobSubmitReq`, `OpenapiJobSubmitResponse`
 - `Uint64NoValStruct`, `Uint32NoValStruct`
 - `OpenapiPingArrayResp`, `ControllerPing`
-- `OpenapiError`, `OpenapiKillJobResp`
-- API methods: `slurmGetPing()`, `slurmPostJobSubmit()`, `slurmDeleteJob()`
+- `OpenapiError`, `OpenapiKillJobResp`, `OpenapiKillJobsResp`, `KillJobsMsg`
+- API methods: `slurmGetPing()`, `slurmPostJobSubmit()`, `slurmDeleteJobs()`, `slurmGetJobsState()`
+
+> **Federation note**: status polling and cancellation use the *plural* endpoints
+> (`GET /slurm/v0.0.42/jobs/state/` and `DELETE /slurm/v0.0.42/jobs/`) rather than
+> the singular `/job/{id}` handler, which rejects federated job IDs (`>= MAX_JOB_ID`)
+> before reaching `slurmctld`. When upgrading, ensure the new spec still exposes
+> `slurm_v0042_get_jobs_state` and `slurm_v0042_delete_jobs` (or their renamed
+> equivalents).
 
 ## Upgrading to a New SLURM Version
 
