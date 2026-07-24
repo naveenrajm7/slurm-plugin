@@ -9,8 +9,10 @@ import hudson.Extension;
 import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Item;
+import hudson.model.Job;
 import hudson.model.Label;
 import hudson.model.Node;
+import hudson.model.Queue;
 import hudson.security.ACL;
 import hudson.slaves.AbstractCloudImpl;
 import hudson.slaves.Cloud;
@@ -266,6 +268,25 @@ public class SlurmCloud extends AbstractCloudImpl {
             return Collections.emptyList();
         }
 
+        // Folder usage restriction: never provision agents that would then be blocked by
+        // SlurmQueueTaskDispatcher.canTake(). Without this, a build in a folder that is not
+        // permitted to use this restricted cloud would loop forever — provision → agent
+        // connects → dispatcher blocks → idle teardown cancels the Slurm job → re-provision —
+        // silently burning real Slurm allocations. We cap provisioning to the number of queued
+        // requesters whose folder actually permits this cloud.
+        if (usageRestricted) {
+            int permittedRequesters = countPermittedRequesters(label);
+            if (permittedRequesters <= 0) {
+                LOGGER.info("Slurm Cloud '" + name + "': not provisioning for label "
+                        + (label != null ? label.getName() : "none")
+                        + " — no queued job is permitted to use this usage-restricted cloud. "
+                        + "Grant access in the folder's Slurm configuration (Folder > Configure > Slurm), "
+                        + "or disable 'Restrict usage' on the cloud.");
+                return Collections.emptyList();
+            }
+            toBeProvisioned = Math.min(toBeProvisioned, permittedRequesters);
+        }
+
         // Get templates that match this label
         List<SlurmJobTemplate> templates = getTemplatesFor(label);
         if (templates.isEmpty()) {
@@ -352,6 +373,38 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
 
         return matchingTemplates;
+    }
+
+    /**
+     * Counts the queued, buildable items requesting {@code label} whose owning job resides in a
+     * folder permitted to use this (usage-restricted) cloud.
+     *
+     * <p>Used to avoid provisioning agents that {@link SlurmQueueTaskDispatcher} would immediately
+     * block, which would otherwise create an infinite provision/cancel loop. When the requester
+     * cannot be resolved to a {@link Job} (e.g. a non-job task), it is counted as permitted so we
+     * do not regress non-folder workloads.
+     *
+     * @param label the label being provisioned for
+     * @return the number of permitted queued requesters
+     */
+    private int countPermittedRequesters(@CheckForNull Label label) {
+        int permitted = 0;
+        for (Queue.BuildableItem item : Jenkins.get().getQueue().getBuildableItems()) {
+            Label assigned = item.getAssignedLabel();
+            if (label != null && (assigned == null || !assigned.getName().equals(label.getName()))) {
+                continue;
+            }
+            Queue.Task ownerTask = item.task.getOwnerTask();
+            if (ownerTask instanceof Job) {
+                if (SlurmFolderProperty.isAllowed(this, (Job<?, ?>) ownerTask)) {
+                    permitted++;
+                }
+            } else {
+                // Unknown task type — cannot evaluate folder permissions; do not block it.
+                permitted++;
+            }
+        }
+        return permitted;
     }
 
     /**
