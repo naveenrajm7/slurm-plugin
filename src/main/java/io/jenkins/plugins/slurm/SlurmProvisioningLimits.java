@@ -59,8 +59,7 @@ public final class SlurmProvisioningLimits {
      *
      * @return {@code true} if capacity was reserved
      */
-    public boolean register(
-            @NonNull SlurmCloud cloud, @NonNull SlurmJobTemplate template, int numExecutors) {
+    public boolean register(@NonNull SlurmCloud cloud, @NonNull SlurmJobTemplate template, int numExecutors) {
         initInstance();
         synchronized (this) {
             reconcileWithLiveNodes(cloud, template);
@@ -77,8 +76,8 @@ public final class SlurmProvisioningLimits {
             if (newTemplateCount > template.getInstanceCap()) {
                 LOGGER.log(
                         Level.FINE,
-                        () -> template.getName() + " template limit reached: "
-                                + getTemplateCount(template.getId()) + "/" + template.getInstanceCap());
+                        () -> template.getName() + " template limit reached: " + getTemplateCount(template.getId())
+                                + "/" + template.getInstanceCap());
                 return false;
             }
 
@@ -88,8 +87,7 @@ public final class SlurmProvisioningLimits {
         }
     }
 
-    public void unregister(
-            @NonNull SlurmCloud cloud, @NonNull SlurmJobTemplate template, int numExecutors) {
+    public void unregister(@NonNull SlurmCloud cloud, @NonNull SlurmJobTemplate template, int numExecutors) {
         if (!initInstance()) {
             return;
         }

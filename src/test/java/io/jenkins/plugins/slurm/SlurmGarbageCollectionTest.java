@@ -8,7 +8,6 @@ import java.time.Duration;
 import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.jvnet.hudson.test.JenkinsRule;
 import org.jvnet.hudson.test.junit.jupiter.WithJenkins;
 
 @WithJenkins
@@ -29,16 +28,15 @@ class SlurmGarbageCollectionTest {
     void shouldCancelOrphan_whenHeartbeatStaleAndNoLiveAgent() {
         SlurmJobHeartbeats.refresh("cloud-a", "12345", "cloud-a-template-1");
         long futureNow = System.currentTimeMillis() + Duration.ofMinutes(6).toMillis();
-        assertTrue(SlurmGarbageCollection.shouldCancelOrphan(
-                "12345", Set.of(), Duration.ofMinutes(5), futureNow));
+        assertTrue(SlurmGarbageCollection.shouldCancelOrphan("12345", Set.of(), Duration.ofMinutes(5), futureNow));
     }
 
     @Test
     void shouldCancelOrphan_falseWhileAgentStillRegistered() {
         SlurmJobHeartbeats.refresh("cloud-a", "12345", "cloud-a-template-1");
         long futureNow = System.currentTimeMillis() + Duration.ofMinutes(6).toMillis();
-        assertFalse(SlurmGarbageCollection.shouldCancelOrphan(
-                "12345", Set.of("12345"), Duration.ofMinutes(5), futureNow));
+        assertFalse(
+                SlurmGarbageCollection.shouldCancelOrphan("12345", Set.of("12345"), Duration.ofMinutes(5), futureNow));
     }
 
     @Test

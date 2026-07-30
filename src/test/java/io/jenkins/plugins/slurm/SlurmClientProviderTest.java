@@ -39,8 +39,7 @@ class SlurmClientProviderTest {
     /** Creates or replaces the {@code slurm-jwt} secret-text credential with the given token value. */
     private void setToken(String token) throws Exception {
         SystemCredentialsProvider store = SystemCredentialsProvider.getInstance();
-        store.getCredentials()
-                .removeIf(c -> c instanceof StringCredentialsImpl sc && CRED_ID.equals(sc.getId()));
+        store.getCredentials().removeIf(c -> c instanceof StringCredentialsImpl sc && CRED_ID.equals(sc.getId()));
         store.getCredentials()
                 .add(new StringCredentialsImpl(CredentialsScope.GLOBAL, CRED_ID, "JWT", Secret.fromString(token)));
         store.save();
