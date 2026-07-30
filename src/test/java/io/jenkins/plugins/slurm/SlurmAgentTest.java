@@ -16,7 +16,9 @@ class SlurmAgentTest {
     void terminate_withoutJobId_skipsCancellation(JenkinsRule j) throws Exception {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 1);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "agent-cloud", 10, template);
-        SlurmAgent agent = SlurmTestHelper.createAgent("agent-no-job", cloud.name, template.getId());
+        // NoLaunchLauncher keeps the agent registered without spawning a launch thread that would
+        // race JenkinsRule teardown (DirectoryNotEmptyException) writing to the agent slave log.
+        SlurmAgent agent = SlurmTestHelper.createStaticAgent("agent-no-job", cloud.name, template.getId());
         j.jenkins.addNode(agent);
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -29,7 +31,7 @@ class SlurmAgentTest {
     void terminate_missingCloud_doesNotThrow(JenkinsRule j) throws Exception {
         SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 1);
         SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "ephemeral-cloud", 10, template);
-        SlurmAgent agent = SlurmTestHelper.createAgent("agent-missing-cloud", cloud.name, template.getId());
+        SlurmAgent agent = SlurmTestHelper.createStaticAgent("agent-missing-cloud", cloud.name, template.getId());
         agent.setSlurmJobId("424242");
         j.jenkins.addNode(agent);
         j.jenkins.clouds.remove(cloud);
@@ -48,7 +50,7 @@ class SlurmAgentTest {
         cloud.setJobTemplates(Collections.singletonList(template));
         j.jenkins.clouds.add(cloud);
 
-        SlurmAgent agent = SlurmTestHelper.createAgent("agent-keep-job", cloud.name, template.getId());
+        SlurmAgent agent = SlurmTestHelper.createStaticAgent("agent-keep-job", cloud.name, template.getId());
         agent.setSlurmJobId("777777");
         j.jenkins.addNode(agent);
 
@@ -71,5 +73,10 @@ class SlurmAgentTest {
 
         SlurmLauncher launcher = (SlurmLauncher) agent.getComputer().getLauncher();
         assertTrue(launcher.getProblem() != null);
+
+        // This agent uses a real SlurmLauncher, so adding the node auto-connects the computer and
+        // runs launch() on a background thread that writes to the agent slave log. Wait for that
+        // fast-failing launch to settle so it does not race JenkinsRule teardown deleting target/tmp.
+        SlurmTestHelper.awaitLaunchThreadsSettled(j.jenkins);
     }
 }
