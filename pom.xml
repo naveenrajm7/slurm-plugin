@@ -16,7 +16,7 @@
   <name>Slurm Plugin</name>
   <description>Jenkins plugin to run dynamic agents in a Slurm cluster</description>
   <url>https://github.com/jenkinsci/${project.artifactId}-plugin</url>
-  
+
   <licenses>
     <license>
       <name>MIT License</name>
@@ -70,65 +70,44 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- Core Jenkins cloud provider support -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>cloud-stats</artifactId>
-    </dependency>
-    
-    <!-- Folder plugin for access control -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>cloudbees-folder</artifactId>
-    </dependency>
-    
-    <!-- Credentials management -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>credentials</artifactId>
-    </dependency>
-    
-    <!-- Plain credentials for JWT tokens -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>plain-credentials</artifactId>
-    </dependency>
-    
-    <!-- Jackson dependencies via jenkins plugin -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins</groupId>
-      <artifactId>jackson2-api</artifactId>
-    </dependency>
-    
-    <dependency>
-      <groupId>org.openapitools</groupId>
-      <artifactId>jackson-databind-nullable</artifactId>
-      <version>0.2.6</version>
-    </dependency>
-    
+
     <!-- Caffeine cache for client management - use version from BOM -->
     <dependency>
       <groupId>io.jenkins.plugins</groupId>
       <artifactId>caffeine-api</artifactId>
     </dependency>
-    
-    <!-- Pipeline support - workflow step API -->
+    <!-- Core Jenkins cloud provider support -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloud-stats</artifactId>
+    </dependency>
+
+    <!-- Folder plugin for access control -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>cloudbees-folder</artifactId>
+    </dependency>
+
+    <!-- Credentials management -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>credentials</artifactId>
+    </dependency>
+
+    <!-- Jackson dependencies via jenkins plugin -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>jackson2-api</artifactId>
+    </dependency>
+
+    <!-- Plain credentials for JWT tokens -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>plain-credentials</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
-      <artifactId>workflow-step-api</artifactId>
-    </dependency>
-    
-    <!-- Pipeline support - declarative agent API -->
-    <dependency>
-      <groupId>org.jenkinsci.plugins</groupId>
-      <artifactId>pipeline-model-extensions</artifactId>
-      <optional>true</optional>
-    </dependency>
-    
-    <!-- Pipeline support - runtime dependencies needed for mvn hpi:run -->
-    <dependency>
-      <groupId>org.jenkins-ci.plugins.workflow</groupId>
-      <artifactId>workflow-job</artifactId>
+      <artifactId>workflow-basic-steps</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
@@ -138,34 +117,55 @@
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
       <artifactId>workflow-durable-task-step</artifactId>
     </dependency>
+
+    <!-- Pipeline support - runtime dependencies needed for mvn hpi:run -->
     <dependency>
       <groupId>org.jenkins-ci.plugins.workflow</groupId>
-      <artifactId>workflow-basic-steps</artifactId>
+      <artifactId>workflow-job</artifactId>
+    </dependency>
+
+    <!-- Pipeline support - workflow step API -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins.workflow</groupId>
+      <artifactId>workflow-step-api</artifactId>
     </dependency>
     <dependency>
       <groupId>org.jenkinsci.plugins</groupId>
       <artifactId>pipeline-model-definition</artifactId>
     </dependency>
-    
-    <!-- Test-only dependencies -->
+
+    <!-- Pipeline support - declarative agent API -->
     <dependency>
       <groupId>org.jenkinsci.plugins</groupId>
-      <artifactId>pipeline-model-definition</artifactId>
-      <classifier>tests</classifier>
-      <scope>test</scope>
+      <artifactId>pipeline-model-extensions</artifactId>
+      <optional>true</optional>
     </dependency>
-    
+
+    <dependency>
+      <groupId>org.openapitools</groupId>
+      <artifactId>jackson-databind-nullable</artifactId>
+      <version>0.2.6</version>
+    </dependency>
+
     <!-- Configuration as Code support -->
     <dependency>
       <groupId>io.jenkins</groupId>
       <artifactId>configuration-as-code</artifactId>
       <scope>test</scope>
     </dependency>
-    
+
     <!-- Test dependencies -->
     <dependency>
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>junit</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Test-only dependencies -->
+    <dependency>
+      <groupId>org.jenkinsci.plugins</groupId>
+      <artifactId>pipeline-model-definition</artifactId>
+      <classifier>tests</classifier>
       <scope>test</scope>
     </dependency>
     <dependency>
@@ -174,6 +174,19 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <repositories>
+    <repository>
+      <id>repo.jenkins-ci.org</id>
+      <url>https://repo.jenkins-ci.org/public/</url>
+    </repository>
+  </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>repo.jenkins-ci.org</id>
+      <url>https://repo.jenkins-ci.org/public/</url>
+    </pluginRepository>
+  </pluginRepositories>
 
   <build>
     <plugins>
@@ -185,7 +198,7 @@
           <fork>true</fork>
         </configuration>
       </plugin>
-      
+
       <!-- Exec Plugin to preprocess OpenAPI spec and remove version prefixes -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
@@ -194,10 +207,10 @@
         <executions>
           <execution>
             <id>preprocess-openapi-spec</id>
-            <phase>generate-sources</phase>
             <goals>
               <goal>exec</goal>
             </goals>
+            <phase>generate-sources</phase>
             <configuration>
               <executable>python</executable>
               <arguments>
@@ -212,7 +225,7 @@
           </execution>
         </executions>
       </plugin>
-      
+
       <!-- OpenAPI Generator for Slurm (Version-Independent) -->
       <plugin>
         <groupId>org.openapitools</groupId>
@@ -222,10 +235,10 @@
           <!-- Generate version-independent client from preprocessed spec -->
           <execution>
             <id>generate-slurm-client</id>
-            <phase>generate-sources</phase>
             <goals>
               <goal>generate</goal>
             </goals>
+            <phase>generate-sources</phase>
             <configuration>
               <!-- Use preprocessed spec with version prefixes removed -->
               <inputSpec>${project.build.directory}/generated-resources/openapi/slurm-processed.json</inputSpec>
@@ -253,17 +266,4 @@
       </plugin>
     </plugins>
   </build>
-
-  <repositories>
-    <repository>
-      <id>repo.jenkins-ci.org</id>
-      <url>https://repo.jenkins-ci.org/public/</url>
-    </repository>
-  </repositories>
-  <pluginRepositories>
-    <pluginRepository>
-      <id>repo.jenkins-ci.org</id>
-      <url>https://repo.jenkins-ci.org/public/</url>
-    </pluginRepository>
-  </pluginRepositories>
 </project>

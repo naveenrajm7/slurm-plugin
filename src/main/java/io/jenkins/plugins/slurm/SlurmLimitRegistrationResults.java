@@ -24,8 +24,7 @@ final class SlurmLimitRegistrationResults {
      * @return a registration handle when capacity was reserved, otherwise {@code null}
      */
     Registration register(@NonNull SlurmJobTemplate template, int numExecutors) {
-        boolean success =
-                SlurmProvisioningLimits.get().register(cloud, template, numExecutors);
+        boolean success = SlurmProvisioningLimits.get().register(cloud, template, numExecutors);
         Registration registration = new Registration(success, template, numExecutors);
         registrations.add(registration);
         return success ? registration : null;
@@ -55,8 +54,7 @@ final class SlurmLimitRegistrationResults {
             released = true;
             LOGGER.log(
                     Level.FINEST,
-                    () -> "Releasing reserved slot for template " + template.getName() + " on cloud "
-                            + cloud.name);
+                    () -> "Releasing reserved slot for template " + template.getName() + " on cloud " + cloud.name);
             SlurmProvisioningLimits.get().unregister(cloud, template, numExecutors);
         }
     }

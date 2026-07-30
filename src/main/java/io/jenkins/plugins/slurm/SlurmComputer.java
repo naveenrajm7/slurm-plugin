@@ -1,43 +1,40 @@
 package io.jenkins.plugins.slurm;
 
-import hudson.model.Executor;
-import hudson.model.Node;
-import hudson.model.Queue;
-import hudson.slaves.AbstractCloudComputer;
-import hudson.slaves.OfflineCause;
-
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
+import hudson.model.Executor;
+import hudson.model.Queue;
+import hudson.slaves.AbstractCloudComputer;
 import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-
-import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.cloudstats.TrackedItem;
 import org.kohsuke.stapler.export.Exported;
 import org.kohsuke.stapler.export.ExportedBean;
 
 /**
  * Computer implementation for Slurm agents.
- * 
+ *
  * This class manages the execution state and lifecycle of a Slurm-based
  * Jenkins agent, including handling connection status and job execution.
  * Implements TrackedItem for cloud-stats plugin integration.
  */
 @ExportedBean
 public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements TrackedItem {
-    
+
     private static final Logger LOGGER = Logger.getLogger(SlurmComputer.class.getName());
-    
+
     private volatile boolean launching = false;
+
     @CheckForNull
     private volatile String liveSlurmJobStatus;
-    
+
     public SlurmComputer(@NonNull SlurmAgent agent) {
         super(agent);
         LOGGER.log(Level.FINE, "Created Slurm computer for agent: {0}", agent.getNodeName());
     }
-    
+
     /**
      * Gets the Slurm agent associated with this computer.
      */
@@ -46,57 +43,56 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     public SlurmAgent getNode() {
         return super.getNode();
     }
-    
+
     /**
      * Indicates if this computer is currently in the process of being launched.
-     * 
+     *
      * @return true if Slurm job has been submitted and agent is waiting to connect
      */
     public boolean isLaunching() {
         return launching;
     }
-    
+
     /**
      * Sets the launching state.
      * Should be called by the launcher when job submission starts/completes.
      */
     public void setLaunching(boolean launching) {
         this.launching = launching;
-        LOGGER.log(Level.FINE, "Agent {0} launching state: {1}", 
-                  new Object[]{getName(), launching});
+        LOGGER.log(Level.FINE, "Agent {0} launching state: {1}", new Object[] {getName(), launching});
     }
-    
+
     /**
      * Called when a task is accepted by this computer.
      */
     @Override
     public void taskAccepted(Executor executor, Queue.Task task) {
         super.taskAccepted(executor, task);
-        LOGGER.log(Level.FINE, "Computer {0} accepted task {1}",
-                  new Object[]{this, task.getFullDisplayName()});
+        LOGGER.log(Level.FINE, "Computer {0} accepted task {1}", new Object[] {this, task.getFullDisplayName()});
     }
-    
+
     /**
      * Called when a task completes on this computer.
      */
     @Override
     public void taskCompleted(Executor executor, Queue.Task task, long durationMS) {
-        LOGGER.log(Level.FINE, "Computer {0} completed task {1} in {2}ms", 
-                  new Object[]{this, task.getFullDisplayName(), durationMS});
+        LOGGER.log(Level.FINE, "Computer {0} completed task {1} in {2}ms", new Object[] {
+            this, task.getFullDisplayName(), durationMS
+        });
         super.taskCompleted(executor, task, durationMS);
     }
-    
+
     /**
      * Called when a task completes with problems.
      */
     @Override
-    public void taskCompletedWithProblems(Executor executor, Queue.Task task, 
-                                         long durationMS, Throwable problems) {
+    public void taskCompletedWithProblems(Executor executor, Queue.Task task, long durationMS, Throwable problems) {
         super.taskCompletedWithProblems(executor, task, durationMS, problems);
-        LOGGER.log(Level.WARNING, "Computer {0} completed task {1} with problems", 
-                  new Object[]{this, task.getFullDisplayName()});
+        LOGGER.log(Level.WARNING, "Computer {0} completed task {1} with problems", new Object[] {
+            this, task.getFullDisplayName()
+        });
     }
-    
+
     /**
      * Gets display information about the Slurm job for the UI and REST API.
      */
@@ -112,10 +108,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
             return "N/A";
         }
 
-        return formatPlacementSummary(
-                agent.getSlurmJobId(),
-                agent.getPartition(),
-                agent.getNodeList());
+        return formatPlacementSummary(agent.getSlurmJobId(), agent.getPartition(), agent.getNodeList());
     }
 
     @Exported
@@ -141,9 +134,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
 
     @NonNull
     static String formatPlacementSummary(
-            @CheckForNull String jobId,
-            @CheckForNull String partition,
-            @CheckForNull String nodeList) {
+            @CheckForNull String jobId, @CheckForNull String partition, @CheckForNull String nodeList) {
         StringBuilder info = new StringBuilder();
         info.append("Job ID: ").append(jobId != null ? jobId : "Not submitted");
 
@@ -179,7 +170,7 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
     public void clearProvisioningStatus() {
         liveSlurmJobStatus = null;
     }
-    
+
     @Override
     public void setAcceptingTasks(boolean acceptingTasks) {
         super.setAcceptingTasks(acceptingTasks);
@@ -198,16 +189,16 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
             }
         }
     }
-    
+
     @Override
     public String toString() {
         return String.format("SlurmComputer[%s]", getName());
     }
-    
+
     /**
      * Gets the cloud-stats tracking ID for this computer.
      * Returns the ID from the associated Slurm agent.
-     * 
+     *
      * @return the cloud-stats tracking ID, or null if agent not available
      */
     @Override

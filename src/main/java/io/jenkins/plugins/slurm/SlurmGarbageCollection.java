@@ -73,10 +73,7 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
     }
 
     static boolean shouldCancelOrphan(
-            @NonNull String jobId,
-            @NonNull Set<String> liveJobIds,
-            @NonNull Duration timeout,
-            long nowEpochMs) {
+            @NonNull String jobId, @NonNull Set<String> liveJobIds, @NonNull Duration timeout, long nowEpochMs) {
         if (liveJobIds.contains(jobId)) {
             return false;
         }
@@ -169,8 +166,7 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
                         continue;
                     }
 
-                    LOGGER.info("Cancelling orphaned Slurm job " + jobId + " (" + jobName + ") on cloud "
-                            + cloud.name);
+                    LOGGER.info("Cancelling orphaned Slurm job " + jobId + " (" + jobName + ") on cloud " + cloud.name);
                     try {
                         client.cancelJob(jobId);
                         SlurmJobHeartbeats.remove(jobId);

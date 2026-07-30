@@ -124,8 +124,7 @@ public class SlurmLauncher extends JNLPLauncher {
             slurmComputer.setLaunching(true);
             try {
                 long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
-                waitForAgentConnection(
-                        slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs, listener);
+                waitForAgentConnection(slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs, listener);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Launch interrupted", e);
@@ -616,8 +615,8 @@ public class SlurmLauncher extends JNLPLauncher {
                         } else {
                             long elapsed = (System.currentTimeMillis() - startTime) / 1000;
                             console.getLogger()
-                                    .println("[Slurm] Job status not yet visible from slurmrestd ("
-                                            + elapsed + "s since submit), waiting...");
+                                    .println("[Slurm] Job status not yet visible from slurmrestd (" + elapsed
+                                            + "s since submit), waiting...");
                             LOGGER.fine("Job " + jobId + " status not visible yet; within grace period");
                             lastStatusCheck = System.currentTimeMillis();
                             // fall through to online check below
@@ -703,8 +702,8 @@ public class SlurmLauncher extends JNLPLauncher {
                         } else {
                             long elapsed = (System.currentTimeMillis() - startTime) / 1000;
                             console.getLogger()
-                                    .println("[Slurm] Job status not yet visible from slurmrestd (HTTP 404, "
-                                            + elapsed + "s since submit), waiting...");
+                                    .println("[Slurm] Job status not yet visible from slurmrestd (HTTP 404, " + elapsed
+                                            + "s since submit), waiting...");
                             LOGGER.fine("Job " + jobId + " returned 404; within grace period");
                             lastStatusCheck = System.currentTimeMillis();
                         }
@@ -738,10 +737,10 @@ public class SlurmLauncher extends JNLPLauncher {
                         .println("Agent connected successfully after " + elapsed
                                 + " seconds (JNLP connected"
                                 + (lastKnownStatus != null && "RUNNING".equals(lastKnownStatus.getState())
-                                        ? ", job RUNNING" : "")
+                                        ? ", job RUNNING"
+                                        : "")
                                 + ")");
-                LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + elapsed
-                        + " seconds");
+                LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + elapsed + " seconds");
                 SlurmCloudStats.attachLaunchingOk(
                         agent, "Agent connected after " + elapsed + "s (Slurm job " + jobId + ")");
 
