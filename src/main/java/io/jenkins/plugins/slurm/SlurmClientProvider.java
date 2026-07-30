@@ -58,18 +58,24 @@ public class SlurmClientProvider {
      */
     static SlurmClient createClient(SlurmCloud cloud) throws Exception {
         String displayName = cloud.getDisplayName();
+        int currentValidity = getValidity(cloud);
         final Client c = clients.getIfPresent(displayName);
-        
-        if (c == null) {
-            // Create new client
+
+        // Rebuild when there is no cached client, or when the cached client was built from a
+        // now-stale configuration (e.g. the JWT credential was renewed in place). The stored
+        // validity is compared on every read because a credential-only edit does not trigger
+        // SaveableListenerImpl (that listener only fires on Jenkins global-config saves).
+        if (c == null || c.getValidity() != currentValidity) {
             String authToken = getAuthToken(cloud);
             SlurmClient client = new SlurmClient(cloud.getSlurmRestApiUrl(), authToken);
-            
-            clients.put(displayName, new Client(getValidity(cloud), client));
-            LOGGER.log(Level.FINE, "Created new Slurm client: {0}", displayName);
+
+            clients.put(displayName, new Client(currentValidity, client));
+            LOGGER.log(
+                    Level.FINE,
+                    () -> (c == null ? "Created new Slurm client: " : "Refreshed stale Slurm client: ") + displayName);
             return client;
         }
-        
+
         return c.getClient();
     }
     
@@ -116,7 +122,14 @@ public class SlurmClientProvider {
     /**
      * Compute the hash of connection properties of the given cloud.
      * This hash is used to determine if a cloud was updated and a new connection is needed.
-     * 
+     *
+     * <p>The current credential secret is included via {@link #tokenFingerprint(SlurmCloud)} so
+     * that renewing a JWT (editing the credential in place, keeping the same credential ID)
+     * changes the validity hash and invalidates the cached client. Without this, a cached
+     * {@link SlurmClient} keeps serving the stale token — which pings fine on a freshly-built
+     * client (Test Connection) but fails batch job submission with a protocol authentication
+     * error — until the 30-minute cache TTL expires.
+     *
      * @param cloud cloud to compute validity hash for
      * @return client validity hash code
      */
@@ -125,9 +138,40 @@ public class SlurmClientProvider {
         Object[] cloudObjects = {
             cloud.getSlurmRestApiUrl(),
             cloud.getCredentialsId(),
-            cloud.getDefaultPartition()
+            cloud.getDefaultPartition(),
+            tokenFingerprint(cloud)
         };
         return Arrays.hashCode(cloudObjects);
+    }
+
+    /**
+     * Returns a stable, non-reversible fingerprint of the cloud's current credential secret,
+     * or {@code null} when no token is configured/resolvable. Used only to detect that the
+     * secret value changed; the raw token is never stored in the validity hash.
+     *
+     * @param cloud the cloud whose credential secret to fingerprint
+     * @return SHA-256 hex digest of the token, or {@code null}
+     */
+    private static String tokenFingerprint(@NonNull SlurmCloud cloud) {
+        String token = getAuthToken(cloud);
+        if (token == null || token.isEmpty()) {
+            return null;
+        }
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+                sb.append(Character.forDigit(b & 0xF, 16));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 is a required algorithm on every JVM; fall back to length so a changed
+            // secret still (weakly) changes the fingerprint rather than silently caching.
+            LOGGER.log(Level.WARNING, "SHA-256 unavailable for token fingerprint; using weak fallback", e);
+            return "len:" + token.length();
+        }
     }
     
     private static class Client {
