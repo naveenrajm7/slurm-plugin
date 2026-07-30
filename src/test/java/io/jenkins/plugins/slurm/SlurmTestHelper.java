@@ -82,7 +82,25 @@ final class SlurmTestHelper {
             }
         }
 
+        awaitLaunchThreadsSettled(jenkins);
+    }
+
+    /**
+     * Waits until no {@link SlurmComputer} is actively launching before JenkinsRule teardown.
+     *
+     * <p>Adding a node with the default {@link RetentionStrategy} auto-connects the computer, which
+     * runs {@link SlurmLauncher#launch} on a background thread. That launch writes to the agent's
+     * {@code logs/slaves/&lt;name&gt;/slave.log} file. If the test method returns while the launch
+     * thread is still writing, the harness can fail with {@code DirectoryNotEmptyException} when it
+     * deletes {@code target/tmp} concurrently. Draining the launch threads (and letting the final
+     * log writes flush) before returning keeps teardown deterministic.
+     *
+     * <p>Requires a short stable window of quiescence so a launch thread that has not yet flipped
+     * {@link SlurmComputer#isLaunching()} to {@code true} is not mistaken for "already finished".
+     */
+    static void awaitLaunchThreadsSettled(jenkins.model.Jenkins jenkins) throws InterruptedException, TimeoutException {
         long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(30);
+        int consecutiveIdle = 0;
         while (System.currentTimeMillis() < deadline) {
             boolean busy = false;
             for (Computer computer : jenkins.getComputers()) {
@@ -91,8 +109,11 @@ final class SlurmTestHelper {
                     break;
                 }
             }
-            if (!busy) {
-                Thread.sleep(250);
+            if (busy) {
+                consecutiveIdle = 0;
+            } else if (++consecutiveIdle >= 5) {
+                // Give the launch thread's tail (node removal + final slave.log writes) time to flush.
+                Thread.sleep(500);
                 return;
             }
             Thread.sleep(100);
