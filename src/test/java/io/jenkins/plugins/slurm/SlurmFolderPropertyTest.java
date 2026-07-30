@@ -107,4 +107,49 @@ class SlurmFolderPropertyTest {
 
         assertTrue(SlurmFolderProperty.isAllowed(agent, job));
     }
+
+    @Test
+    void isAllowed_cloudOverload_respectsFolderRestrictions(JenkinsRule j) throws Exception {
+        SlurmCloud allowedCloud = SlurmTestHelper.createCloud("allowed", 10);
+        allowedCloud.setUsageRestricted(true);
+        SlurmCloud deniedCloud = SlurmTestHelper.createCloud("denied", 10);
+        deniedCloud.setUsageRestricted(true);
+        j.jenkins.clouds.add(allowedCloud);
+        j.jenkins.clouds.add(deniedCloud);
+
+        Folder folder = j.jenkins.createProject(Folder.class, "restricted-cloud-overload");
+        SlurmFolderProperty property = new SlurmFolderProperty();
+        property.setPermittedClouds(Collections.singletonList("allowed"));
+        folder.addProperty(property);
+
+        FreeStyleProject job = folder.createProject(FreeStyleProject.class, "build");
+
+        assertTrue(SlurmFolderProperty.isAllowed(allowedCloud, job));
+        assertFalse(SlurmFolderProperty.isAllowed(deniedCloud, job));
+    }
+
+    @Test
+    void isAllowed_cloudOverload_allowsUnrestrictedCloud(JenkinsRule j) throws Exception {
+        SlurmCloud cloud = SlurmTestHelper.createCloud("open", 10);
+        cloud.setUsageRestricted(false);
+        j.jenkins.clouds.add(cloud);
+
+        Folder folder = j.jenkins.createProject(Folder.class, "open-cloud-overload");
+        FreeStyleProject job = folder.createProject(FreeStyleProject.class, "build");
+
+        assertTrue(SlurmFolderProperty.isAllowed(cloud, job));
+    }
+
+    @Test
+    void isAllowed_cloudOverload_deniesRestrictedCloudWithNullJob(JenkinsRule j) throws Exception {
+        SlurmCloud restricted = SlurmTestHelper.createCloud("restricted", 10);
+        restricted.setUsageRestricted(true);
+        SlurmCloud unrestricted = SlurmTestHelper.createCloud("unrestricted", 10);
+        unrestricted.setUsageRestricted(false);
+        j.jenkins.clouds.add(restricted);
+        j.jenkins.clouds.add(unrestricted);
+
+        assertFalse(SlurmFolderProperty.isAllowed(restricted, null));
+        assertTrue(SlurmFolderProperty.isAllowed(unrestricted, null));
+    }
 }

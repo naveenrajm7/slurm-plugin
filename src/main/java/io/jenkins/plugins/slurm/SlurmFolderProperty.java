@@ -61,15 +61,35 @@ public class SlurmFolderProperty extends AbstractFolderProperty<AbstractFolder<?
 
     @SuppressWarnings({"rawtypes"})
     public static boolean isAllowed(SlurmAgent agent, Job job) {
+        return isAllowed(agent.getSlurmCloud(), job);
+    }
+
+    /**
+     * Returns whether the given job's folder (or any ancestor folder) is permitted to use
+     * {@code cloud}.
+     *
+     * <p>Unlike {@link #isAllowed(SlurmAgent, Job)}, this overload does not require an already
+     * provisioned agent, so it can be consulted at provisioning time to avoid launching agents
+     * that would then be blocked by {@link SlurmQueueTaskDispatcher#canTake}.
+     *
+     * @param cloud the Slurm cloud being considered
+     * @param job the job requesting an agent
+     * @return {@code true} if the cloud is unrestricted or the job's folder chain permits it
+     */
+    @SuppressWarnings({"rawtypes"})
+    public static boolean isAllowed(SlurmCloud cloud, Job job) {
+        if (cloud == null || !cloud.isUsageRestricted()) {
+            return true;
+        }
+        if (job == null) {
+            // No owning job to check permissions against; be conservative and disallow so a
+            // restricted cloud is never used by an unidentifiable requester.
+            return false;
+        }
         ItemGroup parent = job.getParent();
         Set<String> allowedClouds = new HashSet<>();
-
-        SlurmCloud targetCloud = agent.getSlurmCloud();
-        if (targetCloud.isUsageRestricted()) {
-            SlurmFolderProperty.collectAllowedClouds(allowedClouds, parent);
-            return allowedClouds.contains(targetCloud.name);
-        }
-        return true;
+        SlurmFolderProperty.collectAllowedClouds(allowedClouds, parent);
+        return allowedClouds.contains(cloud.name);
     }
 
     @Override
@@ -115,8 +135,7 @@ public class SlurmFolderProperty extends AbstractFolderProperty<AbstractFolder<?
     public static void collectAllowedClouds(Set<String> allowedClouds, ItemGroup<?> itemGroup) {
         if (itemGroup instanceof AbstractFolder) {
             AbstractFolder<?> folder = (AbstractFolder<?>) itemGroup;
-            SlurmFolderProperty slurmFolderProperty =
-                    folder.getProperties().get(SlurmFolderProperty.class);
+            SlurmFolderProperty slurmFolderProperty = folder.getProperties().get(SlurmFolderProperty.class);
 
             if (slurmFolderProperty != null) {
                 allowedClouds.addAll(slurmFolderProperty.getPermittedClouds());
