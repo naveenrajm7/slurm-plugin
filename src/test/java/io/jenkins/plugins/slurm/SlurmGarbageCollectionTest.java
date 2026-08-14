@@ -20,8 +20,8 @@ class SlurmGarbageCollectionTest {
 
     @Test
     void isPluginJobName_matchesCloudPrefix() {
-        assertTrue(SlurmGarbageCollection.isPluginJobName("ctr2-alola-ctrl-01", "ctr2-alola-ctrl-01-wl-legato-cpu-1"));
-        assertFalse(SlurmGarbageCollection.isPluginJobName("ctr2-alola-ctrl-01", "other-job"));
+        assertTrue(SlurmGarbageCollection.isPluginJobName("slurm-ctrl-01", "slurm-ctrl-01-wl-legato-cpu-1"));
+        assertFalse(SlurmGarbageCollection.isPluginJobName("slurm-ctrl-01", "other-job"));
     }
 
     @Test
