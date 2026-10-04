@@ -1,5 +1,7 @@
 package io.jenkins.plugins.slurm;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import io.jenkins.plugins.slurm.client.model.*;
@@ -18,6 +20,10 @@ import java.util.logging.Logger;
 public class SlurmJobBuilder {
 
     private static final Logger LOGGER = Logger.getLogger(SlurmJobBuilder.class.getName());
+
+    private static final ObjectMapper ENVIRONMENT_MAPPER = new ObjectMapper();
+
+    private static final TypeReference<List<String>> ENVIRONMENT_LIST = new TypeReference<List<String>>() {};
 
     private final SlurmJobTemplate template;
     private final String agentName;
@@ -303,36 +309,16 @@ public class SlurmJobBuilder {
         env.add("PATH=/usr/local/bin:/usr/bin:/bin");
         env.add("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib");
 
-        // Add user-specified environment variables from template (if any)
-        if (template.getEnvironment() != null
-                && !template.getEnvironment().trim().isEmpty()) {
+        // Add user-specified environment variables from template (if any).
+        // The template stores a JSON array of "KEY=value" strings. Values may contain
+        // commas, spaces, and quotes, so this must be parsed as JSON rather than split on ','.
+        String envJson = template.getEnvironment();
+        if (envJson != null && !envJson.trim().isEmpty()) {
             try {
-                // Parse the JSON array string from template
-                String envJson = template.getEnvironment().trim();
-
-                // Simple parsing for JSON array format: ["VAR1=value1", "VAR2=value2"]
-                if (envJson.startsWith("[") && envJson.endsWith("]")) {
-                    String content = envJson.substring(1, envJson.length() - 1);
-
-                    // Split by comma, handling quoted strings
-                    String[] entries = content.split(",");
+                List<String> entries = ENVIRONMENT_MAPPER.readValue(envJson.trim(), ENVIRONMENT_LIST);
+                if (entries != null) {
                     for (String entry : entries) {
-                        String trimmed = entry.trim();
-                        // Remove surrounding quotes if present
-                        if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-                            trimmed = trimmed.substring(1, trimmed.length() - 1);
-                        }
-
-                        if (!trimmed.isEmpty() && trimmed.contains("=")) {
-                            // Don't override our required PATH and LD_LIBRARY_PATH
-                            String varName = trimmed.substring(0, trimmed.indexOf("="));
-                            if (!varName.equals("PATH") && !varName.equals("LD_LIBRARY_PATH")) {
-                                env.add(trimmed);
-                                LOGGER.fine("Added user environment variable: " + varName);
-                            } else {
-                                LOGGER.warning("Ignoring user override of required variable: " + varName);
-                            }
-                        }
+                        appendUserEnvironment(env, entry);
                     }
                 }
             } catch (Exception e) {
@@ -341,6 +327,28 @@ public class SlurmJobBuilder {
         }
 
         return env;
+    }
+
+    /**
+     * Appends one user {@code KEY=value} entry. Entries that do not contain {@code '='}
+     * are ignored. User values are not allowed to replace the required {@code PATH} and
+     * {@code LD_LIBRARY_PATH} variables.
+     */
+    private static void appendUserEnvironment(List<String> env, String entry) {
+        if (entry == null) {
+            return;
+        }
+        String trimmed = entry.trim();
+        if (trimmed.isEmpty() || !trimmed.contains("=")) {
+            return;
+        }
+        String varName = trimmed.substring(0, trimmed.indexOf('='));
+        if (!varName.equals("PATH") && !varName.equals("LD_LIBRARY_PATH")) {
+            env.add(trimmed);
+            LOGGER.fine("Added user environment variable: " + varName);
+        } else {
+            LOGGER.warning("Ignoring user override of required variable: " + varName);
+        }
     }
 
     /**
