@@ -482,11 +482,18 @@ public class SlurmCloud extends AbstractCloudImpl {
                                     + ") for agent: " + agentName + " — agent can be reused within idle window");
                         }
 
-                        // 3. Create the Slurm agent with proper constructor parameters
+                        // 3. Create the Slurm agent with proper constructor parameters.
+                        // Native launch: remoteFS is a private subdirectory of the template
+                        // working directory. The batch script creates it. Pyxis and custom
+                        // scripts keep the template directory.
+                        String remoteFs = jobTemplate.getCurrentWorkingDirectory();
+                        if (SlurmJobBuilder.usesPerAgentWorkspace(jobTemplate)) {
+                            remoteFs = SlurmJobBuilder.nativeAgentRoot(remoteFs, agentName);
+                        }
                         SlurmAgent agent = new SlurmAgent(
                                 agentName, // name
                                 "Slurm agent from template " + jobTemplate.getName(), // description
-                                jobTemplate.getCurrentWorkingDirectory(), // remoteFS
+                                remoteFs, // remoteFS
                                 1, // numExecutors — always 1; cpusPerTask is a Slurm resource, not Jenkins concurrency
                                 jobTemplate.getNodeUsageMode(), // mode
                                 jobTemplate.getAgentLabelString(), // labelString

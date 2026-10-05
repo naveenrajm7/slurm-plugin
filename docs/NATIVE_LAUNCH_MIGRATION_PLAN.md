@@ -43,19 +43,19 @@ collisions and how to accommodate them.
 ### 1. Remoting `-workDir` lock — RESOLVED by native launch design
 
 Remoting locks `<workDir>/remoting`. Two agents sharing a `-workDir` → the second fails with
-"agent already running". The plugin/stopgap gives each agent a **unique** workDir
-(`/var/jenkins/agents/<agent-name>`), so this is handled. Keep `$HOME=/var/jenkins` so home/ccache
-paths still resolve.
+"agent already running". Native launch sets `-workDir` to `{workdir}/agents/{agent-name}` and
+deletes that directory when the job exits. Keep `$HOME` on the shared parent (for example
+`/var/jenkins_home`) so ccache and ref-repo paths still resolve.
 
-- **Action:** none for the plugin (already per-agent). Ensure any docs/scripts keep workDir unique.
+- **Action:** none. The generated native script creates the directory; do not point `-workDir` at the shared parent.
 
 ### 2. Build workspace cross-node collision — RESOLVED by per-agent remoteFS
 
 Jenkins de-duplicates workspaces (`job@2`) only **per Computer**, not across nodes that secretly
-share a filesystem. With unique per-agent `remoteFS` (matching the unique workDir), each agent's
-`WORKSPACE` is distinct, so this is handled.
+share a filesystem. Native launch sets Jenkins `remoteFS` to the same `{workdir}/agents/{agent-name}`
+directory as `-workDir`. A wipe deletes only that agent's `workspace/`.
 
-- **Action:** none, as long as each Jenkins node's Remote root directory = its unique workDir.
+- **Action:** none for generated native scripts. Custom batch scripts keep the shared template directory as `remoteFS`.
 
 ### 3. sccache local server + stunnel port collision — OPEN (CK) ⚠️ **primary blocker**
 
@@ -138,7 +138,7 @@ For a 256-CPU / 8-GPU node, one-GPU-per-agent slicing:
 - `cpus_per_task`: `32` (1/8; use `30` to leave OS headroom)
 - `gres`: `gpu:1` (or model-qualified, e.g. `gpu:<model>:1`) — this is the real cap to 8 agents
 - `memory_per_node`: set for intent, but **not enforced** unless the cluster tracks memory
-- unique `current_working_directory` / `remoteFS` per agent (workDir lock, workspace separation)
+- unique `{workdir}/agents/{agent}` for `remoteFS` and remoting `-workDir` (workspace separation). Slurm `current_working_directory` stays the shared parent
 - keep `$HOME` at the shared `/var/jenkins` so ccache/sccache-Redis + ref-repo paths resolve
 
 ---

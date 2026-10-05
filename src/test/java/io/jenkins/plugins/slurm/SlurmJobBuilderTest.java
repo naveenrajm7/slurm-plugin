@@ -1,5 +1,6 @@
 package io.jenkins.plugins.slurm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,6 +32,8 @@ public class SlurmJobBuilderTest {
         assertTrue(script.contains(AgentLaunchConfig.CONTAINER_JAVA_PATH));
         assertTrue(script.contains(AgentLaunchConfig.CONTAINER_JAR_PATH));
         assertTrue(script.contains("-webSocket"));
+        assertTrue(script.contains("-workDir /tmp/" + AGENT_NAME));
+        assertFalse(script.contains("JENKINS_AGENT_ROOT"));
     }
 
     @Test
@@ -62,6 +65,47 @@ public class SlurmJobBuilderTest {
         assertTrue(script.contains("jnlpJars/agent.jar"));
         assertTrue(script.contains("java -jar"));
         assertTrue(script.contains("$AGENT_JAR"));
+        assertTrue(script.contains("-workDir \"$JENKINS_AGENT_ROOT\""));
+    }
+
+    @Test
+    public void testNativeScriptIsolatesWorkspacePerAgent() {
+        SlurmJobTemplate template = baseTemplate();
+        template.setCurrentWorkingDirectory("/var/jenkins_home/");
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        template.setAgent(agent);
+
+        JobDescMsg job = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET).build();
+        String script = job.getScript();
+
+        assertEquals("/var/jenkins_home/", job.getCurrentWorkingDirectory());
+        assertTrue(script.contains("JENKINS_AGENT_ROOT='/var/jenkins_home/agents/" + AGENT_NAME + "'"));
+        assertTrue(script.contains("mkdir -p \"$JENKINS_AGENT_ROOT\""));
+        assertTrue(script.contains("trap 'rm -rf \"$JENKINS_AGENT_ROOT\"' EXIT"));
+        assertTrue(script.contains("trap 'exit 143' TERM"));
+        assertTrue(script.contains("-workDir \"$JENKINS_AGENT_ROOT\""));
+        assertFalse(script.contains("-workDir /tmp/" + AGENT_NAME));
+        assertEquals(
+                "/var/jenkins_home/agents/" + AGENT_NAME,
+                SlurmJobBuilder.nativeAgentRoot("/var/jenkins_home/", AGENT_NAME));
+        assertEquals("/tmp/jenkins/agents/" + AGENT_NAME, SlurmJobBuilder.nativeAgentRoot("  ", AGENT_NAME));
+    }
+
+    @Test
+    public void testPerAgentWorkspaceSkippedForCustomScriptAndPyxis() {
+        SlurmJobTemplate nativeTemplate = baseTemplate();
+        assertTrue(SlurmJobBuilder.usesPerAgentWorkspace(nativeTemplate));
+
+        nativeTemplate.setScript("#!/bin/bash\necho custom\n");
+        assertFalse(SlurmJobBuilder.usesPerAgentWorkspace(nativeTemplate));
+
+        SlurmJobTemplate pyxisTemplate = baseTemplate();
+        pyxisTemplate.setLaunchMode("PYXIS");
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/path/to/image.sqsh");
+        pyxisTemplate.setPyxis(pyxis);
+        assertFalse(SlurmJobBuilder.usesPerAgentWorkspace(pyxisTemplate));
     }
 
     @Test

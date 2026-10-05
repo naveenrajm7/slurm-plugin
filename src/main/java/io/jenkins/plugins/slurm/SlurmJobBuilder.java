@@ -420,6 +420,9 @@ public class SlurmJobBuilder {
             workdir = "/tmp/jenkins";
         }
         script.append("mkdir -p ").append(shellQuote(workdir)).append("\n");
+        if (!useContainer) {
+            appendNativeAgentRoot(script, workdir);
+        }
 
         String javaPath;
         String jarReference;
@@ -471,12 +474,71 @@ public class SlurmJobBuilder {
 
         script.append(" -name ").append(agentName);
         script.append(" -webSocket");
-        script.append(" -workDir /tmp/").append(agentName);
+        if (useContainer) {
+            // Inside the container this path is private to the job. On the host, native
+            // launch uses JENKINS_AGENT_ROOT instead so build workspaces do not collide.
+            script.append(" -workDir /tmp/").append(agentName);
+        } else {
+            script.append(" -workDir \"$JENKINS_AGENT_ROOT\"");
+        }
         script.append("\n");
 
         LOGGER.fine("Generated batch script for agent " + agentName + ":\n" + script);
 
         return script.toString();
+    }
+
+    /**
+     * Jenkins remote root for one native agent.
+     *
+     * <p>Slurm {@code current_working_directory} stays the template working directory, which
+     * already exists on the node. This subdirectory is created by the batch script, so the
+     * cluster does not need a directory prepared for every agent. Build workspaces land here
+     * ({@code remoteFS}), not in the shared parent, so a wipe cannot delete another agent's checkout.
+     *
+     * @param workingDirectory template working directory; blank uses {@code /tmp/jenkins}
+     * @param agentName unique Jenkins agent name
+     */
+    @NonNull
+    public static String nativeAgentRoot(@CheckForNull String workingDirectory, @NonNull String agentName) {
+        String parent = workingDirectory == null ? "" : workingDirectory.trim();
+        if (parent.isEmpty()) {
+            parent = "/tmp/jenkins";
+        }
+        while (parent.length() > 1 && parent.endsWith("/")) {
+            parent = parent.substring(0, parent.length() - 1);
+        }
+        return parent + "/agents/" + agentName;
+    }
+
+    /**
+     * Whether this template's generated native launcher isolates the Jenkins workspace per agent.
+     *
+     * <p>Pyxis jobs keep the container filesystem. A custom batch script is used as-is, so the
+     * plugin cannot create or clean a private directory for it.
+     */
+    public static boolean usesPerAgentWorkspace(@NonNull SlurmJobTemplate template) {
+        if (!template.isNativeLaunch()) {
+            return false;
+        }
+        String customScript = template.getScript();
+        return customScript == null || customScript.trim().isEmpty();
+    }
+
+    /**
+     * Creates {@code $JENKINS_AGENT_ROOT} and removes it when the batch script exits.
+     *
+     * <p>{@code TERM} and {@code INT} call {@code exit} so the {@code EXIT} trap still runs when
+     * Slurm cancels the job. A signal with no trap would skip {@code EXIT}.
+     */
+    private void appendNativeAgentRoot(StringBuilder script, String workdir) {
+        script.append("JENKINS_AGENT_ROOT=")
+                .append(shellQuote(nativeAgentRoot(workdir, agentName)))
+                .append("\n");
+        script.append("mkdir -p \"$JENKINS_AGENT_ROOT\"\n");
+        script.append("trap 'rm -rf \"$JENKINS_AGENT_ROOT\"' EXIT\n");
+        script.append("trap 'exit 143' TERM\n");
+        script.append("trap 'exit 130' INT\n");
     }
 
     private static void appendPyxisFlags(StringBuilder script, PyxisConfig pyxis) {
