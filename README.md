@@ -473,10 +473,22 @@ The plugin client appends `/slurm/v0.0.42/...` to the configured base URL automa
 ## Slurm job working directory
 
 The template field **Working Directory** maps to the Slurm REST field
-`current_working_directory` and becomes:
+`current_working_directory`. It is where the batch script starts and where Slurm writes
+stdout and stderr. Create this directory once on the compute nodes. The plugin does not
+need a directory prepared for each agent.
 
-* Slurm **WorkDir** — where the batch script starts and where stdout/stderr are written
-* Jenkins agent **remote root** (`remoteFS`) — parent of the build workspace on the node
+For **native** launch the batch script creates a private directory and removes it when the
+job exits:
+
+* Slurm **WorkDir** — the template directory
+* Jenkins **remote root** (`remoteFS`) and remoting `-workDir` — `{workdir}/agents/{agent}`
+
+Build checkouts live under that private root. Two agents on the same node do not share
+`workspace/<job>/`, so one build wiping its workspace cannot delete the other's files.
+
+Pyxis launch keeps `remoteFS` as `{workdir}`. Remoting uses `/tmp/{agent}` inside the
+container. A custom batch script is submitted unchanged, and `remoteFS` stays the template
+directory, because the plugin does not create the private directory in that case.
 
 | Setting | Default | Notes |
 |---------|---------|-------|
@@ -495,19 +507,21 @@ During a build, paths on the allocated node look like this (with default `{workd
 `/tmp/jenkins` and agent `my-cloud-gpu-agent-1712345678901`):
 
 ```
-{workdir}/                          ← Slurm WorkDir + Jenkins remoteFS
+{workdir}/                          ← Slurm WorkDir (shared parent)
 ├── slurm-{jobId}.out               ← Slurm stdout (shown in build log hints)
 ├── slurm-{jobId}.err               ← Slurm stderr (if configured separately)
-└── workspace/
-    └── {folder}/
-        └── {job}/                  ← Pipeline workspace (checkout, build steps)
-
-/tmp/{agent}/                       ← agent.jar -workDir (remoting files)
-└── remoting/                       ← Remoting logs
+├── agent.jar                       ← cached here when Download Agent JAR is enabled
+└── agents/
+    └── {agent}/                    ← Jenkins remoteFS + remoting -workDir
+        ├── remoting/               ← Remoting logs
+        └── workspace/
+            └── {folder}/
+                └── {job}/          ← Pipeline workspace (checkout, build steps)
 ```
 
 The build console line `Running on … in /path/to/workspace` refers to
-`{workdir}/workspace/{folder}/{job}` (or the freestyle equivalent under `{workdir}/workspace/`).
+`{workdir}/agents/{agent}/workspace/{folder}/{job}` (or the freestyle equivalent).
+Pyxis agents still use `{workdir}/workspace/...` inside the container.
 
 Slurm job **name** equals the Jenkins agent name: `{cloud}-{template}-{timestamp}`.
 

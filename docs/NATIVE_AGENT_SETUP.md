@@ -9,7 +9,7 @@ compute nodes run the inbound agent directly on the host filesystem.
 |-------------|--------|
 | **Java 17+** | Current Jenkins remoting requires Java 17 (class file 61+). Java 11 on the node is not sufficient. |
 | **`agent.jar`** | Pre-installed on a shared path, or use `download_jar: true` / cloud **Download Agent JAR** |
-| **Writable workdir** | e.g. `/tmp/jenkins` — maps to Slurm `current_working_directory` and Jenkins `remoteFS` |
+| **Writable workdir** | e.g. `/tmp/jenkins` — Slurm `current_working_directory`. Native agents use `{workdir}/agents/{agent}` as Jenkins `remoteFS` |
 | **Network to Jenkins** | Compute nodes must reach the cloud **Jenkins URL** (WebSocket inbound agent) |
 | **`curl` or `wget`** | Only if using download-at-runtime mode |
 
@@ -71,9 +71,17 @@ Without Pyxis, the plugin emits roughly:
 ```bash
 #!/bin/bash
 set -euo pipefail
+mkdir -p /tmp/jenkins
+JENKINS_AGENT_ROOT=/tmp/jenkins/agents/{agent}
+mkdir -p "$JENKINS_AGENT_ROOT"
+trap 'rm -rf "$JENKINS_AGENT_ROOT"' EXIT
 srun -N1 -n1 /opt/jenkins/jdk-17/bin/java -jar /opt/jenkins/agent.jar \
-  -url http://jenkins:8080/jenkins/ -secret … -name … -webSocket -workDir /tmp/{agent}
+  -url http://jenkins:8080/jenkins/ -secret … -name … -webSocket -workDir "$JENKINS_AGENT_ROOT"
 ```
+
+`{workdir}` is the template working directory (create it once per node). The agent directory
+is created when the job starts and deleted when the job exits. Jenkins uses that same path
+as the agent remote root, so each agent has its own `workspace/`.
 
 With **Download Agent JAR** enabled, the JAR is cached under `{workdir}/agent.jar` on first run.
 
