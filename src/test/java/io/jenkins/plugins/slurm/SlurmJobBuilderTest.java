@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.jenkins.plugins.slurm.client.model.JobDescMsg;
+import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -277,6 +278,92 @@ public class SlurmJobBuilderTest {
         }
     }
 
+    @Nested
+    class EnvironmentTest {
+
+        @Test
+        void commaSeparatedValuesStayIntact() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment(
+                    "[\"NUMBER_OF_EXECUTORS=1\",\"DOCKER_GPU_MASK_0=0,1,2,3\","
+                            + "\"DOCKER_GPU_MASK_ROCR_0=--env ROCR_VISIBLE_DEVICES=0,1,2,3\"]");
+
+            List<String> env = buildEnvironment(template);
+
+            assertTrue(env.contains("NUMBER_OF_EXECUTORS=1"));
+            assertTrue(env.contains("DOCKER_GPU_MASK_0=0,1,2,3"));
+            assertTrue(env.contains("DOCKER_GPU_MASK_ROCR_0=--env ROCR_VISIBLE_DEVICES=0,1,2,3"));
+            assertFalse(env.stream().anyMatch(entry -> entry.startsWith("\"") || entry.contains("\"DOCKER")));
+        }
+
+        @Test
+        void singleValueWithoutCommaStillRoundTrips() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("[\"DOCKER_GPU_MASK_0=0\"]");
+
+            List<String> env = buildEnvironment(template);
+
+            assertTrue(env.contains("DOCKER_GPU_MASK_0=0"));
+        }
+
+        @Test
+        void spacesAndEscapedQuotesArePreserved() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("[\"GREETING=say \\\"hello, world\\\"\",\"CONFIG={\\\"a\\\":1}\"]");
+
+            List<String> env = buildEnvironment(template);
+
+            assertTrue(env.contains("GREETING=say \"hello, world\""));
+            assertTrue(env.contains("CONFIG={\"a\":1}"));
+        }
+
+        @Test
+        void requiredPathVariablesAreNotOverridden() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("[\"PATH=/evil/bin\",\"LD_LIBRARY_PATH=/evil/lib\",\"OK=1\"]");
+
+            List<String> env = buildEnvironment(template);
+
+            assertEquals("PATH=/usr/local/bin:/usr/bin:/bin", env.get(0));
+            assertEquals("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib", env.get(1));
+            assertTrue(env.contains("OK=1"));
+            assertFalse(env.contains("PATH=/evil/bin"));
+            assertFalse(env.contains("LD_LIBRARY_PATH=/evil/lib"));
+        }
+
+        @Test
+        void invalidJsonKeepsOnlyRequiredVariables() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("[not-json");
+
+            List<String> env = buildEnvironment(template);
+
+            assertEquals(List.of("PATH=/usr/local/bin:/usr/bin:/bin", "LD_LIBRARY_PATH=/usr/local/lib:/usr/lib"), env);
+        }
+
+        @Test
+        void nonArrayEnvironmentIsIgnored() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("VISIBLE_DEVICES=0,1,2,3");
+
+            List<String> env = buildEnvironment(template);
+
+            assertEquals(List.of("PATH=/usr/local/bin:/usr/bin:/bin", "LD_LIBRARY_PATH=/usr/local/lib:/usr/lib"), env);
+        }
+
+        @Test
+        void entriesWithoutEqualsAreDropped() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setEnvironment("[\"NOEQUALS\",\"OK=1\",\"\"]");
+
+            List<String> env = buildEnvironment(template);
+
+            assertTrue(env.contains("OK=1"));
+            assertFalse(env.contains("NOEQUALS"));
+            assertEquals(3, env.size());
+        }
+    }
+
     private static SlurmJobTemplate baseTemplate() {
         SlurmJobTemplate template = new SlurmJobTemplate("native", "linux");
         template.setPartition("compute");
@@ -288,5 +375,12 @@ public class SlurmJobBuilderTest {
         SlurmJobBuilder builder = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET);
         JobDescMsg job = builder.build();
         return job.getScript();
+    }
+
+    private static List<String> buildEnvironment(SlurmJobTemplate template) {
+        template.setScript("#!/bin/bash\ntrue\n");
+        return new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET)
+                .build()
+                .getEnvironment();
     }
 }
