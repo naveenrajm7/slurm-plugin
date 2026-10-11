@@ -26,8 +26,12 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -59,6 +63,9 @@ public class SlurmCloud extends AbstractCloudImpl {
      */
     static final int MIN_ONCE_RETENTION_IDLE_MINUTES = 5;
 
+    /** Attempts to find a free agent name before giving up. */
+    private static final int MAX_AGENT_NAME_ATTEMPTS = 1000;
+
     private final String slurmRestApiUrl;
     private final String credentialsId;
     private final String defaultPartition;
@@ -69,6 +76,18 @@ public class SlurmCloud extends AbstractCloudImpl {
     private boolean usageRestricted = false;
     private AgentLaunchConfig agent;
     private SlurmGarbageCollection garbageCollection;
+
+    /**
+     * Distinguishes agent names generated in the same millisecond.
+     * Not persisted: Jenkins may restore this cloud without running field initializers.
+     */
+    private transient AtomicLong agentNameSequence;
+
+    /**
+     * Serializes the exists-check and {@code addNode} so one name cannot replace another.
+     * Not persisted: see {@link #agentNameSequence}.
+     */
+    private transient Object agentRegistrationLock;
 
     @DataBoundConstructor
     public SlurmCloud(
@@ -296,6 +315,9 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
 
         List<PlannedNode> plannedNodes = new ArrayList<>();
+        // Names reserved by this provision() call. A millisecond timestamp is shared by every
+        // iteration of the loop below, so the planned set has to keep them distinct.
+        Set<String> reservedNames = new HashSet<>();
 
         // Try each template until we satisfy the workload or run out of capacity
         for (SlurmJobTemplate jobTemplate : templates) {
@@ -308,7 +330,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                     break;
                 }
                 try {
-                    PlannedNode plannedNode = createPlannedNode(jobTemplate, label, registration);
+                    PlannedNode plannedNode = createPlannedNode(jobTemplate, label, registration, reservedNames);
                     plannedNodes.add(plannedNode);
                     toBeProvisioned--;
                 } catch (RuntimeException e) {
@@ -417,7 +439,7 @@ public class SlurmCloud extends AbstractCloudImpl {
             return 0;
         }
 
-        // Agent names follow pattern: cloudName-templateName-timestamp
+        // Agent names follow pattern: cloudName-templateName-timestamp-sequence
         String templatePrefix = name + "-" + template.getName() + "-";
         int count = 0;
 
@@ -436,8 +458,9 @@ public class SlurmCloud extends AbstractCloudImpl {
     private PlannedNode createPlannedNode(
             SlurmJobTemplate jobTemplate,
             @CheckForNull Label label,
-            @NonNull SlurmLimitRegistrationResults.Registration registration) {
-        String agentName = generateAgentName(jobTemplate);
+            @NonNull SlurmLimitRegistrationResults.Registration registration,
+            @NonNull Set<String> reservedNames) {
+        String agentName = generateAgentName(jobTemplate, reservedNames);
 
         // Create cloud-stats tracking ID for this provisioning activity
         ProvisioningActivity.Id cloudStatsId = new ProvisioningActivity.Id(
@@ -452,11 +475,13 @@ public class SlurmCloud extends AbstractCloudImpl {
                 1, // numExecutors — always 1 per agent; cpusPerTask is a Slurm resource, not Jenkins concurrency
                 java.util.concurrent.CompletableFuture.supplyAsync(() -> {
                     try {
+                        beforeAgentRegistration(agentName);
+
                         LOGGER.info(
                                 "Slurm Cloud: Creating agent " + agentName + " with template " + jobTemplate.getName());
 
                         // 1. Create the Slurm launcher (no-arg constructor)
-                        SlurmLauncher launcher = new SlurmLauncher();
+                        hudson.slaves.ComputerLauncher launcher = createLauncher();
 
                         // 2. Create retention strategy based on template configuration.
                         // Mirrors the Kubernetes plugin's determineRetentionStrategy():
@@ -518,8 +543,10 @@ public class SlurmCloud extends AbstractCloudImpl {
                             LOGGER.fine("Set build TaskListener on agent for provisioning status");
                         }
 
-                        // 5. Add agent to Jenkins
-                        Jenkins.get().addNode(agent);
+                        // 5. Add agent to Jenkins. Never replace a node that is already registered:
+                        // addNode() swaps by name, and the replaced object is the one launch()
+                        // would otherwise keep updating.
+                        addAgentIfAbsent(agent);
 
                         LOGGER.info("Slurm Cloud: Agent " + agentName + " created successfully");
 
@@ -557,10 +584,93 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
 
     /**
-     * Generates a unique agent name based on the job template.
+     * Holds agent registration until the caller is ready.
+     *
+     * <p>Production provisioning does nothing here. Tests override it so cloud-stats activities
+     * exist before {@code connect()} starts the launcher.
      */
-    private String generateAgentName(SlurmJobTemplate jobTemplate) {
-        return name + "-" + jobTemplate.getName() + "-" + System.currentTimeMillis();
+    protected void beforeAgentRegistration(@NonNull String agentName) {}
+
+    /**
+     * Launcher for a newly planned agent. Tests override this to simulate a Slurm submission.
+     */
+    @NonNull
+    protected hudson.slaves.ComputerLauncher createLauncher() {
+        return new SlurmLauncher();
+    }
+
+    /**
+     * Registers {@code agent} unless Jenkins already has that node name.
+     *
+     * <p>{@link Jenkins#addNode} replaces an existing node. Replacing an agent that is already
+     * launching leaves {@code launch()} holding a different instance from the one Jenkins tracks,
+     * so the Slurm job id never lands on the registered agent.
+     */
+    void addAgentIfAbsent(@NonNull SlurmAgent agent) throws IOException {
+        synchronized (agentRegistrationLock()) {
+            String agentName = agent.getNodeName();
+            Node existing = Jenkins.get().getNode(agentName);
+            if (existing != null) {
+                throw new IOException("Refusing to replace existing Jenkins node '" + agentName
+                        + "'. Another agent with that name is already registered.");
+            }
+            Jenkins.get().addNode(agent);
+        }
+    }
+
+    @NonNull
+    private Object agentRegistrationLock() {
+        synchronized (this) {
+            if (agentRegistrationLock == null) {
+                agentRegistrationLock = new Object();
+            }
+            return agentRegistrationLock;
+        }
+    }
+
+    @NonNull
+    private AtomicLong agentNameSequence() {
+        synchronized (this) {
+            if (agentNameSequence == null) {
+                agentNameSequence = new AtomicLong();
+            }
+            return agentNameSequence;
+        }
+    }
+
+    /**
+     * Generates an agent name that is unique within {@code reservedNames} and among nodes already
+     * registered in Jenkins. A millisecond timestamp alone collides when one {@code provision()}
+     * call plans more than one agent.
+     */
+    private String generateAgentName(@NonNull SlurmJobTemplate jobTemplate, @NonNull Set<String> reservedNames) {
+        String prefix = name + "-" + jobTemplate.getName() + "-";
+        String agentName = nextAgentName(
+                prefix,
+                System::currentTimeMillis,
+                agentNameSequence()::incrementAndGet,
+                candidate -> reservedNames.contains(candidate) || Jenkins.get().getNode(candidate) != null);
+        reservedNames.add(agentName);
+        return agentName;
+    }
+
+    /**
+     * Allocates {@code prefix + millis + "-" + sequence}, skipping names {@code unavailable} reports
+     * as taken.
+     */
+    @NonNull
+    static String nextAgentName(
+            @NonNull String prefix,
+            @NonNull LongSupplier clockMillis,
+            @NonNull LongSupplier sequence,
+            @NonNull Predicate<String> unavailable) {
+        for (int attempt = 0; attempt < MAX_AGENT_NAME_ATTEMPTS; attempt++) {
+            String candidate = prefix + clockMillis.getAsLong() + "-" + sequence.getAsLong();
+            if (!unavailable.test(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Unable to allocate a unique agent name with prefix '" + prefix + "'");
     }
 
     /**
