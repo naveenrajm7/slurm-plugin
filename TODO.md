@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Unique agent names when one provision call plans several agents (issue #40)** (`fix/unique-provisioned-agent-names`)
+  - `generateAgentName()` appends an atomic sequence and skips names already planned or already registered
+  - `addNode` is refused when that name already exists, so a second planned node cannot replace the agent `launch()` is updating
+  - Regression: workload 2 yields two registered nodes, each with the job id its own launch stored; cloud-stats has one activity per name that both receives the launch attachment and enters operating; garbage collection does not cancel those jobs while the nodes are online
+
 - [x] **Federated Slurm: job status & cancel fail (issue #28)** (`cursor/fix-federated-job-status-cancel`)
   - Singular `/job/{id}` GET/DELETE reject federated job IDs (`>= MAX_JOB_ID`) before reaching `slurmctld` → status polling and cancellation fail, jobs leak after builds
   - `SlurmClient.cancelJob()` now uses plural `DELETE /slurm/v0.0.42/jobs/` (`slurmDeleteJobs`) with `jobs=[id]` + explicit `SIGKILL`; inspects per-job signal errors

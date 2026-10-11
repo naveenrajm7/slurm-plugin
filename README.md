@@ -435,7 +435,7 @@ Placeholders used below:
 | `{template}` | Job template name |
 | `{folder}` | Jenkins folder item name |
 | `{job}` | Pipeline or freestyle job name |
-| `{agent}` | Dynamic agent name (`{cloud}-{template}-{timestamp}`) |
+| `{agent}` | Dynamic agent name (`{cloud}-{template}-{timestamp}-{sequence}`) |
 | `{jobId}` | Numeric Slurm job ID from the build log |
 | `{workdir}` | Template `current_working_directory` (default `/tmp/jenkins`) |
 
@@ -523,7 +523,7 @@ The build console line `Running on … in /path/to/workspace` refers to
 `{workdir}/agents/{agent}/workspace/{folder}/{job}` (or the freestyle equivalent).
 Pyxis agents still use `{workdir}/workspace/...` inside the container.
 
-Slurm job **name** equals the Jenkins agent name: `{cloud}-{template}-{timestamp}`.
+Slurm job **name** equals the Jenkins agent name: `{cloud}-{template}-{timestamp}-{sequence}`.
 
 ## Inbound agent inside a container
 
