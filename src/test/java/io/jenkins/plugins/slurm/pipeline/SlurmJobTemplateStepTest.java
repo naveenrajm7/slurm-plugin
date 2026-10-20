@@ -1,11 +1,16 @@
 package io.jenkins.plugins.slurm.pipeline;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.jenkins.plugins.slurm.PyxisConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
+import io.jenkins.plugins.slurm.SlurmJobBuilder;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
+import io.jenkins.plugins.slurm.VmocsConfig;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -164,6 +169,70 @@ public class SlurmJobTemplateStepTest {
         step.setJson("{\"partition\": \"gpu\", \"cpus_per_task\": 8}");
 
         assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
+    }
+
+    @Test
+    public void testJsonWithVmocs() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson(
+                "{\"job\": {\"partition\": \"vm\", \"cpus_per_task\": 2, \"environment\": [\"BUILD_TAG=vm-smoke\"]}, "
+                        + "\"vmocs\": {\"vmImage\": \"base-ubuntu\", \"workDir\": \"/var/lib/jenkins-guest\", "
+                        + "\"forwardEnv\": \"BUILD_TAG\"}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertTrue(template.isVmocsLaunch());
+        assertNotNull(template.getVmocs());
+        assertEquals("base-ubuntu", template.getVmocs().getVmImage());
+        assertEquals("/var/lib/jenkins-guest", template.getVmocs().getWorkDir());
+        String script = new SlurmJobBuilder(template, "vm-agent", "http://jenkins:8080/jenkins/", "top-secret")
+                .build()
+                .getScript();
+        assertTrue(script.contains("--vm-forward-env=BUILD_TAG"));
+        assertFalse(script.contains("top-secret"));
+        assertFalse(script.contains("http://jenkins:8080/jenkins/"));
+    }
+
+    @Test
+    public void testJsonRejectsCombinedLaunchModes() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson(
+                "{\"job\": {\"partition\": \"vm\"}, \"pyxis\": {\"container_image\": \"/images/agent.sqsh\"}, "
+                        + "\"vmocs\": {\"vm_image\": \"base-ubuntu\"}}");
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
+        assertTrue(error.getMessage().contains("one launch mode"));
+    }
+
+    @Test
+    public void testPropertiesRejectCombinedLaunchModes() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setPartition("vm");
+        step.setVmImage("base-ubuntu");
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/images/agent.sqsh");
+        step.setPyxis(pyxis);
+
+        assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
+    }
+
+    @Test
+    public void testVmocsProperties() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setPartition("vm");
+        step.setVmImage("base-ubuntu");
+        step.setVmJavaPath("/usr/bin/java");
+        step.setVmWorkDir("/var/lib/jenkins-guest");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertTrue(template.isVmocsLaunch());
+        VmocsConfig vmocs = template.getVmocs();
+        assertNotNull(vmocs);
+        assertEquals("base-ubuntu", vmocs.getVmImage());
+        assertEquals("/usr/bin/java", vmocs.getJavaPath());
+        assertEquals("/var/lib/jenkins-guest", vmocs.getWorkDir());
     }
 
     @Test

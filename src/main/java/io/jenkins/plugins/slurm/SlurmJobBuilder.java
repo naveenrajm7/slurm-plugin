@@ -6,7 +6,9 @@ import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import io.jenkins.plugins.slurm.client.model.*;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.logging.Logger;
 
 /**
@@ -25,10 +27,35 @@ public class SlurmJobBuilder {
 
     private static final TypeReference<List<String>> ENVIRONMENT_LIST = new TypeReference<List<String>>() {};
 
+    /**
+     * JDK 11+ single-file source used inside the guest when curl and wget are absent. The guest
+     * runs it with {@code java JenkinsAgentJarDownloader.java}.
+     */
+    private static final String GUEST_JAR_DOWNLOADER_SOURCE = ""
+            + "import java.net.URI;\n"
+            + "import java.net.http.HttpClient;\n"
+            + "import java.net.http.HttpRequest;\n"
+            + "import java.net.http.HttpResponse;\n"
+            + "import java.nio.file.Path;\n"
+            + "public class JenkinsAgentJarDownloader {\n"
+            + "    public static void main(String[] args) throws Exception {\n"
+            + "        if (args.length != 2) {\n"
+            + "            throw new IllegalArgumentException(\"usage: JenkinsAgentJarDownloader URL DESTINATION\");\n"
+            + "        }\n"
+            + "        HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build();\n"
+            + "        HttpRequest request = HttpRequest.newBuilder(URI.create(args[0])).GET().build();\n"
+            + "        HttpResponse<Path> response = client.send(request, HttpResponse.BodyHandlers.ofFile(Path.of(args[1])));\n"
+            + "        if (response.statusCode() != 200) {\n"
+            + "            throw new IllegalStateException(\"Jenkins agent JAR download failed with HTTP status \" + response.statusCode());\n"
+            + "        }\n"
+            + "    }\n"
+            + "}\n";
+
     private final SlurmJobTemplate template;
     private final String agentName;
     private final String jenkinsUrl;
     private final String agentSecret;
+    private final SlurmCloud cloud;
     private final AgentLaunchConfig cloudAgent;
 
     /**
@@ -44,11 +71,11 @@ public class SlurmJobBuilder {
             @NonNull String agentName,
             @NonNull String jenkinsUrl,
             @CheckForNull String agentSecret) {
-        this(template, agentName, jenkinsUrl, agentSecret, null);
+        this(template, agentName, jenkinsUrl, agentSecret, (AgentLaunchConfig) null);
     }
 
     /**
-     * Creates a new job builder with cloud-level agent launch defaults.
+     * Creates a new job builder with cloud-level native agent launch defaults.
      */
     public SlurmJobBuilder(
             @NonNull SlurmJobTemplate template,
@@ -56,10 +83,34 @@ public class SlurmJobBuilder {
             @NonNull String jenkinsUrl,
             @CheckForNull String agentSecret,
             @CheckForNull AgentLaunchConfig cloudAgent) {
+        this(template, agentName, jenkinsUrl, agentSecret, null, cloudAgent);
+    }
+
+    /**
+     * Creates a new job builder that inherits the cloud's launch mode and settings when the
+     * template has not chosen its own.
+     */
+    public SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret,
+            @CheckForNull SlurmCloud cloud) {
+        this(template, agentName, jenkinsUrl, agentSecret, cloud, cloud != null ? cloud.getAgent() : null);
+    }
+
+    private SlurmJobBuilder(
+            @NonNull SlurmJobTemplate template,
+            @NonNull String agentName,
+            @NonNull String jenkinsUrl,
+            @CheckForNull String agentSecret,
+            @CheckForNull SlurmCloud cloud,
+            @CheckForNull AgentLaunchConfig cloudAgent) {
         this.template = template;
         this.agentName = agentName;
         this.jenkinsUrl = jenkinsUrl;
         this.agentSecret = agentSecret;
+        this.cloud = cloud;
         this.cloudAgent = cloudAgent;
     }
 
@@ -308,6 +359,7 @@ public class SlurmJobBuilder {
         // REQUIRED: These environment variables are always set for job submission through REST
         env.add("PATH=/usr/local/bin:/usr/bin:/bin");
         env.add("LD_LIBRARY_PATH=/usr/local/lib:/usr/lib");
+        boolean vmocs = "VMOCS".equals(mode());
 
         // Add user-specified environment variables from template (if any).
         // The template stores a JSON array of "KEY=value" strings. Values may contain
@@ -318,7 +370,7 @@ public class SlurmJobBuilder {
                 List<String> entries = ENVIRONMENT_MAPPER.readValue(envJson.trim(), ENVIRONMENT_LIST);
                 if (entries != null) {
                     for (String entry : entries) {
-                        appendUserEnvironment(env, entry);
+                        appendUserEnvironment(env, entry, vmocs);
                     }
                 }
             } catch (Exception e) {
@@ -326,7 +378,20 @@ public class SlurmJobBuilder {
             }
         }
 
+        if (vmocs) {
+            env.add("JENKINS_URL=" + withTrailingSlash(jenkinsUrl));
+            env.add("JENKINS_SECRET=" + (agentSecret != null ? agentSecret : ""));
+            env.add("JENKINS_AGENT_NAME=" + agentName);
+        }
+
         return env;
+    }
+
+    private static String withTrailingSlash(String url) {
+        if (url == null || url.isEmpty()) {
+            return "";
+        }
+        return url.endsWith("/") ? url : url + "/";
     }
 
     /**
@@ -334,7 +399,7 @@ public class SlurmJobBuilder {
      * are ignored. User values are not allowed to replace the required {@code PATH} and
      * {@code LD_LIBRARY_PATH} variables.
      */
-    private static void appendUserEnvironment(List<String> env, String entry) {
+    private static void appendUserEnvironment(List<String> env, String entry, boolean protectJenkinsVariables) {
         if (entry == null) {
             return;
         }
@@ -343,7 +408,11 @@ public class SlurmJobBuilder {
             return;
         }
         String varName = trimmed.substring(0, trimmed.indexOf('='));
-        if (!varName.equals("PATH") && !varName.equals("LD_LIBRARY_PATH")) {
+        boolean protectedJenkinsVariable = protectJenkinsVariables
+                && ("JENKINS_URL".equals(varName)
+                        || "JENKINS_SECRET".equals(varName)
+                        || "JENKINS_AGENT_NAME".equals(varName));
+        if (!varName.equals("PATH") && !varName.equals("LD_LIBRARY_PATH") && !protectedJenkinsVariable) {
             env.add(trimmed);
             LOGGER.fine("Added user environment variable: " + varName);
         } else {
@@ -355,31 +424,62 @@ public class SlurmJobBuilder {
      * Validates that the template can generate an agent launcher script.
      */
     void validateLaunchConfiguration() {
-        String mode = template.getLaunchMode();
+        String mode = mode();
         if ("PYXIS".equals(mode)) {
-            PyxisConfig pyxis = template.getPyxis();
+            PyxisConfig pyxis = effectivePyxis();
             if (pyxis == null || !pyxis.isConfigured()) {
                 throw new IllegalStateException("Pyxis launch mode is selected but no container image is configured. "
                         + "Set a container image in the Pyxis configuration, or switch "
-                        + "to Native launch mode and configure an agent.jar path.");
+                        + "to Native or VMoCS launch mode.");
             }
             return;
         }
-        // NATIVE mode
+        if ("VMOCS".equals(mode)) {
+            VmocsConfig vmocs = effectiveVmocs();
+            if (vmocs == null || !vmocs.isConfigured()) {
+                throw new IllegalStateException("VMoCS launch mode is selected but no VM template is configured. "
+                        + "Set a VMoCS template name, or switch to Native or Pyxis launch mode.");
+            }
+            try {
+                vmocs.validate();
+            } catch (IllegalArgumentException e) {
+                throw new IllegalStateException(e.getMessage(), e);
+            }
+            return;
+        }
+        // NATIVE mode. A cloud-level native default applies only in this mode.
         AgentLaunchConfig agent = getEffectiveAgent();
         if (agent != null && agent.isConfigured()) {
             agent.validateNativeLaunch();
             return;
         }
         throw new IllegalStateException("Native launch mode is selected but agent launch is not configured. "
-                + "Enable Pyxis container support, configure native "
+                + "Enable Pyxis or VMoCS launch, configure native "
                 + "Agent Launch on the cloud or template (jarPath or downloadJar), "
                 + "or supply a custom batch script.");
     }
 
     @CheckForNull
     private AgentLaunchConfig getEffectiveAgent() {
-        return AgentLaunchConfig.merge(cloudAgent, template.getAgent());
+        if (cloud == null) {
+            return AgentLaunchConfig.merge(cloudAgent, template.getAgent());
+        }
+        return LaunchDefaults.effectiveAgent(cloud, template);
+    }
+
+    @NonNull
+    private String mode() {
+        return LaunchDefaults.effectiveMode(cloud, template);
+    }
+
+    @CheckForNull
+    private PyxisConfig effectivePyxis() {
+        return LaunchDefaults.effectivePyxis(cloud, template);
+    }
+
+    @CheckForNull
+    private VmocsConfig effectiveVmocs() {
+        return LaunchDefaults.effectiveVmocs(cloud, template);
     }
 
     /**
@@ -394,6 +494,10 @@ public class SlurmJobBuilder {
      * @return The complete batch script content
      */
     private String generateBatchScript() {
+        if ("VMOCS".equals(mode())) {
+            return generateVmocsBatchScript();
+        }
+
         StringBuilder script = new StringBuilder();
 
         script.append("#!/bin/bash\n");
@@ -407,8 +511,8 @@ public class SlurmJobBuilder {
                     template.getMinimumNodes(), template.getMinimumNodes()));
         }
 
-        PyxisConfig pyxis = template.getPyxis();
-        boolean useContainer = "PYXIS".equals(template.getLaunchMode()) && pyxis != null && pyxis.isConfigured();
+        PyxisConfig pyxis = effectivePyxis();
+        boolean useContainer = "PYXIS".equals(mode()) && pyxis != null && pyxis.isConfigured();
         AgentLaunchConfig agent = getEffectiveAgent();
 
         if (!useContainer
@@ -497,6 +601,143 @@ public class SlurmJobBuilder {
     }
 
     /**
+     * Host batch script that asks VMoCS to boot a guest and run the Jenkins agent there.
+     * The secret and controller URL are job environment values, not script text.
+     */
+    private String generateVmocsBatchScript() {
+        VmocsConfig vmocs = effectiveVmocs();
+        StringBuilder script = new StringBuilder();
+        script.append("#!/bin/bash\n");
+        script.append("set -euo pipefail\n");
+
+        String workdir = template.getCurrentWorkingDirectory();
+        if (workdir == null || workdir.trim().isEmpty()) {
+            workdir = "/tmp/jenkins";
+        }
+        script.append("mkdir -p ").append(shellQuote(workdir)).append('\n');
+
+        int cpus = template.getCpusPerTask() == null || template.getCpusPerTask() < 1
+                ? 1
+                : template.getCpusPerTask();
+        List<String> args = new ArrayList<>();
+        args.add("srun");
+        args.add("-N1");
+        args.add("-n1");
+        args.add("--cpus-per-task=" + cpus);
+        args.add("--kill-on-bad-exit=1");
+        args.add("--export=ALL");
+        args.add("--vm-image=" + vmocs.getVmImage().trim());
+        for (String name : forwardedVmocsVariables()) {
+            args.add("--vm-forward-env=" + name);
+        }
+        args.add("/bin/bash");
+        args.add("-lc");
+        args.add(vmocsGuestCommand(vmocs));
+
+        for (int i = 0; i < args.size(); i++) {
+            if (i > 0) {
+                script.append(' ');
+            }
+            script.append(shellQuote(args.get(i)));
+        }
+        script.append('\n');
+        LOGGER.fine("Generated VMoCS batch script for agent " + agentName);
+        return script.toString();
+    }
+
+    private List<String> forwardedVmocsVariables() {
+        List<String> names = new ArrayList<>(VmocsConfig.REQUIRED_FORWARDED_VARIABLES);
+        Set<String> supplied = new LinkedHashSet<>();
+        for (String entry : buildEnvironment()) {
+            int separator = entry.indexOf('=');
+            if (separator > 0) {
+                supplied.add(entry.substring(0, separator));
+            }
+        }
+        VmocsConfig vmocs = effectiveVmocs();
+        if (vmocs != null) {
+            for (String name : vmocs.customForwardEnvironmentNames()) {
+                if (supplied.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        return names;
+    }
+
+    private static String vmocsGuestCommand(VmocsConfig vmocs) {
+        StringBuilder guest = new StringBuilder();
+        guest.append("set -euo pipefail\n");
+        guest.append("umask 077\n");
+        guest.append("work=").append(shellQuote(vmocs.getWorkDir())).append('\n');
+        guest.append("mkdir -p \"$work\"\n");
+        guest.append("java_bin=").append(shellQuote(vmocs.getJavaPath())).append('\n');
+        if (vmocs.hasPreinstalledJar()) {
+            guest.append("agent_jar=").append(shellQuote(vmocs.getJarPath().trim())).append('\n');
+        } else {
+            guest.append("agent_jar=\"$work/agent.jar\"\n");
+            guest.append("if [ ! -f \"$agent_jar\" ]; then\n");
+            guest.append("  url=\"${JENKINS_URL}jnlpJars/agent.jar\"\n");
+            guest.append("  if command -v curl >/dev/null 2>&1; then\n");
+            guest.append("    curl -fsSL -o \"$agent_jar\" \"$url\"\n");
+            guest.append("  elif command -v wget >/dev/null 2>&1; then\n");
+            guest.append("    wget -q -O \"$agent_jar\" \"$url\"\n");
+            guest.append("  else\n");
+            guest.append("    cat > \"$work/JenkinsAgentJarDownloader.java\" << 'JAVA_END'\n");
+            guest.append(GUEST_JAR_DOWNLOADER_SOURCE);
+            guest.append("JAVA_END\n");
+            guest.append("    \"$java_bin\" \"$work/JenkinsAgentJarDownloader.java\" \"$url\" \"$agent_jar\"\n");
+            guest.append("  fi\n");
+            guest.append("fi\n");
+        }
+        guest.append("exec \"$java_bin\" -jar \"$agent_jar\"");
+        guest.append(" -url \"$JENKINS_URL\"");
+        guest.append(" -secret \"$JENKINS_SECRET\"");
+        guest.append(" -name \"$JENKINS_AGENT_NAME\"");
+        guest.append(" -webSocket -workDir \"$work\"\n");
+        return guest.toString();
+    }
+
+    /**
+     * Jenkins remote root for the agent that this template will launch.
+     *
+     * <p>Native generated launchers use a private subdirectory of the Slurm working directory.
+     * Generated VMoCS launchers use the guest work directory. Pyxis and custom scripts keep the
+     * template working directory.
+     */
+    @NonNull
+    public static String remoteFilesystem(@NonNull SlurmJobTemplate template, @NonNull String agentName) {
+        return remoteFilesystem(null, template, agentName);
+    }
+
+    /**
+     * Jenkins remote root, using the cloud launch default when the template inherits it.
+     */
+    @NonNull
+    public static String remoteFilesystem(
+            @CheckForNull SlurmCloud cloud, @NonNull SlurmJobTemplate template, @NonNull String agentName) {
+        if (usesPerAgentWorkspace(cloud, template)) {
+            return nativeAgentRoot(template.getCurrentWorkingDirectory(), agentName);
+        }
+        if ("VMOCS".equals(LaunchDefaults.effectiveMode(cloud, template)) && !hasCustomScript(template)) {
+            VmocsConfig vmocs = LaunchDefaults.effectiveVmocs(cloud, template);
+            if (vmocs != null) {
+                return vmocs.getWorkDir();
+            }
+        }
+        String workingDirectory = template.getCurrentWorkingDirectory();
+        if (workingDirectory == null || workingDirectory.trim().isEmpty()) {
+            return "/tmp/jenkins";
+        }
+        return workingDirectory;
+    }
+
+    private static boolean hasCustomScript(SlurmJobTemplate template) {
+        String customScript = template.getScript();
+        return customScript != null && !customScript.trim().isEmpty();
+    }
+
+    /**
      * Jenkins remote root for one native agent.
      *
      * <p>Slurm {@code current_working_directory} stays the template working directory, which
@@ -526,7 +767,12 @@ public class SlurmJobBuilder {
      * plugin cannot create or clean a private directory for it.
      */
     public static boolean usesPerAgentWorkspace(@NonNull SlurmJobTemplate template) {
-        if (!template.isNativeLaunch()) {
+        return usesPerAgentWorkspace(null, template);
+    }
+
+    public static boolean usesPerAgentWorkspace(
+            @CheckForNull SlurmCloud cloud, @NonNull SlurmJobTemplate template) {
+        if (!"NATIVE".equals(LaunchDefaults.effectiveMode(cloud, template))) {
             return false;
         }
         String customScript = template.getScript();

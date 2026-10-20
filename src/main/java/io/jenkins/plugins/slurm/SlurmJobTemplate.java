@@ -210,10 +210,14 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     // Native agent launch (without Pyxis)
     private AgentLaunchConfig agent;
 
+    // Disposable VM launch (VMoCS)
+    private VmocsConfig vmocs;
+
     /**
-     * Selects which launch strategy the agent uses: {@code "NATIVE"} (host, no container) or
-     * {@code "PYXIS"} (Enroot/Pyxis container).  Null means "infer from existing fields" for
-     * backwards-compatibility with templates saved before this field was introduced.
+     * Selects which launch strategy the agent uses: {@code "NATIVE"} (host, no container),
+     * {@code "PYXIS"} (Enroot/Pyxis container), or {@code "VMOCS"} (disposable virtual machine).
+     * Null means "infer from existing fields" for backwards-compatibility with templates saved
+     * before this field was introduced. Exactly one mode is active.
      */
     private String launchMode;
 
@@ -924,13 +928,24 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         this.agent = agent;
     }
 
+    @CheckForNull
+    public VmocsConfig getVmocs() {
+        return vmocs;
+    }
+
+    @DataBoundSetter
+    public void setVmocs(VmocsConfig vmocs) {
+        this.vmocs = vmocs;
+    }
+
     /**
-     * Returns the explicit launch mode ({@code "NATIVE"} or {@code "PYXIS"}).
+     * Returns this template's launch mode ({@code "NATIVE"}, {@code "PYXIS"}, or {@code "VMOCS"}).
      *
-     * <p>When no mode has been explicitly saved (legacy templates), the mode is
-     * inferred from whichever config object is populated: if a Pyxis configuration
-     * with a container image is present it is assumed the user wanted Pyxis;
-     * otherwise native launch is assumed.
+     * <p>When no mode has been explicitly saved, a Pyxis configuration with a container image
+     * selects Pyxis and anything else selects native. That inference is only the template's own
+     * mode. {@link LaunchDefaults} may still replace it with the cloud default when this template
+     * has not saved a mode. VMoCS is selected only when {@code launchMode} is saved as
+     * {@code VMOCS}.
      */
     @NonNull
     public String getLaunchMode() {
@@ -941,9 +956,32 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return (pyxis != null && pyxis.isConfigured()) ? "PYXIS" : "NATIVE";
     }
 
+    /**
+     * True when this template saved Native, Pyxis, or VMoCS. False means "use the cloud default"
+     * (legacy Pyxis inference still applies until the template is saved again).
+     */
+    public boolean isExplicitLaunchMode() {
+        return launchMode != null;
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.cloudDefaultLaunch}}. */
+    public boolean isCloudDefaultLaunch() {
+        return !isExplicitLaunchMode();
+    }
+
     @DataBoundSetter
     public void setLaunchMode(String launchMode) {
-        this.launchMode = "PYXIS".equals(launchMode) ? "PYXIS" : "NATIVE";
+        if (launchMode == null || launchMode.isBlank() || "INHERIT".equals(launchMode)) {
+            this.launchMode = null;
+            return;
+        }
+        if ("PYXIS".equals(launchMode)) {
+            this.launchMode = "PYXIS";
+        } else if ("VMOCS".equals(launchMode)) {
+            this.launchMode = "VMOCS";
+        } else {
+            this.launchMode = "NATIVE";
+        }
     }
 
     /** Convenience for Jelly EL: {@code ${instance.nativeLaunch}}. */
@@ -954,6 +992,61 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     /** Convenience for Jelly EL: {@code ${instance.pyxisLaunch}}. */
     public boolean isPyxisLaunch() {
         return "PYXIS".equals(getLaunchMode());
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.vmocsLaunch}}. */
+    public boolean isVmocsLaunch() {
+        return "VMOCS".equals(getLaunchMode());
+    }
+
+    /**
+     * Rejects a template that configures more than one launch backend. A cloud-level native default
+     * is not part of the template and is ignored here. An explicit {@code launchMode} does not make
+     * a second configured block valid.
+     */
+    public void validateExclusiveLaunchConfiguration() {
+        int configured = 0;
+        if (agent != null && agent.isConfigured()) {
+            configured++;
+        }
+        if (pyxis != null && pyxis.isConfigured()) {
+            configured++;
+        }
+        if (vmocs != null && vmocs.isConfigured()) {
+            configured++;
+        }
+        if (configured > 1) {
+            throw new IllegalArgumentException(
+                    "Select one launch mode. Native agent launch, Pyxis, and VMoCS cannot be combined.");
+        }
+    }
+
+    /**
+     * Drops configuration for the modes that are not selected. The template configuration form
+     * submits one radio value; this removes a block left behind when an existing template changes
+     * mode. "Use cloud default" drops every template launch block so the cloud settings apply.
+     */
+    public void retainSelectedLaunchConfiguration() {
+        if (!isExplicitLaunchMode()) {
+            agent = null;
+            pyxis = null;
+            vmocs = null;
+            return;
+        }
+        switch (getLaunchMode()) {
+            case "PYXIS":
+                agent = null;
+                vmocs = null;
+                break;
+            case "VMOCS":
+                agent = null;
+                pyxis = null;
+                break;
+            default:
+                pyxis = null;
+                vmocs = null;
+                break;
+        }
     }
 
     // Pipeline build context (listener for error reporting)
@@ -1108,6 +1201,8 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
 
         // Update this template with form data
         req.bindJSON(this, formData);
+        retainSelectedLaunchConfiguration();
+        validateExclusiveLaunchConfiguration();
 
         // Save Jenkins configuration
         Jenkins.get().save();

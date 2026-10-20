@@ -14,6 +14,7 @@ import io.jenkins.plugins.slurm.AgentLaunchConfig;
 import io.jenkins.plugins.slurm.PyxisConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
+import io.jenkins.plugins.slurm.VmocsConfig;
 import java.io.Serializable;
 import java.util.Set;
 import java.util.logging.Logger;
@@ -138,6 +139,25 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     @CheckForNull
     private AgentLaunchConfig agent;
 
+    // Disposable VM launch (VMoCS). Exactly one of native, Pyxis, or VMoCS may be configured.
+    @CheckForNull
+    private VmocsConfig vmocs;
+
+    @CheckForNull
+    private String vmImage;
+
+    @CheckForNull
+    private String vmJavaPath;
+
+    @CheckForNull
+    private String vmJarPath;
+
+    @CheckForNull
+    private String vmWorkDir;
+
+    @CheckForNull
+    private String vmForwardEnv;
+
     @CheckForNull
     private String javaPath;
 
@@ -261,12 +281,22 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         // Container support
         if (pyxis != null && pyxis.isConfigured()) {
             template.setPyxis(pyxis);
+            template.setLaunchMode("PYXIS");
         }
 
         // Native agent launch — step properties override JSON/template values
         AgentLaunchConfig nativeOverrides = resolveNativeAgentOverrides();
         if (nativeOverrides != null) {
             template.setAgent(AgentLaunchConfig.merge(template.getAgent(), nativeOverrides));
+            if (template.getAgent() != null && template.getAgent().isConfigured()) {
+                template.setLaunchMode("NATIVE");
+            }
+        }
+
+        applyVmocsOverrides(template);
+        template.validateExclusiveLaunchConfiguration();
+        if (template.isVmocsLaunch() && template.getVmocs() != null) {
+            template.getVmocs().validate();
         }
 
         // I/O
@@ -324,6 +354,61 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             overrides.setSetupScript(setupScript);
         }
         return overrides;
+    }
+
+    /**
+     * Applies a VMoCS object or individual guest properties over the template. Individual properties
+     * win over the object, and both win over JSON already copied onto the template.
+     */
+    private void applyVmocsOverrides(@NonNull SlurmJobTemplate template) {
+        boolean hasProperty = !StringUtils.isEmpty(vmImage)
+                || !StringUtils.isEmpty(vmJavaPath)
+                || !StringUtils.isEmpty(vmJarPath)
+                || !StringUtils.isEmpty(vmWorkDir)
+                || !StringUtils.isEmpty(vmForwardEnv);
+        if (vmocs == null && !hasProperty) {
+            return;
+        }
+        VmocsConfig config = VmocsConfig.copy(template.getVmocs());
+        if (config == null) {
+            config = new VmocsConfig();
+        }
+        if (vmocs != null) {
+            if (vmocs.isConfigured()) {
+                config.setVmImage(vmocs.getVmImage());
+            }
+            if (!AgentLaunchConfig.DEFAULT_JAVA_PATH.equals(vmocs.getJavaPath())) {
+                config.setJavaPath(vmocs.getJavaPath());
+            }
+            if (vmocs.hasPreinstalledJar()) {
+                config.setJarPath(vmocs.getJarPath());
+            }
+            if (!"/tmp/jenkins".equals(vmocs.getWorkDir())) {
+                config.setWorkDir(vmocs.getWorkDir());
+            }
+            if (vmocs.getForwardEnv() != null && !vmocs.getForwardEnv().trim().isEmpty()) {
+                config.setForwardEnv(vmocs.getForwardEnv());
+            }
+        }
+        if (!StringUtils.isEmpty(vmImage)) {
+            config.setVmImage(vmImage);
+        }
+        if (!StringUtils.isEmpty(vmJavaPath)) {
+            config.setJavaPath(vmJavaPath);
+        }
+        if (!StringUtils.isEmpty(vmJarPath)) {
+            config.setJarPath(vmJarPath);
+        }
+        if (!StringUtils.isEmpty(vmWorkDir)) {
+            config.setWorkDir(vmWorkDir);
+        }
+        if (!StringUtils.isEmpty(vmForwardEnv)) {
+            config.setForwardEnv(vmForwardEnv);
+        }
+        template.setVmocs(config);
+        if (config.isConfigured()) {
+            template.setLaunchMode("VMOCS");
+        }
     }
 
     /**
@@ -413,6 +498,15 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 LOGGER.fine("Applied AgentLaunchConfig using ObjectMapper");
             }
 
+            // Parse VMoCS launch configuration. The guest downloads agent.jar unless jar_path is set.
+            if (jsonConfig.has("vmocs")) {
+                String vmocsJsonString = jsonConfig.getJSONObject("vmocs").toString();
+                VmocsConfig vmocsConfig = OBJECT_MAPPER.readValue(vmocsJsonString, VmocsConfig.class);
+                template.setVmocs(vmocsConfig);
+                LOGGER.fine("Applied VmocsConfig using ObjectMapper");
+            }
+            applyExplicitLaunchMode(template);
+
             LOGGER.fine("Successfully applied JSON configuration to template");
 
         } catch (UnrecognizedPropertyException e) {
@@ -432,6 +526,20 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         }
 
         return hasAgentSettings;
+    }
+
+    /**
+     * Records the single launch backend selected by a JSON document. Combined backends are rejected
+     * later by {@link SlurmJobTemplate#validateExclusiveLaunchConfiguration()}.
+     */
+    private static void applyExplicitLaunchMode(SlurmJobTemplate template) {
+        if (template.getVmocs() != null && template.getVmocs().isConfigured()) {
+            template.setLaunchMode("VMOCS");
+        } else if (template.getPyxis() != null && template.getPyxis().isConfigured()) {
+            template.setLaunchMode("PYXIS");
+        } else if (template.getAgent() != null && template.getAgent().isConfigured()) {
+            template.setLaunchMode("NATIVE");
+        }
     }
 
     /**
@@ -879,6 +987,66 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     }
 
     @CheckForNull
+    public VmocsConfig getVmocs() {
+        return vmocs;
+    }
+
+    @DataBoundSetter
+    public void setVmocs(VmocsConfig vmocs) {
+        this.vmocs = vmocs;
+    }
+
+    @CheckForNull
+    public String getVmImage() {
+        return vmImage;
+    }
+
+    @DataBoundSetter
+    public void setVmImage(String vmImage) {
+        this.vmImage = Util.fixEmpty(vmImage);
+    }
+
+    @CheckForNull
+    public String getVmJavaPath() {
+        return vmJavaPath;
+    }
+
+    @DataBoundSetter
+    public void setVmJavaPath(String vmJavaPath) {
+        this.vmJavaPath = Util.fixEmpty(vmJavaPath);
+    }
+
+    @CheckForNull
+    public String getVmJarPath() {
+        return vmJarPath;
+    }
+
+    @DataBoundSetter
+    public void setVmJarPath(String vmJarPath) {
+        this.vmJarPath = Util.fixEmpty(vmJarPath);
+    }
+
+    @CheckForNull
+    public String getVmWorkDir() {
+        return vmWorkDir;
+    }
+
+    @DataBoundSetter
+    public void setVmWorkDir(String vmWorkDir) {
+        this.vmWorkDir = Util.fixEmpty(vmWorkDir);
+    }
+
+    @CheckForNull
+    public String getVmForwardEnv() {
+        return vmForwardEnv;
+    }
+
+    @DataBoundSetter
+    public void setVmForwardEnv(String vmForwardEnv) {
+        this.vmForwardEnv = Util.fixEmpty(vmForwardEnv);
+    }
+
+    @CheckForNull
     public String getJavaPath() {
         return javaPath;
     }
@@ -1040,14 +1208,37 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
                 // Validate "job" section fields via Jackson (catches unknown field names)
                 String jobJson = parsed.getJSONObject("job").toString();
                 OBJECT_MAPPER.readValue(jobJson, io.jenkins.plugins.slurm.SlurmJobTemplate.class);
-                // Validate "pyxis" section fields if present
+                AgentLaunchConfig agentConfig = null;
+                PyxisConfig pyxisConfig = null;
+                VmocsConfig vmocsConfig = null;
                 if (parsed.has("pyxis")) {
                     String pyxisJson = parsed.getJSONObject("pyxis").toString();
-                    OBJECT_MAPPER.readValue(pyxisJson, io.jenkins.plugins.slurm.PyxisConfig.class);
+                    pyxisConfig = OBJECT_MAPPER.readValue(pyxisJson, io.jenkins.plugins.slurm.PyxisConfig.class);
                 }
                 if (parsed.has("agent")) {
                     String agentJson = parsed.getJSONObject("agent").toString();
-                    OBJECT_MAPPER.readValue(agentJson, io.jenkins.plugins.slurm.AgentLaunchConfig.class);
+                    agentConfig = OBJECT_MAPPER.readValue(agentJson, io.jenkins.plugins.slurm.AgentLaunchConfig.class);
+                }
+                if (parsed.has("vmocs")) {
+                    String vmocsJson = parsed.getJSONObject("vmocs").toString();
+                    vmocsConfig = OBJECT_MAPPER.readValue(vmocsJson, io.jenkins.plugins.slurm.VmocsConfig.class);
+                }
+                int launchModes = 0;
+                if (agentConfig != null && agentConfig.isConfigured()) {
+                    launchModes++;
+                }
+                if (pyxisConfig != null && pyxisConfig.isConfigured()) {
+                    launchModes++;
+                }
+                if (vmocsConfig != null && vmocsConfig.isConfigured()) {
+                    launchModes++;
+                }
+                if (launchModes > 1) {
+                    return hudson.util.FormValidation.error(
+                            "Select one launch mode. Native agent, Pyxis, and VMoCS blocks cannot be combined.");
+                }
+                if (vmocsConfig != null && vmocsConfig.isConfigured()) {
+                    vmocsConfig.validate();
                 }
                 return hudson.util.FormValidation.ok();
             } catch (com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException e) {

@@ -1,8 +1,11 @@
 package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.util.FormValidation;
 import org.junit.jupiter.api.Test;
@@ -160,6 +163,65 @@ public class SlurmJobTemplateTest {
         // Two set → both shown
         template.setTresPerTask("");
         assertEquals("job:gres/gpu:a100:2, node:gres/gpu:1", template.getGpuRequest());
+    }
+
+    @Test
+    public void testExclusiveLaunchModes() {
+        SlurmJobTemplate template = new SlurmJobTemplate();
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        template.setAgent(agent);
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/images/agent.sqsh");
+        template.setPyxis(pyxis);
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, template::validateExclusiveLaunchConfiguration);
+        assertTrue(error.getMessage().contains("one launch mode"));
+
+        template.setLaunchMode("NATIVE");
+        template.retainSelectedLaunchConfiguration();
+        assertNull(template.getPyxis());
+        assertNotNull(template.getAgent());
+        template.validateExclusiveLaunchConfiguration();
+
+        template.setLaunchMode("INHERIT");
+        template.retainSelectedLaunchConfiguration();
+        assertFalse(template.isExplicitLaunchMode());
+        assertNull(template.getAgent());
+    }
+
+    @Test
+    public void testCloudDefaultKeepsOnlySelectedMode() {
+        SlurmCloud cloud = new SlurmCloud("test", "http://localhost:6820", null, "general", 10, 60);
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        cloud.setAgent(agent);
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setVmImage("base-ubuntu");
+        cloud.setVmocs(vmocs);
+        assertThrows(IllegalArgumentException.class, cloud::validateExclusiveLaunchConfiguration);
+
+        cloud.setLaunchMode("VMOCS");
+        cloud.retainSelectedLaunchConfiguration();
+        assertNull(cloud.getAgent());
+        assertEquals("base-ubuntu", cloud.getVmocs().getVmImage());
+        cloud.validateExclusiveLaunchConfiguration();
+    }
+
+    @Test
+    public void testCloudRejectsCombinedLaunchConfiguration() {
+        SlurmJobTemplate template = new SlurmJobTemplate();
+        template.setLaunchMode("VMOCS");
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setVmImage("base-ubuntu");
+        template.setVmocs(vmocs);
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/images/agent.sqsh");
+        template.setPyxis(pyxis);
+
+        SlurmCloud cloud = new SlurmCloud("test", "http://localhost:6820", null, "general", 10, 60);
+        assertThrows(IllegalArgumentException.class, () -> cloud.setJobTemplates(java.util.List.of(template)));
     }
 
     @Test

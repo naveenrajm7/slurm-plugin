@@ -8,6 +8,11 @@ jenkins:
         maxAgents: 20
         agentTimeoutMinutes: 5
         usageRestricted: true
+        launchMode: "VMOCS"
+        vmocs:
+          vmImage: "base-ubuntu"
+          javaPath: "java"
+          workDir: "/tmp/jenkins"
         jobTemplates:
           - name: "cpu-default"
             label: "linux"
@@ -28,3 +33,16 @@ jenkins:
             timeLimit: 480
             instanceCap: 2
             runOnce: false
+
+          - name: "vm-small"
+            label: "vm"
+            partition: "vm"
+            cpusPerTask: 2
+            memoryPerNode: 2048
+            timeLimit: 60
+            launchMode: "VMOCS"
+            vmocs:
+              vmImage: "base-ubuntu"
+              javaPath: "java"
+              workDir: "/tmp/jenkins"
+              forwardEnv: "BUILD_TAG"

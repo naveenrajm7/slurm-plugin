@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.jenkins.plugins.slurm.VmocsConfig;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -112,6 +113,21 @@ public class SlurmDeclarativeAgentTest {
         assertEquals("/opt/jenkins/jdk-17/bin/java", args.get("javaPath"));
         assertEquals("/opt/jenkins/agent.jar", args.get("jarPath"));
         assertEquals("module load java/21", args.get("setupScript"));
+    }
+
+    @Test
+    public void testVmocsProperties() {
+        SlurmDeclarativeAgent agent = new SlurmDeclarativeAgent();
+        agent.setCloud("test-cloud");
+        agent.setVmImage("base-ubuntu");
+        agent.setVmWorkDir("/var/lib/jenkins-guest");
+        agent.setVmForwardEnv("BUILD_TAG");
+
+        Map<String, Object> args = agent.getAsArgs();
+        VmocsConfig vmocs = (VmocsConfig) args.get("vmocs");
+        assertEquals("base-ubuntu", vmocs.getVmImage());
+        assertEquals("/var/lib/jenkins-guest", vmocs.getWorkDir());
+        assertEquals("BUILD_TAG", vmocs.getForwardEnv());
     }
 
     @Test

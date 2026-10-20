@@ -169,15 +169,25 @@
 
   </f:section>
 
-  <!-- Agent Launch Mode – mutually exclusive: native (no container) or Pyxis/Enroot container -->
+  <!-- Agent Launch Mode – cloud default, or exactly one of native, Pyxis/Enroot, or VMoCS -->
   <f:section title="Agent Launch Mode">
+
+    <f:radioBlock name="launchMode" value="INHERIT"
+                  title="Use cloud default"
+                  checked="${instance == null || (instance.cloudDefaultLaunch &amp;&amp; !instance.pyxisLaunch)}">
+      <f:description>
+        Use the launch mode and settings configured on the Slurm cloud.
+        Choose one of the modes below to override this template.
+      </f:description>
+    </f:radioBlock>
 
     <f:radioBlock name="launchMode" value="NATIVE"
                   title="Native (no container)"
-                  checked="${instance == null || instance.nativeLaunch}">
+                  checked="${instance != null &amp;&amp; instance.explicitLaunchMode &amp;&amp; instance.nativeLaunch}">
       <f:description>
         Launch the Jenkins agent directly on the compute node host.
         Requires either a pre-installed agent.jar path or &quot;Download Agent JAR&quot; enabled.
+        Empty fields use the cloud native defaults.
       </f:description>
       <f:property field="agent"/>
     </f:radioBlock>
@@ -188,8 +198,21 @@
       <f:description>
         Launch the Jenkins agent inside a Pyxis (Enroot) container.
         Requires the Pyxis SPANK plugin on the cluster.
+        Empty fields use the cloud Pyxis defaults.
       </f:description>
       <f:property field="pyxis"/>
+    </f:radioBlock>
+
+    <f:radioBlock name="launchMode" value="VMOCS"
+                  title="VMoCS virtual machine"
+                  checked="${instance != null &amp;&amp; instance.vmocsLaunch}">
+      <f:description>
+        Launch the Jenkins agent inside a disposable VMoCS virtual machine.
+        Requires the VMoCS SPANK plugin 0.1.3 or newer. The guest needs Java and network access
+        to Jenkins; agent.jar is downloaded at startup unless a guest JAR path is set.
+        Empty fields use the cloud VMoCS defaults.
+      </f:description>
+      <f:property field="vmocs"/>
     </f:radioBlock>
 
   </f:section>

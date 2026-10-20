@@ -199,6 +199,75 @@ public class PyxisConfig extends AbstractDescribableImpl<PyxisConfig> implements
         return (containerImage != null && !containerImage.trim().isEmpty());
     }
 
+    @CheckForNull
+    public static PyxisConfig copy(@CheckForNull PyxisConfig source) {
+        if (source == null) {
+            return null;
+        }
+        PyxisConfig copy = new PyxisConfig();
+        copy.setContainerImage(source.getContainerImage());
+        copy.setContainerMounts(source.getContainerMounts());
+        copy.setContainerMountHome(source.getContainerMountHome());
+        copy.setContainerWorkdir(source.getContainerWorkdir());
+        copy.setContainerName(source.getContainerName());
+        copy.setContainerRemap(source.getContainerRemap());
+        copy.setContainerSave(source.getContainerSave());
+        copy.setContainerWritable(source.getContainerWritable());
+        copy.setContainerReadonly(source.getContainerReadonly());
+        copy.setContainerEntrypoint(source.getContainerEntrypoint());
+        copy.setContainerEnv(source.getContainerEnv());
+        return copy;
+    }
+
+    /**
+     * Merges cloud defaults with a template override. Blank template strings keep the cloud value.
+     * Checkboxes on a template block replace the cloud value.
+     */
+    @CheckForNull
+    public static PyxisConfig merge(@CheckForNull PyxisConfig cloud, @CheckForNull PyxisConfig template) {
+        if (template == null) {
+            return copy(cloud);
+        }
+        if (cloud == null) {
+            return copy(template);
+        }
+        PyxisConfig merged = copy(cloud);
+        overlay(merged, template);
+        return merged;
+    }
+
+    private static void overlay(PyxisConfig target, PyxisConfig template) {
+        if (notBlank(template.getContainerImage())) {
+            target.setContainerImage(template.getContainerImage());
+        }
+        if (notBlank(template.getContainerMounts())) {
+            target.setContainerMounts(template.getContainerMounts());
+        }
+        if (notBlank(template.getContainerWorkdir())) {
+            target.setContainerWorkdir(template.getContainerWorkdir());
+        }
+        if (notBlank(template.getContainerName())) {
+            target.setContainerName(template.getContainerName());
+        }
+        if (notBlank(template.getContainerSave())) {
+            target.setContainerSave(template.getContainerSave());
+        }
+        if (notBlank(template.getContainerEntrypoint())) {
+            target.setContainerEntrypoint(template.getContainerEntrypoint());
+        }
+        if (notBlank(template.getContainerEnv())) {
+            target.setContainerEnv(template.getContainerEnv());
+        }
+        target.setContainerMountHome(template.getContainerMountHome());
+        target.setContainerRemap(template.getContainerRemap());
+        target.setContainerWritable(template.getContainerWritable());
+        target.setContainerReadonly(template.getContainerReadonly());
+    }
+
+    private static boolean notBlank(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
     /**
      * Check if this configuration is equivalent to another
      */
