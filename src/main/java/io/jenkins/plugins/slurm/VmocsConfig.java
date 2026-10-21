@@ -14,10 +14,12 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import jenkins.model.Jenkins;
 import org.jenkinsci.Symbol;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
 import org.kohsuke.stapler.QueryParameter;
+import org.kohsuke.stapler.interceptor.RequirePOST;
 
 /**
  * Configuration for launching a Jenkins inbound agent inside a VMoCS virtual machine.
@@ -259,7 +261,9 @@ public class VmocsConfig extends AbstractDescribableImpl<VmocsConfig> implements
             return "VMoCS Virtual Machine";
         }
 
+        @RequirePOST
         public FormValidation doCheckVmImage(@QueryParameter String value) {
+            Jenkins.get().checkPermission(Jenkins.MANAGE);
             if (value == null || value.trim().isEmpty()) {
                 return FormValidation.error("VMoCS template name is required.");
             }
@@ -270,7 +274,9 @@ public class VmocsConfig extends AbstractDescribableImpl<VmocsConfig> implements
             return FormValidation.ok();
         }
 
+        @RequirePOST
         public FormValidation doCheckWorkDir(@QueryParameter String value) {
+            Jenkins.get().checkPermission(Jenkins.MANAGE);
             if (value == null || value.trim().isEmpty()) {
                 return FormValidation.ok("The guest work directory defaults to /tmp/jenkins.");
             }
@@ -280,7 +286,9 @@ public class VmocsConfig extends AbstractDescribableImpl<VmocsConfig> implements
             return FormValidation.ok();
         }
 
+        @RequirePOST
         public FormValidation doCheckForwardEnv(@QueryParameter String value) {
+            Jenkins.get().checkPermission(Jenkins.MANAGE);
             VmocsConfig config = new VmocsConfig();
             config.setForwardEnv(value);
             try {
