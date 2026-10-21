@@ -157,7 +157,7 @@ public class SlurmLauncher extends JNLPLauncher {
                         agent.getNodeName(),
                         getJenkinsUrl(cloud),
                         getAgentSecret(slurmComputer),
-                        cloud.getAgent());
+                        cloud);
                 JobDescMsg jobDesc = builder.build();
                 LOGGER.info("Job description built successfully");
 

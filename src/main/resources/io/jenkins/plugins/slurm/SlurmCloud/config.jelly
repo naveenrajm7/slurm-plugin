@@ -44,8 +44,40 @@
     
   </f:section>
 
-    <f:section title="Default Agent Launch">
-    <f:optionalProperty field="agent" title="Native agent defaults (without Pyxis)"/>
+  <f:section title="Default Agent Launch">
+    <f:description>
+      Launch mode and settings used by templates that select &quot;Use cloud default&quot;.
+      A template that picks its own mode overrides this choice. Empty fields on that template
+      still fall back to the matching cloud settings.
+    </f:description>
+
+    <f:radioBlock name="launchMode" value="NATIVE"
+                  title="Native (no container)"
+                  checked="${instance == null || instance.nativeLaunch}">
+      <f:description>
+        Default for templates that launch the Jenkins agent on the compute node host.
+      </f:description>
+      <f:property field="agent"/>
+    </f:radioBlock>
+
+    <f:radioBlock name="launchMode" value="PYXIS"
+                  title="Pyxis / Enroot container"
+                  checked="${instance != null &amp;&amp; instance.pyxisLaunch}">
+      <f:description>
+        Default for templates that launch the Jenkins agent inside a Pyxis (Enroot) container.
+      </f:description>
+      <f:property field="pyxis"/>
+    </f:radioBlock>
+
+    <f:radioBlock name="launchMode" value="VMOCS"
+                  title="VMoCS virtual machine"
+                  checked="${instance != null &amp;&amp; instance.vmocsLaunch}">
+      <f:description>
+        Default for templates that launch the Jenkins agent inside a disposable VMoCS virtual machine.
+        Requires the VMoCS SPANK plugin 0.1.3 or newer.
+      </f:description>
+      <f:property field="vmocs"/>
+    </f:radioBlock>
   </f:section>
 
   <f:optionalProperty field="garbageCollection" title="Enable orphaned Slurm job garbage collection"/>

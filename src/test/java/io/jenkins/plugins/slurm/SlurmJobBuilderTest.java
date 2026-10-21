@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.jenkins.plugins.slurm.client.model.JobDescMsg;
+
 import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -276,6 +277,121 @@ public class SlurmJobBuilderTest {
             t.setLaunchMode("UNKNOWN_VALUE");
             assertTrue(t.isNativeLaunch());
         }
+
+        @Test
+        void explicitVmocsMode_isNotInferredFromStoredConfig() {
+            SlurmJobTemplate t = new SlurmJobTemplate();
+            t.setVmocs(vmocs("base-ubuntu"));
+            assertTrue(t.isNativeLaunch());
+            assertFalse(t.isVmocsLaunch());
+
+            t.setLaunchMode("VMOCS");
+            assertTrue(t.isVmocsLaunch());
+            assertFalse(t.isNativeLaunch());
+            assertFalse(t.isPyxisLaunch());
+        }
+    }
+
+    @Nested
+    class VmocsLaunchTest {
+
+        @Test
+        void downloadsJarInsideGuestAndKeepsSecretOutOfScript() {
+            SlurmJobTemplate template = vmocsTemplate(2);
+            template.setEnvironment("[\"FOO=bar\",\"JENKINS_SECRET=from-user\"]");
+            template.getVmocs().setForwardEnv("FOO,MISSING");
+
+            JobDescMsg job = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET).build();
+            String script = job.getScript();
+
+            assertTrue(script.contains("--vm-image=base-ubuntu"));
+            assertTrue(script.contains("--cpus-per-task=2"));
+            assertTrue(script.contains("--kill-on-bad-exit=1"));
+            assertTrue(script.contains("--export=ALL"));
+            assertTrue(script.contains("--vm-forward-env=JENKINS_URL"));
+            assertTrue(script.contains("--vm-forward-env=JENKINS_SECRET"));
+            assertTrue(script.contains("--vm-forward-env=JENKINS_AGENT_NAME"));
+            assertTrue(script.contains("--vm-forward-env=SLURM_JOB_ID"));
+            assertTrue(script.contains("--vm-forward-env=FOO"));
+            assertFalse(script.contains("--vm-forward-env=MISSING"));
+            assertTrue(script.contains("jnlpJars/agent.jar"));
+            assertTrue(script.contains("curl"));
+            assertTrue(script.contains("wget"));
+            assertTrue(script.contains("JenkinsAgentJarDownloader.java"));
+            assertTrue(script.contains("-webSocket"));
+            assertFalse(script.contains(SECRET));
+            assertFalse(script.contains(JENKINS_URL));
+            assertFalse(script.contains("--container-image"));
+            assertFalse(script.contains("from-user"));
+
+            assertTrue(job.getEnvironment().contains("JENKINS_URL=" + JENKINS_URL));
+            assertTrue(job.getEnvironment().contains("JENKINS_SECRET=" + SECRET));
+            assertTrue(job.getEnvironment().contains("JENKINS_AGENT_NAME=" + AGENT_NAME));
+            assertTrue(job.getEnvironment().contains("FOO=bar"));
+            assertEquals("/var/lib/jenkins-guest", SlurmJobBuilder.remoteFilesystem(template, AGENT_NAME));
+        }
+
+        @Test
+        void preinstalledJarSkipsDownload() {
+            SlurmJobTemplate template = vmocsTemplate(1);
+            template.getVmocs().setJarPath("/opt/jenkins/agent.jar");
+
+            String script = buildScript(template);
+
+            assertTrue(script.contains("/opt/jenkins/agent.jar"));
+            assertFalse(script.contains("curl"));
+            assertFalse(script.contains("JenkinsAgentJarDownloader"));
+            assertFalse(script.contains(SECRET));
+        }
+
+        @Test
+        void quotesGuestWorkDirectory() {
+            SlurmJobTemplate template = vmocsTemplate(1);
+            template.getVmocs().setWorkDir("/tmp/jenkins agent");
+
+            String script = buildScript(template);
+
+            assertTrue(script.contains("/tmp/jenkins agent"));
+            assertTrue(script.contains("'\"'\"'"));
+            assertEquals("/tmp/jenkins agent", SlurmJobBuilder.remoteFilesystem(template, AGENT_NAME));
+        }
+
+        @Test
+        void selectedModeIgnoresStoredPyxisConfig() {
+            SlurmJobTemplate template = vmocsTemplate(1);
+            PyxisConfig pyxis = new PyxisConfig();
+            pyxis.setContainerImage("/images/myapp.sqsh");
+            template.setPyxis(pyxis);
+
+            String script = buildScript(template);
+
+            assertTrue(script.contains("--vm-image=base-ubuntu"));
+            assertFalse(script.contains("--container-image"));
+        }
+
+        @Test
+        void customScriptKeepsTemplateWorkingDirectory() {
+            SlurmJobTemplate template = vmocsTemplate(1);
+            template.setScript("#!/bin/bash\necho custom\n");
+
+            assertFalse(SlurmJobBuilder.usesPerAgentWorkspace(template));
+            assertEquals("/tmp/jenkins", SlurmJobBuilder.remoteFilesystem(template, AGENT_NAME));
+        }
+
+        @Test
+        void missingOrInvalidTemplateFails() {
+            SlurmJobTemplate missing = baseTemplate();
+            missing.setLaunchMode("VMOCS");
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> new SlurmJobBuilder(missing, AGENT_NAME, JENKINS_URL, SECRET).build());
+
+            SlurmJobTemplate invalid = vmocsTemplate(1);
+            invalid.getVmocs().setVmImage("not a template");
+            assertThrows(
+                    IllegalStateException.class,
+                    () -> new SlurmJobBuilder(invalid, AGENT_NAME, JENKINS_URL, SECRET).build());
+        }
     }
 
     @Nested
@@ -364,6 +480,21 @@ public class SlurmJobBuilderTest {
         }
     }
 
+    private static VmocsConfig vmocs(String image) {
+        VmocsConfig vmocs = new VmocsConfig();
+        vmocs.setVmImage(image);
+        vmocs.setWorkDir("/var/lib/jenkins-guest");
+        return vmocs;
+    }
+
+    private static SlurmJobTemplate vmocsTemplate(int cpus) {
+        SlurmJobTemplate template = baseTemplate();
+        template.setLaunchMode("VMOCS");
+        template.setCpusPerTask(cpus);
+        template.setVmocs(vmocs("base-ubuntu"));
+        return template;
+    }
+
     private static SlurmJobTemplate baseTemplate() {
         SlurmJobTemplate template = new SlurmJobTemplate("native", "linux");
         template.setPartition("compute");
@@ -375,6 +506,85 @@ public class SlurmJobBuilderTest {
         SlurmJobBuilder builder = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET);
         JobDescMsg job = builder.build();
         return job.getScript();
+    }
+
+    @Nested
+    class CloudLaunchDefaultTest {
+
+        @Test
+        void templateWithoutModeUsesCloudVmocs() {
+            SlurmCloud cloud = cloudWithVmocs();
+            SlurmJobTemplate template = baseTemplate();
+
+            String script = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+
+            assertTrue(script.contains("--vm-image=base-ubuntu"));
+            assertTrue(script.contains("/opt/guest/java"));
+            assertFalse(script.contains(SECRET));
+            assertEquals("/tmp/jenkins", SlurmJobBuilder.remoteFilesystem(cloud, template, AGENT_NAME));
+        }
+
+        @Test
+        void explicitNativeTemplateIgnoresCloudVmocs() {
+            SlurmCloud cloud = cloudWithVmocs();
+            SlurmJobTemplate template = baseTemplate();
+            template.setLaunchMode("NATIVE");
+            AgentLaunchConfig agent = new AgentLaunchConfig();
+            agent.setJarPath("/opt/jenkins/agent.jar");
+            template.setAgent(agent);
+
+            String script = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+
+            assertTrue(script.contains("'/opt/jenkins/agent.jar'"));
+            assertFalse(script.contains("--vm-image="));
+        }
+
+        @Test
+        void legacyPyxisTemplateKeepsPyxisWhenCloudDefaultsToVmocs() {
+            SlurmCloud cloud = cloudWithVmocs();
+            SlurmJobTemplate template = baseTemplate();
+            PyxisConfig pyxis = new PyxisConfig();
+            pyxis.setContainerImage("/images/agent.sqsh");
+            template.setPyxis(pyxis);
+
+            String script = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+
+            assertTrue(script.contains("--container-image=/images/agent.sqsh"));
+            assertFalse(script.contains("--vm-image="));
+        }
+
+        @Test
+        void templateVmocsOverridesImageAndInheritsCloudJava() {
+            SlurmCloud cloud = cloudWithVmocs();
+            SlurmJobTemplate template = baseTemplate();
+            template.setLaunchMode("VMOCS");
+            VmocsConfig vmocs = new VmocsConfig();
+            vmocs.setVmImage("gpu-guest");
+            template.setVmocs(vmocs);
+
+            String script = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+
+            assertTrue(script.contains("--vm-image=gpu-guest"));
+            assertTrue(script.contains("/opt/guest/java"));
+        }
+
+        private static SlurmCloud cloudWithVmocs() {
+            SlurmCloud cloud = new SlurmCloud("test", "http://localhost:6820", null, "general", 1, 5);
+            cloud.setLaunchMode("VMOCS");
+            VmocsConfig vmocs = new VmocsConfig();
+            vmocs.setVmImage("base-ubuntu");
+            vmocs.setJavaPath("/opt/guest/java");
+            cloud.setVmocs(vmocs);
+            return cloud;
+        }
     }
 
     private static List<String> buildEnvironment(SlurmJobTemplate template) {

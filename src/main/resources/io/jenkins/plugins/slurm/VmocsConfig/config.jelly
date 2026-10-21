@@ -1,0 +1,30 @@
+<?jelly escape-by-default='true'?>
+<j:jelly xmlns:j="jelly:core" xmlns:st="jelly:stapler" xmlns:d="jelly:define" xmlns:l="/lib/layout"
+         xmlns:t="/lib/hudson" xmlns:f="/lib/form">
+
+  <f:entry field="vmImage" title="VM Template"
+           description="VMoCS template name passed to srun as --vm-image (for example, base-ubuntu). Requires VMoCS 0.1.3 or newer.">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="javaPath" title="Guest Java Path"
+           description="Java executable inside the VM (default: java). A JDK 11 or newer can download agent.jar without curl or wget.">
+    <f:textbox default="java"/>
+  </f:entry>
+
+  <f:entry field="jarPath" title="Guest Agent JAR Path"
+           description="Optional absolute path to a preinstalled agent.jar inside the VM. Leave empty to download it from the Jenkins controller at startup.">
+    <f:textbox/>
+  </f:entry>
+
+  <f:entry field="workDir" title="Guest Work Directory"
+           description="Absolute Jenkins remote root inside the VM (default: /tmp/jenkins). The guest command creates it.">
+    <f:textbox default="/tmp/jenkins"/>
+  </f:entry>
+
+  <f:entry field="forwardEnv" title="Additional Environment Variables"
+           description="Comma-separated names to forward into the VM when the template environment supplies them. Jenkins connection variables and SLURM_JOB_ID are always forwarded. VMoCS allows 16 names in total.">
+    <f:textbox/>
+  </f:entry>
+
+</j:jelly>

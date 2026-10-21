@@ -8,6 +8,7 @@ import hudson.model.Label;
 import hudson.util.ListBoxModel;
 import io.jenkins.plugins.slurm.PyxisConfig;
 import io.jenkins.plugins.slurm.SlurmCloud;
+import io.jenkins.plugins.slurm.VmocsConfig;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TreeMap;
@@ -163,6 +164,22 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
 
     @CheckForNull
     private String containerWorkdir; // Working directory in container
+
+    // Disposable VMoCS guest. Selecting these fields is mutually exclusive with native and Pyxis.
+    @CheckForNull
+    private String vmImage;
+
+    @CheckForNull
+    private String vmJavaPath;
+
+    @CheckForNull
+    private String vmJarPath;
+
+    @CheckForNull
+    private String vmWorkDir;
+
+    @CheckForNull
+    private String vmForwardEnv;
 
     // Native agent launch (without Pyxis)
     @CheckForNull
@@ -500,6 +517,60 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     }
 
     // ====================
+    // VMoCS guest launch
+    // ====================
+
+    @CheckForNull
+    public String getVmImage() {
+        return vmImage;
+    }
+
+    @DataBoundSetter
+    public void setVmImage(String vmImage) {
+        this.vmImage = Util.fixEmpty(vmImage);
+    }
+
+    @CheckForNull
+    public String getVmJavaPath() {
+        return vmJavaPath;
+    }
+
+    @DataBoundSetter
+    public void setVmJavaPath(String vmJavaPath) {
+        this.vmJavaPath = Util.fixEmpty(vmJavaPath);
+    }
+
+    @CheckForNull
+    public String getVmJarPath() {
+        return vmJarPath;
+    }
+
+    @DataBoundSetter
+    public void setVmJarPath(String vmJarPath) {
+        this.vmJarPath = Util.fixEmpty(vmJarPath);
+    }
+
+    @CheckForNull
+    public String getVmWorkDir() {
+        return vmWorkDir;
+    }
+
+    @DataBoundSetter
+    public void setVmWorkDir(String vmWorkDir) {
+        this.vmWorkDir = Util.fixEmpty(vmWorkDir);
+    }
+
+    @CheckForNull
+    public String getVmForwardEnv() {
+        return vmForwardEnv;
+    }
+
+    @DataBoundSetter
+    public void setVmForwardEnv(String vmForwardEnv) {
+        this.vmForwardEnv = Util.fixEmpty(vmForwardEnv);
+    }
+
+    // ====================
     // Native Agent Launch
     // ====================
 
@@ -686,6 +757,30 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
                 pyxis.setContainerWorkdir(containerWorkdir);
             }
             argMap.put("pyxis", pyxis);
+        }
+
+        if (!StringUtils.isEmpty(vmImage)
+                || !StringUtils.isEmpty(vmJavaPath)
+                || !StringUtils.isEmpty(vmJarPath)
+                || !StringUtils.isEmpty(vmWorkDir)
+                || !StringUtils.isEmpty(vmForwardEnv)) {
+            VmocsConfig vmocs = new VmocsConfig();
+            if (!StringUtils.isEmpty(vmImage)) {
+                vmocs.setVmImage(vmImage);
+            }
+            if (!StringUtils.isEmpty(vmJavaPath)) {
+                vmocs.setJavaPath(vmJavaPath);
+            }
+            if (!StringUtils.isEmpty(vmJarPath)) {
+                vmocs.setJarPath(vmJarPath);
+            }
+            if (!StringUtils.isEmpty(vmWorkDir)) {
+                vmocs.setWorkDir(vmWorkDir);
+            }
+            if (!StringUtils.isEmpty(vmForwardEnv)) {
+                vmocs.setForwardEnv(vmForwardEnv);
+            }
+            argMap.put("vmocs", vmocs);
         }
 
         // Native agent launch (without Pyxis)

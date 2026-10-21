@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import io.jenkins.plugins.casc.ConfigurationAsCode;
 import io.jenkins.plugins.slurm.SlurmCloud;
 import io.jenkins.plugins.slurm.SlurmJobTemplate;
+import io.jenkins.plugins.slurm.VmocsConfig;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -33,9 +34,13 @@ class SlurmCasCTest {
         assertEquals(20, cloud.getMaxAgents());
         assertEquals(5, cloud.getAgentTimeoutMinutes());
         assertTrue(cloud.isUsageRestricted());
+        assertTrue(cloud.isExplicitLaunchMode());
+        assertTrue(cloud.isVmocsLaunch());
+        assertNotNull(cloud.getVmocs());
+        assertEquals("base-ubuntu", cloud.getVmocs().getVmImage());
 
         List<SlurmJobTemplate> templates = cloud.getJobTemplates();
-        assertEquals(2, templates.size());
+        assertEquals(3, templates.size());
 
         SlurmJobTemplate cpuTemplate = templates.get(0);
         assertEquals("cpu-default", cpuTemplate.getName());
@@ -58,5 +63,18 @@ class SlurmCasCTest {
         assertEquals(Integer.valueOf(480), gpuTemplate.getTimeLimit());
         assertEquals(2, gpuTemplate.getInstanceCap());
         assertFalse(gpuTemplate.isRunOnce());
+
+        SlurmJobTemplate vmTemplate = templates.get(2);
+        assertEquals("vm-small", vmTemplate.getName());
+        assertEquals("vm", vmTemplate.getLabel());
+        assertTrue(vmTemplate.isVmocsLaunch());
+        assertFalse(vmTemplate.isNativeLaunch());
+        assertFalse(vmTemplate.isPyxisLaunch());
+        VmocsConfig vmocs = vmTemplate.getVmocs();
+        assertNotNull(vmocs);
+        assertEquals("base-ubuntu", vmocs.getVmImage());
+        assertEquals("java", vmocs.getJavaPath());
+        assertEquals("/tmp/jenkins", vmocs.getWorkDir());
+        assertEquals("BUILD_TAG", vmocs.getForwardEnv());
     }
 }

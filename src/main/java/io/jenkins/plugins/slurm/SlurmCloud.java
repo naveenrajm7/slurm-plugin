@@ -75,6 +75,15 @@ public class SlurmCloud extends AbstractCloudImpl {
     private List<SlurmJobTemplate> jobTemplates;
     private boolean usageRestricted = false;
     private AgentLaunchConfig agent;
+    private PyxisConfig pyxis;
+    private VmocsConfig vmocs;
+
+    /**
+     * Cloud-wide launch mode for templates that do not choose their own. Null means the mode is
+     * inferred from whichever default block is configured.
+     */
+    private String launchMode;
+
     private SlurmGarbageCollection garbageCollection;
 
     /**
@@ -146,7 +155,13 @@ public class SlurmCloud extends AbstractCloudImpl {
 
     @DataBoundSetter
     public void setJobTemplates(List<SlurmJobTemplate> jobTemplates) {
-        this.jobTemplates = jobTemplates != null ? jobTemplates : new ArrayList<>();
+        List<SlurmJobTemplate> templates = jobTemplates != null ? jobTemplates : new ArrayList<>();
+        for (SlurmJobTemplate template : templates) {
+            if (template != null) {
+                template.validateExclusiveLaunchConfiguration();
+            }
+        }
+        this.jobTemplates = templates;
     }
 
     public boolean isUsageRestricted() {
@@ -159,8 +174,8 @@ public class SlurmCloud extends AbstractCloudImpl {
     }
 
     /**
-     * Default native agent launch settings for all templates on this cloud.
-     * Individual templates and pipeline JSON may override these values.
+     * Default native agent launch settings for templates on this cloud that run in Native mode.
+     * A template that selects Native may override individual fields.
      */
     @CheckForNull
     public AgentLaunchConfig getAgent() {
@@ -170,6 +185,128 @@ public class SlurmCloud extends AbstractCloudImpl {
     @DataBoundSetter
     public void setAgent(AgentLaunchConfig agent) {
         this.agent = agent;
+    }
+
+    /**
+     * Default Pyxis settings for templates on this cloud that run in Pyxis mode.
+     */
+    @CheckForNull
+    public PyxisConfig getPyxis() {
+        return pyxis;
+    }
+
+    @DataBoundSetter
+    public void setPyxis(PyxisConfig pyxis) {
+        this.pyxis = pyxis;
+    }
+
+    /**
+     * Default VMoCS settings for templates on this cloud that run in VMoCS mode.
+     */
+    @CheckForNull
+    public VmocsConfig getVmocs() {
+        return vmocs;
+    }
+
+    @DataBoundSetter
+    public void setVmocs(VmocsConfig vmocs) {
+        this.vmocs = vmocs;
+    }
+
+    /**
+     * Launch mode used by templates that have not saved their own. A cloud saved before this field
+     * existed reports native unless a Pyxis image or VMoCS template name is configured.
+     */
+    @NonNull
+    public String getLaunchMode() {
+        if (launchMode != null) {
+            return launchMode;
+        }
+        if (vmocs != null && vmocs.isConfigured()) {
+            return "VMOCS";
+        }
+        if (pyxis != null && pyxis.isConfigured()) {
+            return "PYXIS";
+        }
+        return "NATIVE";
+    }
+
+    /** True when the cloud form or JCasC saved Native, Pyxis, or VMoCS. */
+    public boolean isExplicitLaunchMode() {
+        return launchMode != null;
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.nativeLaunch}}. */
+    public boolean isNativeLaunch() {
+        return "NATIVE".equals(getLaunchMode());
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.pyxisLaunch}}. */
+    public boolean isPyxisLaunch() {
+        return "PYXIS".equals(getLaunchMode());
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.vmocsLaunch}}. */
+    public boolean isVmocsLaunch() {
+        return "VMOCS".equals(getLaunchMode());
+    }
+
+    @DataBoundSetter
+    public void setLaunchMode(String launchMode) {
+        if ("PYXIS".equals(launchMode)) {
+            this.launchMode = "PYXIS";
+        } else if ("VMOCS".equals(launchMode)) {
+            this.launchMode = "VMOCS";
+        } else if (launchMode == null || launchMode.isBlank()) {
+            this.launchMode = null;
+        } else {
+            this.launchMode = "NATIVE";
+        }
+    }
+
+    /**
+     * Drops default blocks for the modes that are not selected. A cloud that has not saved a mode
+     * keeps whatever blocks were already stored.
+     */
+    public void retainSelectedLaunchConfiguration() {
+        if (!isExplicitLaunchMode()) {
+            return;
+        }
+        switch (getLaunchMode()) {
+            case "PYXIS":
+                agent = null;
+                vmocs = null;
+                break;
+            case "VMOCS":
+                agent = null;
+                pyxis = null;
+                break;
+            default:
+                pyxis = null;
+                vmocs = null;
+                break;
+        }
+    }
+
+    /**
+     * Rejects a cloud that configures more than one launch default. The selected mode's block is
+     * the only one that should remain after {@link #retainSelectedLaunchConfiguration()}.
+     */
+    public void validateExclusiveLaunchConfiguration() {
+        int configured = 0;
+        if (agent != null && agent.isConfigured()) {
+            configured++;
+        }
+        if (pyxis != null && pyxis.isConfigured()) {
+            configured++;
+        }
+        if (vmocs != null && vmocs.isConfigured()) {
+            configured++;
+        }
+        if (configured > 1) {
+            throw new IllegalArgumentException(
+                    "Select one launch mode. Native agent launch, Pyxis, and VMoCS cannot be combined.");
+        }
     }
 
     @CheckForNull
@@ -509,12 +646,9 @@ public class SlurmCloud extends AbstractCloudImpl {
 
                         // 3. Create the Slurm agent with proper constructor parameters.
                         // Native launch: remoteFS is a private subdirectory of the template
-                        // working directory. The batch script creates it. Pyxis and custom
-                        // scripts keep the template directory.
-                        String remoteFs = jobTemplate.getCurrentWorkingDirectory();
-                        if (SlurmJobBuilder.usesPerAgentWorkspace(jobTemplate)) {
-                            remoteFs = SlurmJobBuilder.nativeAgentRoot(remoteFs, agentName);
-                        }
+                        // working directory. VMoCS uses the guest work directory. Pyxis and
+                        // custom scripts keep the template directory.
+                        String remoteFs = SlurmJobBuilder.remoteFilesystem(this, jobTemplate, agentName);
                         SlurmAgent agent = new SlurmAgent(
                                 agentName, // name
                                 "Slurm agent from template " + jobTemplate.getName(), // description
@@ -864,6 +998,14 @@ public class SlurmCloud extends AbstractCloudImpl {
 
         net.sf.json.JSONObject formData = req.getSubmittedForm();
         SlurmJobTemplate template = req.bindJSON(SlurmJobTemplate.class, formData);
+        try {
+            template.retainSelectedLaunchConfiguration();
+            template.validateExclusiveLaunchConfiguration();
+        } catch (IllegalArgumentException e) {
+            req.setAttribute("errorMessage", e.getMessage());
+            req.getView(this, "new").forward(req, rsp);
+            return;
+        }
 
         // Validate template name is provided
         String name = template.getName();
@@ -995,6 +1137,12 @@ public class SlurmCloud extends AbstractCloudImpl {
         public Cloud newInstance(org.kohsuke.stapler.StaplerRequest req, net.sf.json.JSONObject formData)
                 throws FormException {
             SlurmCloud newCloud = (SlurmCloud) super.newInstance(req, formData);
+            newCloud.retainSelectedLaunchConfiguration();
+            try {
+                newCloud.validateExclusiveLaunchConfiguration();
+            } catch (IllegalArgumentException e) {
+                throw new FormException(e, "launchMode");
+            }
 
             // If super already bound templates (JCasC / test injection), keep them as-is.
             if (!newCloud.getJobTemplates().isEmpty()) {
