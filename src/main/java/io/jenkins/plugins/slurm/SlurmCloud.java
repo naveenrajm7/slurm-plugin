@@ -997,6 +997,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         Jenkins.get().checkPermission(Jenkins.MANAGE);
 
         net.sf.json.JSONObject formData = req.getSubmittedForm();
+        LaunchModeForm.flatten(formData);
         SlurmJobTemplate template = req.bindJSON(SlurmJobTemplate.class, formData);
         try {
             template.retainSelectedLaunchConfiguration();
@@ -1029,6 +1030,7 @@ public class SlurmCloud extends AbstractCloudImpl {
         }
 
         jobTemplates.add(template);
+        Jenkins.get().save();
 
         rsp.sendRedirect("templates");
     }
@@ -1136,6 +1138,8 @@ public class SlurmCloud extends AbstractCloudImpl {
         @Override
         public Cloud newInstance(org.kohsuke.stapler.StaplerRequest req, net.sf.json.JSONObject formData)
                 throws FormException {
+            // radioBlock posts launchMode as an object. Flatten it before Stapler binds a String.
+            LaunchModeForm.flatten(formData);
             SlurmCloud newCloud = (SlurmCloud) super.newInstance(req, formData);
             newCloud.retainSelectedLaunchConfiguration();
             try {

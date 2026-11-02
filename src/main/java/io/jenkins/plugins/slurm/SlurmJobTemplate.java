@@ -1198,6 +1198,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         String oldName = this.name;
 
         net.sf.json.JSONObject formData = req.getSubmittedForm();
+        LaunchModeForm.flatten(formData);
 
         // Update this template with form data
         req.bindJSON(this, formData);
