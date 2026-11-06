@@ -7,6 +7,7 @@ import hudson.model.Computer;
 import hudson.model.Descriptor;
 import hudson.model.Executor;
 import hudson.model.Queue;
+import hudson.model.Run;
 import hudson.model.TaskListener;
 import hudson.slaves.AbstractCloudSlave;
 import hudson.slaves.Cloud;
@@ -46,6 +47,15 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
 
     // Pipeline build context (transient - not persisted)
     private transient TaskListener runListener; // Build's TaskListener for pipeline error reporting
+
+    /**
+     * Queue item this agent was provisioned for. Transient: after a restart the pre-connect
+     * wait is no longer the same Jenkins queue entry, and the agent timeout still applies.
+     */
+    private transient Long provisioningQueueItemId;
+
+    @CheckForNull
+    private transient Run<?, ?> provisioningRun;
 
     /**
      * Creates a new Slurm agent.
@@ -289,6 +299,34 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
     }
 
     /**
+     * Remembers the queued build this agent was created for so a pre-connect abort can cancel
+     * its Slurm job instead of leaving the node for the next build.
+     */
+    void trackProvisioningOwner(@NonNull JobUtils.ProvisioningOwner owner) {
+        this.provisioningQueueItemId = owner.queueItemId;
+        this.provisioningRun = owner.run;
+    }
+
+    @CheckForNull
+    Long getProvisioningQueueItemId() {
+        return provisioningQueueItemId;
+    }
+
+    @CheckForNull
+    Run<?, ?> getProvisioningRun() {
+        return provisioningRun;
+    }
+
+    /** Drops the pre-connect claim once this agent is connected or removed. */
+    void releaseProvisioningOwner() {
+        if (provisioningQueueItemId != null) {
+            JobUtils.releaseProvisioningClaim(provisioningQueueItemId);
+        }
+        provisioningQueueItemId = null;
+        provisioningRun = null;
+    }
+
+    /**
      * Creates the computer instance for this agent.
      */
     @Override
@@ -303,6 +341,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
      */
     @Override
     protected void _terminate(@NonNull TaskListener listener) throws IOException, InterruptedException {
+        releaseProvisioningOwner();
         LOGGER.log(Level.INFO, "Terminating Slurm agent: {0} (job={1})", new Object[] {getNodeName(), slurmJobId});
 
         listener.getLogger().println("Terminating Slurm agent: " + getNodeName());

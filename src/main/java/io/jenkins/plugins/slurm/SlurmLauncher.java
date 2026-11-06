@@ -92,6 +92,7 @@ public class SlurmLauncher extends JNLPLauncher {
             listener.error("Not retrying - please check agent configuration and Slurm logs");
             // Don't throw - just return and keep agent offline
             // This prevents the exception from bubbling up and triggering retry logic
+            agent.releaseProvisioningOwner();
             return;
         }
 
@@ -99,12 +100,14 @@ public class SlurmLauncher extends JNLPLauncher {
         if (launched) {
             LOGGER.info("Agent already launched, activating: " + agent.getNodeName());
             markAgentReady(computer);
+            agent.releaseProvisioningOwner();
             return;
         }
         if (computer.isOnline() && agent.getSlurmJobId() != null) {
             LOGGER.info("Agent already connected for: " + agent.getNodeName());
             markAgentReady(computer);
             launched = true;
+            agent.releaseProvisioningOwner();
             return;
         }
 
@@ -125,6 +128,8 @@ public class SlurmLauncher extends JNLPLauncher {
             try {
                 long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
                 waitForAgentConnection(slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs, listener);
+            } catch (ProvisioningOwnerGoneException e) {
+                throw new RuntimeException(e.getMessage(), e);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Launch interrupted", e);
@@ -161,6 +166,10 @@ public class SlurmLauncher extends JNLPLauncher {
                 JobDescMsg jobDesc = builder.build();
                 LOGGER.info("Job description built successfully");
 
+                // The build may have been aborted while the job description was built.
+                // Do not submit a Slurm job nobody is waiting for.
+                abandonIfBuildFinished(slurmComputer, agent, cloud, agent.getSlurmJobId(), listener);
+
                 // Submit the job once — OnceRetentionStrategy may call launch() concurrently
                 String jobId;
                 synchronized (this) {
@@ -194,6 +203,10 @@ public class SlurmLauncher extends JNLPLauncher {
                 LOGGER.info("Set launching state to false");
             }
 
+        } catch (ProvisioningOwnerGoneException e) {
+            // Job cancel and node removal already happened. Do not cancel other builds
+            // waiting on this label — only the build that owned this agent is finished.
+            throw new RuntimeException(e.getMessage(), e);
         } catch (InterruptedException e) {
             LOGGER.log(Level.WARNING, "Interrupted while launching Slurm agent: " + agent.getNodeName(), e);
             String interruptMsg = e.getMessage() != null ? e.getMessage() : e.toString();
@@ -573,6 +586,7 @@ public class SlurmLauncher extends JNLPLauncher {
      * - Fails fast if job enters a failed state
      * - Times out with clear error message
      * - Logs progress periodically
+     * - Stops when the build that requested this agent is aborted or finishes first
      */
     private void waitForAgentConnection(
             SlurmComputer computer,
@@ -604,7 +618,10 @@ public class SlurmLauncher extends JNLPLauncher {
 
         TaskListener console = consoleListener(agent, listener);
 
+        // Aborting the build interrupts the thread blocked in node(), not this launcher thread.
+        abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
         while (System.currentTimeMillis() < timeout) {
+            abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
             if (client != null && System.currentTimeMillis() - lastStatusCheck >= STATUS_CHECK_INTERVAL_MS) {
                 try {
                     SlurmJobStatus status = client.getJobStatus(jobId);
@@ -746,6 +763,7 @@ public class SlurmLauncher extends JNLPLauncher {
 
                 computer.clearProvisioningStatus();
                 markAgentReady(computer);
+                agent.releaseProvisioningOwner();
                 launched = true;
 
                 try {
@@ -767,6 +785,8 @@ public class SlurmLauncher extends JNLPLauncher {
                     lastProgressLog = System.currentTimeMillis();
                 }
             }
+
+            abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
 
             // Sleep before next check
             Thread.sleep(1000);
@@ -884,6 +904,92 @@ public class SlurmLauncher extends JNLPLauncher {
             return "JNLP/WebSocket";
         } catch (Exception e) {
             return "JNLP";
+        }
+    }
+
+    /**
+     * Stops the pre-connect wait when the build paired with this agent has finished.
+     * A live agent is left for {@link #waitForAgentConnection} to accept.
+     */
+    private void abandonIfBuildFinished(
+            SlurmComputer computer, SlurmAgent agent, SlurmCloud cloud, String jobId, TaskListener listener)
+            throws IOException, InterruptedException {
+        if (computer.isOnline() || !shouldStopWaitingForBuild(agent)) {
+            return;
+        }
+        stopForFinishedBuild(computer, agent, cloud, jobId, listener);
+    }
+
+    /**
+     * True when the build this agent was provisioned for left the queue or finished
+     * before the agent connected.
+     */
+    static boolean shouldStopWaitingForBuild(SlurmAgent agent) {
+        Long queueItemId = agent.getProvisioningQueueItemId();
+        if (queueItemId == null) {
+            return false;
+        }
+        return JobUtils.provisioningOwnerReleased(queueItemId, agent.getProvisioningRun());
+    }
+
+    /**
+     * Cancels this agent's Slurm job and deletes the node. Other builds waiting on the same
+     * label keep their own queue items and get their own agents.
+     */
+    void stopForFinishedBuild(
+            SlurmComputer computer, SlurmAgent agent, SlurmCloud cloud, String jobId, TaskListener listener)
+            throws IOException {
+        String errorMsg = "Build finished before agent " + agent.getNodeName() + " connected";
+        TaskListener console = consoleListener(agent, listener);
+        console.getLogger().println("[Slurm] Agent provisioning interrupted: " + errorMsg);
+        console.error(errorMsg);
+        if (console != listener) {
+            listener.getLogger().println("[Slurm] Agent provisioning interrupted: " + errorMsg);
+        }
+
+        ProvisioningOwnerGoneException failure = new ProvisioningOwnerGoneException(errorMsg);
+        setProblem(failure);
+        SlurmCloudStats.attachLaunchingFail(agent, errorMsg);
+        if (jobId != null) {
+            LOGGER.info("Build finished before agent " + agent.getNodeName() + " connected; cancelling Slurm job "
+                    + jobId);
+        } else {
+            LOGGER.info("Build finished before agent " + agent.getNodeName()
+                    + " connected; no Slurm job was submitted");
+        }
+
+        if (jobId != null && cloud != null) {
+            cloud.cancelJob(jobId, console);
+        }
+
+        Long queueItemId = agent.getProvisioningQueueItemId();
+        if (queueItemId != null) {
+            Queue.Item item = Jenkins.get().getQueue().getItem(queueItemId);
+            if (item != null) {
+                Jenkins.get().getQueue().cancel(item);
+            }
+        }
+
+        if (computer != null) {
+            computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+        }
+
+        try {
+            agent.terminate();
+            LOGGER.info("Terminated agent " + agent.getNodeName() + " after the build finished before connect");
+        } catch (IOException | InterruptedException removeEx) {
+            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
+        }
+
+        throw failure;
+    }
+
+    /** The build that caused provisioning ended before this launcher finished connecting. */
+    static final class ProvisioningOwnerGoneException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        ProvisioningOwnerGoneException(String message) {
+            super(message);
         }
     }
 
