@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **WebSocket vs inbound JNLP is configurable (issue #46)** (`fix/agent-connection-mode`)
+  - Cloud and template Agent connection radios sit outside the launch-mode radios
+  - Template inherits the cloud unless it selects WebSocket or inbound JNLP itself
+  - Generated Native, Pyxis, and VMoCS commands append `-webSocket` only for WebSocket. Custom scripts are unchanged
+
 - [x] **Unique agent names when one provision call plans several agents (issue #40)** (`fix/unique-provisioned-agent-names`)
   - `generateAgentName()` appends an atomic sequence and skips names already planned or already registered
   - `addNode` is refused when that name already exists, so a second planned node cannot replace the agent `launch()` is updating

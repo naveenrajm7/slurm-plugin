@@ -585,7 +585,7 @@ public class SlurmJobBuilder {
         }
 
         script.append(" -name ").append(agentName);
-        script.append(" -webSocket");
+        appendWebSocket(script);
         if (useContainer) {
             // Inside the container this path is private to the job. On the host, native
             // launch uses JENKINS_AGENT_ROOT instead so build workspaces do not collide.
@@ -632,7 +632,7 @@ public class SlurmJobBuilder {
         }
         args.add("/bin/bash");
         args.add("-lc");
-        args.add(vmocsGuestCommand(vmocs));
+        args.add(vmocsGuestCommand(vmocs, LaunchDefaults.useWebSocket(cloud, template)));
 
         for (int i = 0; i < args.size(); i++) {
             if (i > 0) {
@@ -665,7 +665,7 @@ public class SlurmJobBuilder {
         return names;
     }
 
-    private static String vmocsGuestCommand(VmocsConfig vmocs) {
+    private static String vmocsGuestCommand(VmocsConfig vmocs, boolean webSocket) {
         StringBuilder guest = new StringBuilder();
         guest.append("set -euo pipefail\n");
         guest.append("umask 077\n");
@@ -694,8 +694,18 @@ public class SlurmJobBuilder {
         guest.append(" -url \"$JENKINS_URL\"");
         guest.append(" -secret \"$JENKINS_SECRET\"");
         guest.append(" -name \"$JENKINS_AGENT_NAME\"");
-        guest.append(" -webSocket -workDir \"$work\"\n");
+        if (webSocket) {
+            guest.append(" -webSocket");
+        }
+        guest.append(" -workDir \"$work\"\n");
         return guest.toString();
+    }
+
+    /** Appends {@code -webSocket} only when the resolved connection mode asks for it. */
+    private void appendWebSocket(StringBuilder script) {
+        if (LaunchDefaults.useWebSocket(cloud, template)) {
+            script.append(" -webSocket");
+        }
     }
 
     /**

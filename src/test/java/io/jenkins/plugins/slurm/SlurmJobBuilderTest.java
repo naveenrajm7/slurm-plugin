@@ -576,6 +576,79 @@ public class SlurmJobBuilderTest {
             assertTrue(script.contains("/opt/guest/java"));
         }
 
+        @Test
+        void cloudInboundJnlpOmitsWebSocketForEveryGeneratedMode() {
+            SlurmCloud cloud = cloudWithVmocs();
+            cloud.setAgentConnection("JNLP");
+
+            SlurmJobTemplate vmocsTemplate = baseTemplate();
+            String vmocsScript = new SlurmJobBuilder(vmocsTemplate, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+            assertFalse(vmocsScript.contains("-webSocket"));
+            assertTrue(vmocsScript.contains("-workDir"));
+
+            cloud.setLaunchMode("PYXIS");
+            PyxisConfig pyxis = new PyxisConfig();
+            pyxis.setContainerImage("/images/agent.sqsh");
+            cloud.setPyxis(pyxis);
+            cloud.setVmocs(null);
+            String pyxisScript = new SlurmJobBuilder(baseTemplate(), AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+            assertTrue(pyxisScript.contains("--container-image=/images/agent.sqsh"));
+            assertFalse(pyxisScript.contains("-webSocket"));
+
+            cloud.setLaunchMode("NATIVE");
+            AgentLaunchConfig agent = new AgentLaunchConfig();
+            agent.setJarPath("/opt/jenkins/agent.jar");
+            cloud.setAgent(agent);
+            cloud.setPyxis(null);
+            String nativeScript = new SlurmJobBuilder(baseTemplate(), AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+            assertTrue(nativeScript.contains("'/opt/jenkins/agent.jar'"));
+            assertFalse(nativeScript.contains("-webSocket"));
+        }
+
+        @Test
+        void templateWebSocketOverridesCloudInboundJnlp() {
+            SlurmCloud cloud = cloudWithVmocs();
+            cloud.setAgentConnection("JNLP");
+            SlurmJobTemplate template = baseTemplate();
+            template.setAgentConnection("WEBSOCKET");
+
+            String script = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET, cloud)
+                    .build()
+                    .getScript();
+
+            assertTrue(script.contains("-webSocket"));
+        }
+
+        @Test
+        void templateInboundJnlpOverridesDefaultWebSocket() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setLaunchMode("NATIVE");
+            AgentLaunchConfig agent = new AgentLaunchConfig();
+            agent.setJarPath("/opt/jenkins/agent.jar");
+            template.setAgent(agent);
+            template.setAgentConnection("JNLP");
+
+            String script = buildScript(template);
+
+            assertTrue(script.contains("'/opt/jenkins/agent.jar'"));
+            assertFalse(script.contains("-webSocket"));
+        }
+
+        @Test
+        void customScriptIsNotRewritten() {
+            SlurmJobTemplate template = baseTemplate();
+            template.setScript("#!/bin/bash\necho custom-launcher\n");
+            template.setAgentConnection("JNLP");
+
+            assertEquals("#!/bin/bash\necho custom-launcher\n", buildScript(template));
+        }
+
         private static SlurmCloud cloudWithVmocs() {
             SlurmCloud cloud = new SlurmCloud("test", "http://localhost:6820", null, "general", 1, 5);
             cloud.setLaunchMode("VMOCS");
