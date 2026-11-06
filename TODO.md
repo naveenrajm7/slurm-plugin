@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Abort before connect leaves the agent and Slurm job (issue #45)** (`fix/abort-cancels-pending-slurm-job`)
+  - Provisioning claims the queued build for that agent. `waitForAgentConnection` watches it.
+  - If that build is aborted or finishes before JNLP connect, the launcher cancels the Slurm job and deletes the node.
+  - A later build gets a new agent and a new Slurm job. Post-connect Run Once behavior is unchanged.
+
 - [x] **WebSocket vs inbound JNLP is configurable (issue #46)** (`fix/agent-connection-mode`)
   - Cloud and template Agent connection radios sit outside the launch-mode radios
   - Template inherits the cloud unless it selects WebSocket or inbound JNLP itself

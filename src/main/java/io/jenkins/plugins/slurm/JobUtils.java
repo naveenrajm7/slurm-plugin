@@ -22,6 +22,9 @@ import hudson.model.Run;
 import hudson.model.TaskListener;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Comparator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
@@ -40,6 +43,13 @@ public final class JobUtils {
     private JobUtils() {}
 
     private static final Logger LOGGER = Logger.getLogger(JobUtils.class.getName());
+
+    /**
+     * Queue items already paired with an agent that is still waiting to connect.
+     * One build must not be claimed by two agents, and one agent's abort must not
+     * be treated as the end of a different build waiting on the same label.
+     */
+    private static final Map<Long, String> PROVISIONING_CLAIMS = new ConcurrentHashMap<>();
 
     /**
      * Finds the build console {@link TaskListener} for a queued pipeline {@code node('label')} block
@@ -90,30 +100,35 @@ public final class JobUtils {
         return assignedLabel.matches(new java.util.LinkedHashSet<>(Label.parse(templateLabelString.trim())));
     }
 
+    /**
+     * Build console for {@code run}, when it is a pipeline execution.
+     *
+     * <p>Provisioning uses this so each claimed build receives its own status lines. A label scan
+     * can hand two agents the same console when two builds are waiting.
+     */
+    @CheckForNull
+    static TaskListener listenerFor(@CheckForNull Run<?, ?> run) {
+        if (!(run instanceof FlowExecutionOwner.Executable executable)) {
+            return null;
+        }
+        FlowExecutionOwner owner = executable.asFlowExecutionOwner();
+        if (owner == null) {
+            return null;
+        }
+        try {
+            return owner.getListener();
+        } catch (IOException e) {
+            LOGGER.log(Level.FINE, "Could not get listener from run " + run.getExternalizableId(), e);
+            return null;
+        }
+    }
+
     @CheckForNull
     private static TaskListener getListenerFromQueueItem(Queue.Item item) {
-        Queue.Task task = item.task;
-        if (!(task instanceof ExecutorStepExecution.PlaceholderTask)) {
+        if (!(item.task instanceof ExecutorStepExecution.PlaceholderTask placeholder)) {
             return null;
         }
-
-        ExecutorStepExecution.PlaceholderTask placeholderTask = (ExecutorStepExecution.PlaceholderTask) task;
-        Run<?, ?> run = placeholderTask.runForDisplay();
-        if (run == null) {
-            return null;
-        }
-
-        if (run instanceof FlowExecutionOwner.Executable) {
-            FlowExecutionOwner owner = ((FlowExecutionOwner.Executable) run).asFlowExecutionOwner();
-            if (owner != null) {
-                try {
-                    return owner.getListener();
-                } catch (IOException e) {
-                    LOGGER.log(Level.FINE, "Could not get listener from queue item " + item, e);
-                }
-            }
-        }
-        return null;
+        return listenerFor(placeholder.runForDisplay());
     }
 
     /**
@@ -203,5 +218,96 @@ public final class JobUtils {
                                 LOGGER.log(Level.FINE, () -> "No queue item found with label '" + labelString + "'");
                             }
                         });
+    }
+
+    /**
+     * Pairs {@code agentName} with one queued build for {@code provisionLabel}.
+     *
+     * <p>The oldest unclaimed item is taken so two agents planned for the same label watch
+     * different builds. Returns null when nothing is waiting; the launcher then keeps the
+     * agent-timeout path.
+     */
+    @CheckForNull
+    static ProvisioningOwner claimProvisioningOwner(
+            @CheckForNull Label provisionLabel, @NonNull String templateLabelString, @NonNull String agentName) {
+        if (provisionLabel == null && templateLabelString.isBlank()) {
+            return null;
+        }
+
+        synchronized (PROVISIONING_CLAIMS) {
+            Queue.Item[] items = Jenkins.get().getQueue().getItems();
+            Arrays.sort(items, Comparator.comparingLong(Queue.Item::getId));
+            for (Queue.Item item : items) {
+                if (PROVISIONING_CLAIMS.containsKey(item.getId())
+                        || !itemMatches(item, provisionLabel, templateLabelString)) {
+                    continue;
+                }
+                PROVISIONING_CLAIMS.put(item.getId(), agentName);
+                Run<?, ?> run = runForQueueItem(item);
+                LOGGER.log(
+                        Level.FINE,
+                        () -> "Claimed queue item " + item.getId() + " for agent " + agentName
+                                + (run != null ? " (run " + run.getExternalizableId() + ")" : ""));
+                return new ProvisioningOwner(item.getId(), run);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The claimed build is no longer waiting for this agent.
+     *
+     * <p>Aborting a pipeline cancels the {@code node} placeholder while the launcher thread is
+     * still blocked in {@code waitForAgentConnection}. A missing queue item, or a run that is no
+     * longer building, means this agent must not stay online for a later build. A non-null result
+     * is not enough: a pipeline can be marked UNSTABLE or FAILURE while a later stage is still
+     * waiting for this agent.
+     */
+    static boolean provisioningOwnerReleased(long queueItemId, @CheckForNull Run<?, ?> run) {
+        if (Jenkins.get().getQueue().getItem(queueItemId) == null) {
+            return true;
+        }
+        return run != null && !run.isBuilding();
+    }
+
+    static void releaseProvisioningClaim(long queueItemId) {
+        PROVISIONING_CLAIMS.remove(queueItemId);
+    }
+
+    static void clearProvisioningClaimsForTest() {
+        PROVISIONING_CLAIMS.clear();
+    }
+
+    private static boolean itemMatches(
+            Queue.Item item, @CheckForNull Label provisionLabel, @NonNull String templateLabelString) {
+        Label assigned = item.getAssignedLabel();
+        if (assigned == null) {
+            return false;
+        }
+        if (provisionLabel != null) {
+            return provisionLabel.equals(assigned);
+        }
+        return !templateLabelString.isBlank() && labelMatches(templateLabelString, assigned);
+    }
+
+    @CheckForNull
+    private static Run<?, ?> runForQueueItem(Queue.Item item) {
+        if (item.task instanceof ExecutorStepExecution.PlaceholderTask placeholder) {
+            return placeholder.runForDisplay();
+        }
+        return null;
+    }
+
+    /** A queued build paired with one agent for the pre-connect wait. */
+    static final class ProvisioningOwner {
+        final long queueItemId;
+
+        @CheckForNull
+        final Run<?, ?> run;
+
+        ProvisioningOwner(long queueItemId, @CheckForNull Run<?, ?> run) {
+            this.queueItemId = queueItemId;
+            this.run = run;
+        }
     }
 }

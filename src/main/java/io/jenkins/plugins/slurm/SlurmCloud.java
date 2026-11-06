@@ -628,6 +628,10 @@ public class SlurmCloud extends AbstractCloudImpl {
             @NonNull SlurmLimitRegistrationResults.Registration registration,
             @NonNull Set<String> reservedNames) {
         String agentName = generateAgentName(jobTemplate, reservedNames);
+        // Claim before the node is registered. launch() starts as soon as the computer exists,
+        // and two agents planned in this call must watch two different queue items.
+        JobUtils.ProvisioningOwner provisioningOwner =
+                JobUtils.claimProvisioningOwner(label, jobTemplate.getAgentLabelString(), agentName);
 
         // Create cloud-stats tracking ID for this provisioning activity
         ProvisioningActivity.Id cloudStatsId = new ProvisioningActivity.Id(
@@ -696,15 +700,22 @@ public class SlurmCloud extends AbstractCloudImpl {
                                 );
 
                         // 4. Wire build console listener (K8s pattern)
-                        // slurmJobTemplate() / declarative agent set it on the template;
-                        // node('label') static-template provisioning needs a queue scan.
+                        // slurmJobTemplate() / declarative agent set it on the template.
+                        // Otherwise use the build this agent claimed, so two waiters on the same
+                        // label do not share one console. A label scan is only the fallback.
                         hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
+                        if (buildListener == null && provisioningOwner != null) {
+                            buildListener = JobUtils.listenerFor(provisioningOwner.run);
+                        }
                         if (buildListener == null && label != null) {
                             buildListener = JobUtils.findRunListenerForLabel(jobTemplate.getAgentLabelString());
                         }
                         if (buildListener != null && buildListener != hudson.model.TaskListener.NULL) {
                             agent.setRunListener(buildListener);
                             LOGGER.fine("Set build TaskListener on agent for provisioning status");
+                        }
+                        if (provisioningOwner != null) {
+                            agent.trackProvisioningOwner(provisioningOwner);
                         }
 
                         // 5. Add agent to Jenkins. Never replace a node that is already registered:
@@ -741,6 +752,11 @@ public class SlurmCloud extends AbstractCloudImpl {
 
                     } catch (Exception e) {
                         registration.release(SlurmCloud.this);
+                        // The launcher keeps the claim when the node was registered; it is released
+                        // on connect or terminate. Drop it here only if the node never landed.
+                        if (provisioningOwner != null && Jenkins.get().getNode(agentName) == null) {
+                            JobUtils.releaseProvisioningClaim(provisioningOwner.queueItemId);
+                        }
                         LOGGER.severe("Failed to create Slurm agent " + agentName + ": " + e.getMessage());
                         throw new RuntimeException(e);
                     }
