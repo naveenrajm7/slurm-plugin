@@ -700,9 +700,13 @@ public class SlurmCloud extends AbstractCloudImpl {
                                 );
 
                         // 4. Wire build console listener (K8s pattern)
-                        // slurmJobTemplate() / declarative agent set it on the template;
-                        // node('label') static-template provisioning needs a queue scan.
+                        // slurmJobTemplate() / declarative agent set it on the template.
+                        // Otherwise use the build this agent claimed, so two waiters on the same
+                        // label do not share one console. A label scan is only the fallback.
                         hudson.model.TaskListener buildListener = jobTemplate.getListenerOrNull();
+                        if (buildListener == null && provisioningOwner != null) {
+                            buildListener = JobUtils.listenerFor(provisioningOwner.run);
+                        }
                         if (buildListener == null && label != null) {
                             buildListener = JobUtils.findRunListenerForLabel(jobTemplate.getAgentLabelString());
                         }

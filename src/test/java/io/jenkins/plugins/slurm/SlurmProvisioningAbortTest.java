@@ -72,8 +72,35 @@ class SlurmProvisioningAbortTest {
                     "the other build is still waiting and must keep its claim");
         } finally {
             JobUtils.clearProvisioningClaimsForTest();
-            abortIfBuilding(second);
-            abortIfBuilding(first);
+            abortIfBuilding(j, second);
+            abortIfBuilding(j, first);
+        }
+    }
+
+    @Test
+    void unstableResultWhileStillBuilding_keepsTheClaim(JenkinsRule j) throws Exception {
+        JobUtils.clearProvisioningClaimsForTest();
+        j.jenkins.setNumExecutors(4);
+        WorkflowRun run = null;
+        try {
+            run = scheduleWaiting(j, "smoke-unstable");
+            JobUtils.ProvisioningOwner owner =
+                    JobUtils.claimProvisioningOwner(Label.get("testcloud"), "testcloud", "agent-u");
+            assertNotNull(owner);
+            assertNotNull(owner.run);
+            owner.run.setResult(Result.UNSTABLE);
+            assertTrue(owner.run.isBuilding());
+            assertNotNull(owner.run.getResult());
+            assertFalse(
+                    JobUtils.provisioningOwnerReleased(owner.queueItemId, owner.run),
+                    "an early UNSTABLE result must not cancel the agent still being provisioned");
+
+            SlurmAgent agent = SlurmTestHelper.createAgent("agent-u", "abort-cloud", "template");
+            agent.trackProvisioningOwner(owner);
+            assertFalse(SlurmLauncher.shouldStopWaitingForBuild(agent));
+        } finally {
+            JobUtils.clearProvisioningClaimsForTest();
+            abortIfBuilding(j, run);
         }
     }
 
@@ -125,9 +152,10 @@ class SlurmProvisioningAbortTest {
         fail("queue item " + owner.queueItemId + " was still waiting after the build was aborted");
     }
 
-    private static void abortIfBuilding(WorkflowRun run) throws Exception {
+    private static void abortIfBuilding(JenkinsRule j, WorkflowRun run) throws Exception {
         if (run != null && run.isBuilding() && run.getExecution() != null) {
             run.getExecution().interrupt(Result.ABORTED);
+            j.waitForCompletion(run);
         }
     }
 

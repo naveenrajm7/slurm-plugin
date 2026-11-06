@@ -100,30 +100,35 @@ public final class JobUtils {
         return assignedLabel.matches(new java.util.LinkedHashSet<>(Label.parse(templateLabelString.trim())));
     }
 
+    /**
+     * Build console for {@code run}, when it is a pipeline execution.
+     *
+     * <p>Provisioning uses this so each claimed build receives its own status lines. A label scan
+     * can hand two agents the same console when two builds are waiting.
+     */
+    @CheckForNull
+    static TaskListener listenerFor(@CheckForNull Run<?, ?> run) {
+        if (!(run instanceof FlowExecutionOwner.Executable executable)) {
+            return null;
+        }
+        FlowExecutionOwner owner = executable.asFlowExecutionOwner();
+        if (owner == null) {
+            return null;
+        }
+        try {
+            return owner.getListener();
+        } catch (IOException e) {
+            LOGGER.log(Level.FINE, "Could not get listener from run " + run.getExternalizableId(), e);
+            return null;
+        }
+    }
+
     @CheckForNull
     private static TaskListener getListenerFromQueueItem(Queue.Item item) {
-        Queue.Task task = item.task;
-        if (!(task instanceof ExecutorStepExecution.PlaceholderTask)) {
+        if (!(item.task instanceof ExecutorStepExecution.PlaceholderTask placeholder)) {
             return null;
         }
-
-        ExecutorStepExecution.PlaceholderTask placeholderTask = (ExecutorStepExecution.PlaceholderTask) task;
-        Run<?, ?> run = placeholderTask.runForDisplay();
-        if (run == null) {
-            return null;
-        }
-
-        if (run instanceof FlowExecutionOwner.Executable) {
-            FlowExecutionOwner owner = ((FlowExecutionOwner.Executable) run).asFlowExecutionOwner();
-            if (owner != null) {
-                try {
-                    return owner.getListener();
-                } catch (IOException e) {
-                    LOGGER.log(Level.FINE, "Could not get listener from queue item " + item, e);
-                }
-            }
-        }
-        return null;
+        return listenerFor(placeholder.runForDisplay());
     }
 
     /**
@@ -253,17 +258,16 @@ public final class JobUtils {
      * The claimed build is no longer waiting for this agent.
      *
      * <p>Aborting a pipeline cancels the {@code node} placeholder while the launcher thread is
-     * still blocked in {@code waitForAgentConnection}. A missing queue item, or a run that has
-     * already finished, means this agent must not stay online for a later build.
+     * still blocked in {@code waitForAgentConnection}. A missing queue item, or a run that is no
+     * longer building, means this agent must not stay online for a later build. A non-null result
+     * is not enough: a pipeline can be marked UNSTABLE or FAILURE while a later stage is still
+     * waiting for this agent.
      */
     static boolean provisioningOwnerReleased(long queueItemId, @CheckForNull Run<?, ?> run) {
         if (Jenkins.get().getQueue().getItem(queueItemId) == null) {
             return true;
         }
-        if (run == null) {
-            return false;
-        }
-        return !run.isBuilding() || run.getResult() != null;
+        return run != null && !run.isBuilding();
     }
 
     static void releaseProvisioningClaim(long queueItemId) {
