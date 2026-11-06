@@ -18,17 +18,27 @@ final class LaunchModeForm {
     private LaunchModeForm() {}
 
     static void flatten(JSONObject formData) {
-        if (formData == null || !formData.has("launchMode")) {
+        if (formData == null) {
             return;
         }
-        Object raw = formData.get("launchMode");
-        if (!(raw instanceof JSONObject mode)) {
+        flattenChoice(formData, "launchMode", NESTED_BLOCKS);
+        // Connection mode is its own radio, outside the launch-mode blocks, and has no nested
+        // properties. The form still posts an object when the control is a radioBlock.
+        flattenChoice(formData, "agentConnection", List.of());
+    }
+
+    private static void flattenChoice(JSONObject formData, String field, List<String> nestedBlocks) {
+        if (!formData.has(field)) {
             return;
         }
-        formData.put("launchMode", mode.optString("value", ""));
-        for (String block : NESTED_BLOCKS) {
-            if (mode.has(block)) {
-                formData.put(block, mode.get(block));
+        Object raw = formData.get(field);
+        if (!(raw instanceof JSONObject choice)) {
+            return;
+        }
+        formData.put(field, choice.optString("value", ""));
+        for (String block : nestedBlocks) {
+            if (choice.has(block)) {
+                formData.put(block, choice.get(block));
             }
         }
     }

@@ -84,6 +84,12 @@ public class SlurmCloud extends AbstractCloudImpl {
      */
     private String launchMode;
 
+    /**
+     * How generated agents connect. Null means WebSocket, which is what every generated launcher
+     * did before this field existed. {@code JNLP} omits {@code -webSocket}.
+     */
+    private String agentConnection;
+
     private SlurmGarbageCollection garbageCollection;
 
     /**
@@ -262,6 +268,30 @@ public class SlurmCloud extends AbstractCloudImpl {
         } else {
             this.launchMode = "NATIVE";
         }
+    }
+
+    /**
+     * Connection mode for generated launchers on this cloud: {@code WEBSOCKET} or {@code JNLP}.
+     * Saved clouds that predate the field report WebSocket.
+     */
+    @NonNull
+    public String getAgentConnection() {
+        return isInboundJnlp() ? "JNLP" : "WEBSOCKET";
+    }
+
+    /** True when generated agents should pass {@code -webSocket}. */
+    public boolean isWebSocketConnection() {
+        return !isInboundJnlp();
+    }
+
+    /** True when generated agents should use the controller's inbound TCP agent port. */
+    public boolean isInboundJnlp() {
+        return "JNLP".equals(agentConnection);
+    }
+
+    @DataBoundSetter
+    public void setAgentConnection(String agentConnection) {
+        this.agentConnection = "JNLP".equals(agentConnection) ? "JNLP" : null;
     }
 
     /**

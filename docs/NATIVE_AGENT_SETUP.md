@@ -79,6 +79,10 @@ srun -N1 -n1 /opt/jenkins/jdk-17/bin/java -jar /opt/jenkins/agent.jar \
   -url http://jenkins:8080/jenkins/ -secret … -name … -webSocket -workDir "$JENKINS_AGENT_ROOT"
 ```
 
+`-webSocket` is included when Agent connection is WebSocket, the default. Choose Inbound JNLP
+on the cloud (or on this template) to omit it and use the controller TCP agent port instead.
+A custom batch script is left unchanged.
+
 `{workdir}` is the template working directory (create it once per node). The agent directory
 is created when the job starts and deleted when the job exits. Jenkins uses that same path
 as the agent remote root, so each agent has its own `workspace/`.

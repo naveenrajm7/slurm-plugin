@@ -49,7 +49,25 @@
       Launch mode and settings used by templates that select &quot;Use cloud default&quot;.
       A template that picks its own mode overrides this choice. Empty fields on that template
       still fall back to the matching cloud settings.
+      Agent connection applies to Native, Pyxis, and VMoCS generated launchers.
     </f:description>
+
+    <f:radioBlock name="agentConnection" value="WEBSOCKET"
+                  title="WebSocket"
+                  checked="${instance == null || instance.webSocketConnection}">
+      <f:description>
+        Generated agents pass -webSocket. Use this when the controller accepts WebSocket agents.
+      </f:description>
+    </f:radioBlock>
+
+    <f:radioBlock name="agentConnection" value="JNLP"
+                  title="Inbound JNLP"
+                  checked="${instance != null &amp;&amp; instance.inboundJnlp}">
+      <f:description>
+        Omit -webSocket. agent.jar uses the controller inbound TCP agent port.
+        Use this when the controller cannot accept a WebSocket agent connection.
+      </f:description>
+    </f:radioBlock>
 
     <f:radioBlock name="launchMode" value="NATIVE"
                   title="Native (no container)"

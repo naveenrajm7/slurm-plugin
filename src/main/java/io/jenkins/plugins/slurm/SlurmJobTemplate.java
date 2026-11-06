@@ -221,6 +221,12 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
      */
     private String launchMode;
 
+    /**
+     * How this template's generated agent connects. Null means use the cloud setting.
+     * {@code WEBSOCKET} and {@code JNLP} are explicit and apply in every launch mode.
+     */
+    private String agentConnection;
+
     // Pipeline build context (transient - not persisted)
     private transient TaskListener listener; // Build's TaskListener for pipeline error reporting
 
@@ -967,6 +973,47 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     /** Convenience for Jelly EL: {@code ${instance.cloudDefaultLaunch}}. */
     public boolean isCloudDefaultLaunch() {
         return !isExplicitLaunchMode();
+    }
+
+    /**
+     * Explicit connection choice, or null when this template uses the cloud setting.
+     */
+    @JsonIgnore
+    @CheckForNull
+    public String getAgentConnection() {
+        return agentConnection;
+    }
+
+    /** True when this template saved WebSocket or inbound JNLP instead of the cloud default. */
+    public boolean isExplicitAgentConnection() {
+        return agentConnection != null;
+    }
+
+    /** Convenience for Jelly EL: {@code ${instance.inheritAgentConnection}}. */
+    public boolean isInheritAgentConnection() {
+        return agentConnection == null;
+    }
+
+    /** True only when this template itself selected WebSocket. */
+    public boolean isWebSocketConnection() {
+        return "WEBSOCKET".equals(agentConnection);
+    }
+
+    /** True only when this template itself selected inbound JNLP. */
+    public boolean isInboundJnlp() {
+        return "JNLP".equals(agentConnection);
+    }
+
+    @JsonIgnore
+    @DataBoundSetter
+    public void setAgentConnection(String agentConnection) {
+        if ("JNLP".equals(agentConnection)) {
+            this.agentConnection = "JNLP";
+        } else if ("WEBSOCKET".equals(agentConnection)) {
+            this.agentConnection = "WEBSOCKET";
+        } else {
+            this.agentConnection = null;
+        }
     }
 
     @DataBoundSetter

@@ -76,6 +76,54 @@ class SlurmLaunchModeConfigSubmitTest {
                 List.of("gpu", "cpu"),
                 saved.getJobTemplates().stream().map(SlurmJobTemplate::getName).toList());
         assertEquals("NATIVE", saved.getLaunchMode());
+        assertEquals("WEBSOCKET", saved.getAgentConnection());
+        assertFalse(saved.isInboundJnlp());
+    }
+
+    @Test
+    void configureCloud_savesInboundJnlpAlongsidePyxis(JenkinsRule j) throws Exception {
+        SlurmCloud existing = cloud("jnlp-cloud");
+        existing.setLaunchMode("PYXIS");
+        PyxisConfig pyxis = new PyxisConfig();
+        pyxis.setContainerImage("/opt/images/jenkins-agent.sqsh");
+        existing.setPyxis(pyxis);
+        j.jenkins.clouds.add(existing);
+
+        HtmlPage page = j.createWebClient().goTo("cloud/jnlp-cloud/configure");
+        HtmlForm form = page.getFormByName("config");
+        selectRadio(form, "agentConnection", "JNLP");
+        submit(j, form);
+
+        SlurmCloud saved = (SlurmCloud) j.jenkins.getCloud("jnlp-cloud");
+        assertNotNull(saved);
+        assertEquals("PYXIS", saved.getLaunchMode());
+        assertEquals("JNLP", saved.getAgentConnection());
+        assertTrue(saved.isInboundJnlp());
+        assertNotNull(saved.getPyxis());
+        assertEquals("/opt/images/jenkins-agent.sqsh", saved.getPyxis().getContainerImage());
+    }
+
+    @Test
+    void configureTemplate_webSocketOverridesCloudInboundJnlp(JenkinsRule j) throws Exception {
+        SlurmCloud owner = cloud("conn-cloud");
+        owner.setAgentConnection("JNLP");
+        j.jenkins.clouds.add(owner);
+        SlurmJobTemplate nativeTemplate = template(owner, "native");
+        nativeTemplate.setLaunchMode("NATIVE");
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        nativeTemplate.setAgent(agent);
+
+        HtmlPage page = j.createWebClient().goTo("cloud/conn-cloud/template/native/");
+        HtmlForm form = page.getFormByName("config");
+        fillEmptyNumbers(form);
+        selectRadio(form, "agentConnection", "WEBSOCKET");
+        submit(j, form);
+
+        assertEquals("WEBSOCKET", nativeTemplate.getAgentConnection());
+        assertTrue(nativeTemplate.isWebSocketConnection());
+        assertEquals("NATIVE", nativeTemplate.getLaunchMode());
+        assertNotNull(nativeTemplate.getAgent());
     }
 
     @Test

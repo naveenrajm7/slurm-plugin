@@ -42,6 +42,23 @@ final class LaunchDefaults {
     }
 
     /**
+     * Whether the generated agent command should pass {@code -webSocket}.
+     *
+     * <p>An explicit template choice wins, including WebSocket when the cloud uses inbound JNLP.
+     * A template that has not chosen uses the cloud, and a missing cloud stays on WebSocket so
+     * existing configurations keep today's command.
+     */
+    static boolean useWebSocket(@CheckForNull SlurmCloud cloud, @NonNull SlurmJobTemplate template) {
+        if (template.isInboundJnlp()) {
+            return false;
+        }
+        if (template.isWebSocketConnection()) {
+            return true;
+        }
+        return cloud == null || cloud.isWebSocketConnection();
+    }
+
+    /**
      * Mode a cloud contributes when the template did not choose one. Null when the cloud has no
      * launch default at all.
      */

@@ -56,4 +56,20 @@ class LaunchModeFormTest {
         assertEquals("VMOCS", form.getString("launchMode"));
         assertEquals("base-ubuntu", form.getJSONObject("vmocs").getString("vmImage"));
     }
+
+    @Test
+    void flatten_promotesAgentConnectionWithoutTouchingLaunchMode() {
+        JSONObject connection = new JSONObject();
+        connection.put("value", "JNLP");
+        JSONObject mode = new JSONObject();
+        mode.put("value", "PYXIS");
+        JSONObject form = new JSONObject();
+        form.put("launchMode", mode);
+        form.put("agentConnection", connection);
+
+        LaunchModeForm.flatten(form);
+
+        assertEquals("PYXIS", form.getString("launchMode"));
+        assertEquals("JNLP", form.getString("agentConnection"));
+    }
 }

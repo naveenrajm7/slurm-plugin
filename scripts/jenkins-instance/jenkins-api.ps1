@@ -15,7 +15,10 @@ config.env is gitignored and must not be committed.
         if ($_ -match '^\s*#') { return }
         if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
             $val = $Matches[2].Trim()
-            if ($val.Length -ge 2 -and $val.StartsWith('"') -and $val.EndsWith('"')) {
+            if ($val.Length -ge 2 -and (
+                    ($val.StartsWith('"') -and $val.EndsWith('"')) -or
+                    ($val.StartsWith("'") -and $val.EndsWith("'"))
+                )) {
                 $val = $val.Substring(1, $val.Length - 2)
             }
             $cfg[$Matches[1]] = $val
