@@ -39,6 +39,12 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
+  - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row
+  - Abort, a finished build, and a cancelled queue item keep the failure message and the failure statistic
+  - Pending rows say `no node yet` instead of `on None assigned`, and a long wait is a threshold plus `was PENDING for …` once the job leaves `PENDING`
+  - After connect, operation names the build; completion records `Agent removed` and the build result (`SUCCESS` is OK, anything else is WARN)
+
 - [x] **Abort before connect leaves the agent and Slurm job (issue #45)** (`fix/abort-cancels-pending-slurm-job`)
   - Provisioning claims the queued build for that agent. `waitForAgentConnection` watches it.
   - If that build is aborted or finishes before JNLP connect, the launcher cancels the Slurm job and deletes the node.

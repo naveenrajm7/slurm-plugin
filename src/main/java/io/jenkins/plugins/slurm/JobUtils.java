@@ -255,6 +255,23 @@ public final class JobUtils {
     }
 
     /**
+     * Why the build this agent was provisioned for is no longer waiting on it.
+     *
+     * <p>{@link Queue#getItem(long)} keeps a {@link Queue.LeftItem} for five minutes after the
+     * item leaves the queue. A static agent taking the {@code node} step is a left item that was
+     * not cancelled, while the {@link Run} is still building. Abort and an explicit queue cancel
+     * leave a cancelled item, or a run that is no longer building.
+     */
+    enum ProvisioningRelease {
+        /** The claimed queue item is still waiting and the build is still running. */
+        WAITING,
+        /** Another executor started the claimed work and the build is still running. */
+        TAKEN_BY_ANOTHER_EXECUTOR,
+        /** The build ended, was aborted, or its queue item was cancelled. */
+        BUILD_FINISHED
+    }
+
+    /**
      * The claimed build is no longer waiting for this agent.
      *
      * <p>Aborting a pipeline cancels the {@code node} placeholder while the launcher thread is
@@ -264,10 +281,37 @@ public final class JobUtils {
      * waiting for this agent.
      */
     static boolean provisioningOwnerReleased(long queueItemId, @CheckForNull Run<?, ?> run) {
-        if (Jenkins.get().getQueue().getItem(queueItemId) == null) {
-            return true;
+        return classifyProvisioningRelease(queueItemId, run) != ProvisioningRelease.WAITING;
+    }
+
+    @NonNull
+    static ProvisioningRelease classifyProvisioningRelease(long queueItemId, @CheckForNull Run<?, ?> run) {
+        return classifyProvisioningRelease(Jenkins.get().getQueue().getItem(queueItemId), run);
+    }
+
+    /**
+     * Classifies a queue item that may already have left the live queue.
+     *
+     * @param item the live item, a {@link Queue.LeftItem}, or null once the left-item cache expires
+     */
+    @NonNull
+    static ProvisioningRelease classifyProvisioningRelease(@CheckForNull Queue.Item item, @CheckForNull Run<?, ?> run) {
+        boolean stillBuilding = run != null && run.isBuilding();
+        if (item instanceof Queue.LeftItem left) {
+            if (left.isCancelled() || (run != null && !run.isBuilding())) {
+                return ProvisioningRelease.BUILD_FINISHED;
+            }
+            return ProvisioningRelease.TAKEN_BY_ANOTHER_EXECUTOR;
         }
-        return run != null && !run.isBuilding();
+        if (item == null) {
+            // Gone from the live queue and from the left-item cache. A build that is still
+            // running was picked up by another executor; anything else ended or was aborted.
+            return stillBuilding ? ProvisioningRelease.TAKEN_BY_ANOTHER_EXECUTOR : ProvisioningRelease.BUILD_FINISHED;
+        }
+        if (!stillBuilding && run != null) {
+            return ProvisioningRelease.BUILD_FINISHED;
+        }
+        return ProvisioningRelease.WAITING;
     }
 
     static void releaseProvisioningClaim(long queueItemId) {

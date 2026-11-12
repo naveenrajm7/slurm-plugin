@@ -10,8 +10,8 @@ class SlurmJobStatusTest {
     @Test
     void formatForDisplay_includesStateAndReason() {
         SlurmJobStatus status = new SlurmJobStatus("413835", "PENDING", "Priority", null);
-        assertEquals("Slurm job 413835: PENDING (Priority)", status.formatForDisplay());
-        assertEquals("[Slurm] Slurm job 413835: PENDING (Priority)", status.formatForConsole());
+        assertEquals("Slurm job 413835: PENDING (Priority), no node yet", status.formatForDisplay());
+        assertEquals("[Slurm] Slurm job 413835: PENDING (Priority), no node yet", status.formatForConsole());
     }
 
     @Test
@@ -24,7 +24,7 @@ class SlurmJobStatusTest {
     @Test
     void formatForDisplay_omitsNoneReason() {
         SlurmJobStatus status = new SlurmJobStatus("1", "PENDING", "None", null);
-        assertEquals("Slurm job 1: PENDING", status.formatForDisplay());
+        assertEquals("Slurm job 1: PENDING, no node yet", status.formatForDisplay());
     }
 
     @Test
@@ -38,6 +38,13 @@ class SlurmJobStatusTest {
     void formatConnectionMessage_includesComputeNodes() {
         SlurmJobStatus status = new SlurmJobStatus("42", "RUNNING", null, "cgy-absol");
         assertEquals("[Slurm] Slurm job 42 on node(s) cgy-absol", status.formatConnectionMessage());
+    }
+
+    @Test
+    void formatForDisplay_treatsNoneAssignedAsNoNode() {
+        SlurmJobStatus status = new SlurmJobStatus("68355353", "PENDING", "Priority", "None assigned");
+        assertEquals("Slurm job 68355353: PENDING (Priority), no node yet", status.formatForDisplay());
+        assertEquals(null, status.assignedNodes());
     }
 
     @Test
