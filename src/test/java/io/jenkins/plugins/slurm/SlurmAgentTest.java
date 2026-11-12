@@ -1,9 +1,11 @@
 package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.Collections;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -73,6 +75,27 @@ class SlurmAgentTest {
 
         SlurmLauncher launcher = (SlurmLauncher) agent.getComputer().getLauncher();
         assertTrue(launcher.getProblem() != null);
+
+        // This agent uses a real SlurmLauncher, so adding the node auto-connects the computer and
+        // runs launch() on a background thread that writes to the agent slave log. Wait for that
+        // fast-failing launch to settle so it does not race JenkinsRule teardown deleting target/tmp.
+        SlurmTestHelper.awaitLaunchThreadsSettled(j.jenkins);
+    }
+
+    @Test
+    void terminate_keepsExistingLaunchProblem(JenkinsRule j) throws Exception {
+        SlurmJobTemplate template = SlurmTestHelper.createTemplate("cpu", "linux", 1);
+        SlurmCloud cloud = SlurmTestHelper.registerCloudWithTemplate(j.jenkins, "keep-problem-cloud", 10, template);
+        IOException submitFailed = new IOException("Slurm submit failed: Invalid status line");
+        SlurmLauncher launcher = new SlurmLauncher();
+        launcher.setProblem(submitFailed);
+        SlurmAgent agent = SlurmTestHelper.createAgent("agent-keep-problem", cloud.name, template.getId(), launcher);
+        j.jenkins.addNode(agent);
+
+        agent._terminate(new hudson.util.StreamTaskListener(new ByteArrayOutputStream()));
+
+        assertSame(submitFailed, launcher.getProblem());
+        assertFalse(launcher.getProblem().getMessage().contains("retention strategy"));
 
         // This agent uses a real SlurmLauncher, so adding the node auto-connects the computer and
         // runs launch() on a background thread that writes to the agent slave log. Wait for that

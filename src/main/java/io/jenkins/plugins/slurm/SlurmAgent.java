@@ -358,9 +358,8 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         hudson.model.Computer computer = toComputer();
         if (computer instanceof hudson.slaves.SlaveComputer) {
             hudson.slaves.ComputerLauncher rawLauncher = ((hudson.slaves.SlaveComputer) computer).getLauncher();
-            if (rawLauncher instanceof SlurmLauncher) {
-                ((SlurmLauncher) rawLauncher)
-                        .setProblem(new java.io.IOException("Agent terminated by retention strategy"));
+            if (rawLauncher instanceof SlurmLauncher slurmLauncher && slurmLauncher.getProblem() == null) {
+                slurmLauncher.setProblem(new java.io.IOException("Agent terminated by retention strategy"));
                 LOGGER.log(Level.FINE, "Marked launcher as terminated for agent: {0}", getNodeName());
             }
         }
