@@ -158,11 +158,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 // Build the job description
                 LOGGER.info("Building Slurm job description...");
                 SlurmJobBuilder builder = new SlurmJobBuilder(
-                        template,
-                        agent.getNodeName(),
-                        getJenkinsUrl(cloud),
-                        getAgentSecret(slurmComputer),
-                        cloud);
+                        template, agent.getNodeName(), getJenkinsUrl(cloud), getAgentSecret(slurmComputer), cloud);
                 JobDescMsg jobDesc = builder.build();
                 LOGGER.info("Job description built successfully");
 
@@ -935,53 +931,82 @@ public class SlurmLauncher extends JNLPLauncher {
     /**
      * Cancels this agent's Slurm job and deletes the node. Other builds waiting on the same
      * label keep their own queue items and get their own agents.
+     *
+     * <p>A queue item another executor already started is not a launch failure: the build is
+     * still running, so the spare job is cancelled quietly and omitted from the failure stats.
+     * A build that ended, was aborted, or whose queue item was cancelled stays a launch failure.
      */
     void stopForFinishedBuild(
             SlurmComputer computer, SlurmAgent agent, SlurmCloud cloud, String jobId, TaskListener listener)
             throws IOException {
-        String errorMsg = "Build finished before agent " + agent.getNodeName() + " connected";
+        Long queueItemId = agent.getProvisioningQueueItemId();
+        JobUtils.ProvisioningRelease release = queueItemId == null
+                ? JobUtils.ProvisioningRelease.BUILD_FINISHED
+                : JobUtils.classifyProvisioningRelease(queueItemId, agent.getProvisioningRun());
+        boolean handoff = release == JobUtils.ProvisioningRelease.TAKEN_BY_ANOTHER_EXECUTOR;
+        String message = handoff ? handoffMessage(jobId) : finishedBeforeConnectMessage(agent);
+
         TaskListener console = consoleListener(agent, listener);
-        console.getLogger().println("[Slurm] Agent provisioning interrupted: " + errorMsg);
-        console.error(errorMsg);
-        if (console != listener) {
-            listener.getLogger().println("[Slurm] Agent provisioning interrupted: " + errorMsg);
+        if (handoff) {
+            console.getLogger().println("[Slurm] " + message);
+            if (console != listener) {
+                listener.getLogger().println("[Slurm] " + message);
+            }
+            SlurmCloudStats.attachLaunchingOk(agent, message);
+        } else {
+            console.getLogger().println("[Slurm] Agent provisioning interrupted: " + message);
+            console.error(message);
+            if (console != listener) {
+                listener.getLogger().println("[Slurm] Agent provisioning interrupted: " + message);
+            }
+            SlurmCloudStats.attachLaunchingFail(agent, message);
         }
 
-        ProvisioningOwnerGoneException failure = new ProvisioningOwnerGoneException(errorMsg);
+        ProvisioningOwnerGoneException failure = new ProvisioningOwnerGoneException(message);
         setProblem(failure);
-        SlurmCloudStats.attachLaunchingFail(agent, errorMsg);
-        if (jobId != null) {
-            LOGGER.info("Build finished before agent " + agent.getNodeName() + " connected; cancelling Slurm job "
-                    + jobId);
-        } else {
-            LOGGER.info("Build finished before agent " + agent.getNodeName()
-                    + " connected; no Slurm job was submitted");
-        }
+        LOGGER.info(message);
 
         if (jobId != null && cloud != null) {
             cloud.cancelJob(jobId, console);
+            if (handoff) {
+                SlurmCloudStats.attachLaunchingOk(agent, "Slurm job " + jobId + " cancelled");
+            }
         }
 
-        Long queueItemId = agent.getProvisioningQueueItemId();
-        if (queueItemId != null) {
+        // A handoff already started on another executor. Cancelling that left item would abort it.
+        if (!handoff && queueItemId != null) {
             Queue.Item item = Jenkins.get().getQueue().getItem(queueItemId);
-            if (item != null) {
+            if (item != null && !(item instanceof Queue.LeftItem)) {
                 Jenkins.get().getQueue().cancel(item);
             }
         }
 
         if (computer != null) {
-            computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+            computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, message));
         }
 
         try {
             agent.terminate();
-            LOGGER.info("Terminated agent " + agent.getNodeName() + " after the build finished before connect");
+            LOGGER.info("Terminated agent " + agent.getNodeName()
+                    + (handoff
+                            ? " after another executor took the queue item"
+                            : " after the build finished before connect"));
         } catch (IOException | InterruptedException removeEx) {
             LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
         }
 
         throw failure;
+    }
+
+    private static String finishedBeforeConnectMessage(SlurmAgent agent) {
+        return "Build finished before agent " + agent.getNodeName() + " connected";
+    }
+
+    private static String handoffMessage(@CheckForNull String jobId) {
+        if (jobId != null) {
+            return "Queue item taken by another executor; cancelling Slurm job " + jobId;
+        }
+        return "Queue item taken by another executor; no Slurm job was submitted";
     }
 
     /** The build that caused provisioning ended before this launcher finished connecting. */

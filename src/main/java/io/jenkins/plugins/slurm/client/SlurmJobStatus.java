@@ -64,10 +64,13 @@ public final class SlurmJobStatus {
         }
         StringBuilder sb = new StringBuilder();
         sb.append("Slurm job ").append(jobId).append(": ").append(state);
-        if (stateReason != null && !stateReason.isBlank() && !"None".equalsIgnoreCase(stateReason)) {
-            sb.append(" (").append(stateReason).append(")");
+        appendReason(sb);
+        String assigned = assignedNodes();
+        if (assigned != null) {
+            sb.append(" on ").append(assigned);
+        } else if ("PENDING".equals(state)) {
+            sb.append(", no node yet");
         }
-        appendNodes(sb);
         return sb.toString();
     }
 
@@ -84,15 +87,41 @@ public final class SlurmJobStatus {
      */
     @NonNull
     public String formatConnectionMessage() {
-        if (nodes != null && !nodes.isBlank()) {
-            return "[Slurm] Slurm job " + jobId + " on node(s) " + nodes;
+        String assigned = assignedNodes();
+        if (assigned != null) {
+            return "[Slurm] Slurm job " + jobId + " on node(s) " + assigned;
         }
         return "[Slurm] Slurm job " + jobId + " connected (compute node not reported by Slurm yet)";
     }
 
-    private void appendNodes(StringBuilder sb) {
-        if (nodes != null && !nodes.isBlank()) {
-            sb.append(" on ").append(nodes);
+    /**
+     * Compute node names Slurm has actually assigned.
+     *
+     * <p>Pending jobs often report the placeholder {@code None assigned}. That is not a hostname.
+     */
+    @CheckForNull
+    public String assignedNodes() {
+        if (isUnassigned(nodes)) {
+            return null;
         }
+        return nodes;
+    }
+
+    private void appendReason(StringBuilder sb) {
+        if (stateReason != null && !stateReason.isBlank() && !"None".equalsIgnoreCase(stateReason)) {
+            sb.append(" (").append(stateReason).append(")");
+        }
+    }
+
+    private static boolean isUnassigned(@CheckForNull String nodes) {
+        if (nodes == null || nodes.isBlank()) {
+            return true;
+        }
+        String trimmed = nodes.trim();
+        return "none".equalsIgnoreCase(trimmed)
+                || "none assigned".equalsIgnoreCase(trimmed)
+                || "unassigned".equalsIgnoreCase(trimmed)
+                || "n/a".equalsIgnoreCase(trimmed)
+                || "(null)".equalsIgnoreCase(trimmed);
     }
 }

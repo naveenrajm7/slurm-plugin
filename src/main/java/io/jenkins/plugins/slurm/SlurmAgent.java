@@ -187,8 +187,8 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
      * Records compute placement from a Slurm job status poll and updates the agent description.
      */
     public void applyJobPlacement(@CheckForNull io.jenkins.plugins.slurm.client.SlurmJobStatus status) {
-        if (status != null && status.getNodes() != null && !status.getNodes().isBlank()) {
-            setNodeList(status.getNodes());
+        if (status != null && status.assignedNodes() != null) {
+            setNodeList(status.assignedNodes());
         }
         refreshNodeDescription();
     }
@@ -317,13 +317,18 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
         return provisioningRun;
     }
 
-    /** Drops the pre-connect claim once this agent is connected or removed. */
+    /**
+     * Drops the pre-connect queue claim once this agent is connected or removed.
+     *
+     * <p>The {@link Run} is kept until the agent object is discarded so cloud statistics can name
+     * the build after the node is deleted. A pipeline often removes the agent at the end of the
+     * {@code node} block, before the build result exists.
+     */
     void releaseProvisioningOwner() {
         if (provisioningQueueItemId != null) {
             JobUtils.releaseProvisioningClaim(provisioningQueueItemId);
         }
         provisioningQueueItemId = null;
-        provisioningRun = null;
     }
 
     /**
