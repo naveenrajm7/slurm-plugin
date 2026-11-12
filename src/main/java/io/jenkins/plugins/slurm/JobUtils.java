@@ -28,7 +28,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import jenkins.model.Jenkins;
-import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.workflow.flow.FlowExecutionOwner;
 import org.jenkinsci.plugins.workflow.support.steps.ExecutorStepExecution;
 
@@ -132,92 +131,48 @@ public final class JobUtils {
     }
 
     /**
-     * Cancel queue items matching the given agent based on label matching.
+     * Cancels the queue item this agent claimed, and no other build waiting on the same label.
      *
-     * <p>When a Slurm job fails to launch an agent (e.g., bad image, network issues,
-     * startup script errors), we need to cancel the corresponding Jenkins queue item
-     * to prevent Jenkins from continuously provisioning new agents in an infinite loop.
+     * <p>Kubernetes matches the pod's {@code runUrl}. A label-wide cancel aborts whichever
+     * {@code node()} step happens to be first in the queue, including a build this agent was
+     * not provisioning. When the agent never claimed a build, nothing is cancelled.
      *
-     * <p>This method cancels queue items that:
-     * <ul>
-     *   <li>Have an assigned label matching the agent's label</li>
-     * </ul>
-     *
-     * <p>This is based on the Kubernetes plugin's PodUtils.cancelQueueItemFor pattern
-     * but simplified for Slurm's use case where we don't have pod annotations with
-     * runUrl. We rely on label matching which is sufficient for most scenarios.
-     *
-     * @param agent The Slurm agent whose queue item should be cancelled
+     * @param agent The Slurm agent whose claimed queue item should be cancelled
      * @param reason The reason the item is being cancelled (for logging)
      */
     public static void cancelQueueItemFor(@NonNull SlurmAgent agent, @CheckForNull String reason) {
-        String labelString = agent.getLabelString();
-        if (labelString == null || labelString.trim().isEmpty()) {
-            LOGGER.log(Level.FINE, () -> "Agent " + agent.getNodeName() + " has no label, cannot cancel queue item");
+        Long queueItemId = agent.getProvisioningQueueItemId();
+        if (queueItemId == null) {
+            LOGGER.log(
+                    Level.FINE,
+                    () -> "Agent " + agent.getNodeName() + " has no claimed queue item; not cancelling a build");
             return;
         }
 
-        String agentName = agent.getNodeName();
-        cancelQueueItemFor(labelString, reason, agentName);
-    }
-
-    /**
-     * Cancel queue items for the given label.
-     *
-     * <p>This is a lower-level method that can be called when you have the label string
-     * but not necessarily the agent object (e.g., during early provisioning failures).
-     *
-     * @param labelString The label string to match against queue items
-     * @param reason The reason the item is being cancelled (for logging)
-     * @param agentName Optional agent name for better logging
-     */
-    public static void cancelQueueItemFor(
-            @NonNull String labelString, @CheckForNull String reason, @CheckForNull String agentName) {
-
         Queue queue = Jenkins.get().getQueue();
+        Queue.Item item = queue.getItem(queueItemId);
+        if (item == null) {
+            LOGGER.log(
+                    Level.FINE,
+                    () -> "Claimed queue item " + queueItemId + " for agent " + agent.getNodeName()
+                            + " is already gone");
+            return;
+        }
 
-        // Find and cancel matching queue item
-        Arrays.stream(queue.getItems())
-                .filter(item -> {
-                    Label assignedLabel = item.getAssignedLabel();
-                    if (assignedLabel == null) {
-                        return false;
-                    }
-
-                    // Match template labels against the queue item's assigned label expression
-                    String assignedLabelName = assignedLabel.getName();
-                    return assignedLabelName != null && labelMatches(labelString, assignedLabel);
-                })
-                .findFirst()
-                .ifPresentOrElse(
-                        item -> {
-                            String displayName = item.task != null ? item.task.getDisplayName() : "unknown";
-                            LOGGER.log(Level.INFO, () -> {
-                                StringBuilder msg = new StringBuilder();
-                                msg.append("Cancelling queue item: \"")
-                                        .append(displayName)
-                                        .append("\"");
-                                if (agentName != null) {
-                                    msg.append(" (agent: ").append(agentName).append(")");
-                                }
-                                if (!StringUtils.isBlank(reason)) {
-                                    msg.append(" - Reason: ").append(reason);
-                                }
-                                return msg.toString();
-                            });
-
-                            queue.cancel(item);
-                        },
-                        () -> {
-                            if (agentName != null) {
-                                LOGGER.log(
-                                        Level.FINE,
-                                        () -> "No queue item found for agent " + agentName + " with label '"
-                                                + labelString + "'");
-                            } else {
-                                LOGGER.log(Level.FINE, () -> "No queue item found with label '" + labelString + "'");
-                            }
-                        });
+        String displayName = item.task != null ? item.task.getDisplayName() : "unknown";
+        LOGGER.log(Level.INFO, () -> {
+            StringBuilder msg = new StringBuilder();
+            msg.append("Cancelling claimed queue item: \"")
+                    .append(displayName)
+                    .append("\" (agent: ")
+                    .append(agent.getNodeName())
+                    .append(")");
+            if (reason != null && !reason.isBlank()) {
+                msg.append(" - Reason: ").append(reason);
+            }
+            return msg.toString();
+        });
+        queue.cancel(item);
     }
 
     /**

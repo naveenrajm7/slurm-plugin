@@ -27,7 +27,8 @@ import jenkins.model.JenkinsLocationConfiguration;
  * The agent connects back to Jenkins using JNLP.
  *
  * This launcher follows the Kubernetes plugin pattern:
- * - Submits the job once (no retry at launcher level)
+ * - Retries a transient slurmrestd submit, and does not abort the build when no node was allocated
+ * - Fails the claimed build when Slurm rejects the job spec, or after the job was allocated and then broke
  * - Actively polls job status while waiting for agent connection
  * - Fails fast if job enters a failed state
  * - Times out with clear error message
@@ -49,7 +50,31 @@ public class SlurmLauncher extends JNLPLauncher {
      */
     private static final long JOB_STATUS_VISIBILITY_GRACE_MS = 60_000;
 
+    /** Attempts for one launch, including the first. Transient failures sleep between the rest. */
+    static final int SUBMIT_ATTEMPTS = 4;
+
+    private static final long[] DEFAULT_SUBMIT_BACKOFF_MS = {500L, 1000L, 2000L};
+
     private volatile boolean launched = false;
+
+    /** Override for tests. Production uses {@link #DEFAULT_SUBMIT_BACKOFF_MS}. */
+    long[] submitBackoffMs = DEFAULT_SUBMIT_BACKOFF_MS.clone();
+
+    /** When &gt;= 0, replaces the cloud agent timeout. Tests use 0 to take the timeout path immediately. */
+    long agentTimeoutOverrideMs = -1L;
+
+    /** Override for tests so a status transition does not wait out the production interval. */
+    long statusCheckIntervalMs = STATUS_CHECK_INTERVAL_MS;
+
+    /** Override for tests so the connect loop does not sleep a full second. */
+    long connectionPollMs = 1000L;
+
+    /**
+     * When set, job status comes from here instead of slurmrestd. Tests use it to simulate
+     * PENDING and post-allocation failure without a cluster.
+     */
+    @CheckForNull
+    JobStatusSource jobStatusSource;
 
     /**
      * Provisioning exception if any.
@@ -126,14 +151,18 @@ public class SlurmLauncher extends JNLPLauncher {
             listener.getLogger().println("Slurm job already submitted with ID: " + existingJobId);
             slurmComputer.setLaunching(true);
             try {
-                long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
-                waitForAgentConnection(slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs, listener);
+                waitForAgentConnection(
+                        slurmComputer, agent, cloud, template, existingJobId, agentTimeoutMs(cloud), listener);
             } catch (ProvisioningOwnerGoneException e) {
                 throw new RuntimeException(e.getMessage(), e);
+            } catch (HandledLaunchException e) {
+                throw new RuntimeException(e.getMessage(), e);
             } catch (InterruptedException e) {
+                cleanupAbandonedLaunch(slurmComputer, agent, cloud, listener, e, false);
                 Thread.currentThread().interrupt();
                 throw new RuntimeException("Launch interrupted", e);
             } catch (IOException e) {
+                cleanupAbandonedLaunch(slurmComputer, agent, cloud, listener, e, false);
                 throw new RuntimeException("Failed to wait for Slurm agent connection", e);
             } finally {
                 slurmComputer.setLaunching(false);
@@ -166,14 +195,14 @@ public class SlurmLauncher extends JNLPLauncher {
                 // Do not submit a Slurm job nobody is waiting for.
                 abandonIfBuildFinished(slurmComputer, agent, cloud, agent.getSlurmJobId(), listener);
 
-                // Submit the job once — OnceRetentionStrategy may call launch() concurrently
+                // OnceRetentionStrategy may call launch() concurrently. Submit at most one job.
                 String jobId;
                 synchronized (this) {
                     jobId = agent.getSlurmJobId();
                     if (jobId == null) {
                         LOGGER.info("Submitting job to Slurm...");
                         listener.getLogger().println("Submitting job to Slurm...");
-                        jobId = cloud.submitJob(jobDesc, console);
+                        jobId = submitJobWithRetry(cloud, jobDesc, console, slurmComputer, agent, listener);
                         agent.setSlurmJobId(jobId);
                         recordSubmittedJob(agent, jobId);
                         SlurmCloudStats.attachLaunchingOk(agent, "Submitted Slurm job " + jobId);
@@ -186,12 +215,11 @@ public class SlurmLauncher extends JNLPLauncher {
                 }
 
                 // Wait for the agent to connect with active status checking
-                long agentTimeoutMs = (long) cloud.getAgentTimeoutMinutes() * 60 * 1000;
-                LOGGER.info("Waiting for agent to connect via WebSocket/JNLP (timeout: "
-                        + cloud.getAgentTimeoutMinutes() + " minutes)...");
+                long agentTimeoutMs = agentTimeoutMs(cloud);
+                LOGGER.info("Waiting for agent to connect via WebSocket/JNLP (timeout: " + (agentTimeoutMs / 1000)
+                        + " seconds)...");
                 listener.getLogger()
-                        .println("Waiting for agent to connect (timeout: " + cloud.getAgentTimeoutMinutes()
-                                + " minutes)...");
+                        .println("Waiting for agent to connect (timeout: " + (agentTimeoutMs / 1000) + " seconds)...");
                 waitForAgentConnection(slurmComputer, agent, cloud, template, jobId, agentTimeoutMs, listener);
 
             } finally {
@@ -203,61 +231,178 @@ public class SlurmLauncher extends JNLPLauncher {
             // Job cancel and node removal already happened. Do not cancel other builds
             // waiting on this label — only the build that owned this agent is finished.
             throw new RuntimeException(e.getMessage(), e);
+        } catch (HandledLaunchException e) {
+            // The wait path already removed this agent and, when the job had been allocated,
+            // cancelled only the claimed build.
+            throw new RuntimeException(e.getMessage(), e);
         } catch (InterruptedException e) {
             LOGGER.log(Level.WARNING, "Interrupted while launching Slurm agent: " + agent.getNodeName(), e);
-            String interruptMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            console.getLogger().println("[Slurm] Agent provisioning interrupted: " + interruptMsg);
-            console.error(interruptMsg);
-            listener.error("Launch interrupted: " + interruptMsg);
-
-            // Set problem field to prevent retries
-            setProblem(e);
-            SlurmCloudStats.attachLaunchingFail(agent, e);
-
-            // Cancel the Slurm job if it was submitted
-            cancelJobOnFailure(agent, cloud, listener);
-
-            // Kubernetes pattern: Cancel queue item to prevent infinite provisioning loop
-            JobUtils.cancelQueueItemFor(agent, "Launch interrupted: " + e.getMessage());
-
-            // Set computer offline
-            String errorMsg = "Launch interrupted: " + e.getMessage();
-            slurmComputer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
-
-            // Remove the node from Jenkins
-            removeNodeOnFailure(agent);
-
+            cleanupAbandonedLaunch(slurmComputer, agent, cloud, listener, e, false);
             Thread.currentThread().interrupt();
             throw new RuntimeException("Launch interrupted", e);
 
         } catch (Exception e) {
             LOGGER.log(Level.WARNING, "Failed to launch Slurm agent: " + agent.getNodeName(), e);
-            String failureMsg = e.getMessage() != null ? e.getMessage() : e.toString();
-            if (agent.getSlurmJobId() != null) {
-                console.getLogger().println("[Slurm] Agent provisioning failed: " + failureMsg);
-                console.error(failureMsg);
-            }
-            listener.error("Failed to launch Slurm agent: " + failureMsg);
-
-            // Set problem field to prevent retries
-            setProblem(e);
-            SlurmCloudStats.attachLaunchingFail(agent, e);
-
-            // Cancel the Slurm job if it was submitted
-            cancelJobOnFailure(agent, cloud, listener);
-
-            // Kubernetes pattern: Cancel queue item to prevent infinite provisioning loop
-            JobUtils.cancelQueueItemFor(agent, "Launch failed: " + e.getMessage());
-
-            // Set computer offline
-            String errorMsg = "Launch failed: " + e.getMessage();
-            slurmComputer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
-
-            // Remove the node from Jenkins
-            removeNodeOnFailure(agent);
-
+            // A real HTTP 4xx is a bad job spec. Retrying it would loop, so fail only the
+            // build this agent claimed. Transient submit errors are not this case.
+            boolean failClaimedBuild = agent.getSlurmJobId() == null && isPermanentSubmitRejection(e);
+            cleanupAbandonedLaunch(slurmComputer, agent, cloud, listener, e, failClaimedBuild);
             throw new RuntimeException("Failed to launch Slurm agent", e);
         }
+    }
+
+    /**
+     * Submits the job, retrying a malformed or unavailable slurmrestd response.
+     * A real HTTP 4xx is returned to the caller on the first attempt.
+     */
+    private String submitJobWithRetry(
+            SlurmCloud cloud,
+            JobDescMsg jobDesc,
+            TaskListener console,
+            SlurmComputer computer,
+            SlurmAgent agent,
+            TaskListener listener)
+            throws Exception {
+        Exception lastFailure = null;
+        for (int attempt = 1; attempt <= SUBMIT_ATTEMPTS; attempt++) {
+            abandonIfBuildFinished(computer, agent, cloud, agent.getSlurmJobId(), listener);
+            try {
+                return cloud.submitJob(jobDesc, console);
+            } catch (ProvisioningOwnerGoneException e) {
+                throw e;
+            } catch (InterruptedException e) {
+                throw e;
+            } catch (Exception e) {
+                lastFailure = e;
+                if (!isTransientSubmitFailure(e) || attempt == SUBMIT_ATTEMPTS) {
+                    throw e;
+                }
+                long delay = submitBackoffMs[Math.min(attempt - 1, submitBackoffMs.length - 1)];
+                String detail = e.getMessage() != null ? e.getMessage() : e.toString();
+                console.getLogger()
+                        .println("[Slurm] Submit failed (" + detail + "), retrying (" + (attempt + 1) + "/"
+                                + SUBMIT_ATTEMPTS + ")...");
+                LOGGER.log(
+                        Level.WARNING,
+                        "Transient Slurm submit failure for " + agent.getNodeName() + ", attempt " + attempt,
+                        e);
+                if (delay > 0) {
+                    Thread.sleep(delay);
+                }
+            }
+        }
+        throw lastFailure != null ? lastFailure : new IOException("Slurm submit failed");
+    }
+
+    /**
+     * A submit that never reached Slurm in a durable way: malformed HTTP, connection loss, or HTTP 5xx.
+     * {@code Invalid status line: "HTTP/0.9 400 BAD REQUEST"} is this case, not a Slurm 400.
+     */
+    static boolean isTransientSubmitFailure(@CheckForNull Throwable error) {
+        if (chainMentionsInvalidStatusLine(error)) {
+            // A bogus status line such as HTTP/0.9 400 is not a Slurm rejection.
+            return true;
+        }
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (isConnectionFailure(current)) {
+                return true;
+            }
+            if (current instanceof ApiException api) {
+                int code = api.getCode();
+                if (code == 0 || code >= 500) {
+                    return true;
+                }
+                if (code >= 400 && code < 500) {
+                    return false;
+                }
+            }
+            if (current instanceof IOException && !(current instanceof ApiException)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Slurm rejected the job description. Retrying cannot succeed, so the claimed build should fail.
+     */
+    static boolean isPermanentSubmitRejection(@CheckForNull Throwable error) {
+        if (error == null || isTransientSubmitFailure(error)) {
+            return false;
+        }
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof ApiException api) {
+                int code = api.getCode();
+                return code >= 400 && code < 500;
+            }
+        }
+        return false;
+    }
+
+    private static boolean chainMentionsInvalidStatusLine(@CheckForNull Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            String message = current.getMessage();
+            if (message != null && message.contains("Invalid status line")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isConnectionFailure(Throwable error) {
+        String message = error.getMessage();
+        if (message == null) {
+            return false;
+        }
+        String lower = message.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("connection reset")
+                || lower.contains("connection refused")
+                || lower.contains("broken pipe");
+    }
+
+    /**
+     * Removes this agent after a launch that the wait loop did not already finish.
+     * Cancels the claimed build only when {@code cancelClaimedBuild} is set.
+     */
+    private void cleanupAbandonedLaunch(
+            SlurmComputer computer,
+            SlurmAgent agent,
+            SlurmCloud cloud,
+            TaskListener listener,
+            Throwable error,
+            boolean cancelClaimedBuild) {
+        String detail = error.getMessage() != null ? error.getMessage() : error.toString();
+        boolean submitFailure = agent.getSlurmJobId() == null && !(error instanceof InterruptedException);
+        String errorMsg = submitFailure ? "Slurm submit failed: " + detail : detail;
+        if (error instanceof InterruptedException) {
+            errorMsg = "Launch interrupted: " + detail;
+        }
+        setProblem(new IOException(errorMsg, error));
+        SlurmCloudStats.attachLaunchingFail(agent, error);
+
+        TaskListener console = consoleListener(agent, listener);
+        console.getLogger().println("[Slurm] " + errorMsg);
+        console.error(errorMsg);
+        listener.error(errorMsg);
+        if (submitFailure && !cancelClaimedBuild) {
+            console.getLogger().println("[Slurm] The build is still queued and will be provisioned again.");
+        }
+
+        cancelJobOnFailure(agent, cloud, listener);
+        if (cancelClaimedBuild) {
+            JobUtils.cancelQueueItemFor(agent, errorMsg);
+        }
+        if (computer != null) {
+            computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+        }
+        removeNodeOnFailure(agent);
+    }
+
+    private long agentTimeoutMs(SlurmCloud cloud) {
+        if (agentTimeoutOverrideMs >= 0) {
+            return agentTimeoutOverrideMs;
+        }
+        return (long) cloud.getAgentTimeoutMinutes() * 60L * 1000L;
     }
 
     /**
@@ -502,35 +647,23 @@ public class SlurmLauncher extends JNLPLauncher {
             SlurmCloud cloud,
             SlurmJobTemplate template,
             String jobId,
-            TaskListener listener)
+            TaskListener listener,
+            boolean jobWasRunning)
             throws IOException, InterruptedException {
         String errorMsg = "Slurm job was cancelled or is no longer visible (job ID: " + jobId + ")";
-        IOException exception = new IOException(errorMsg);
-        setProblem(exception);
-        SlurmCloudStats.attachLaunchingFail(agent, errorMsg);
-
-        TaskListener console = consoleListener(agent, listener);
-        console.getLogger().println("[Slurm] " + errorMsg);
-        console.error(errorMsg);
-
-        JobUtils.cancelQueueItemFor(agent, errorMsg);
-
-        try {
-            cloud.cancelJob(jobId, listener);
-        } catch (Exception cancelEx) {
-            LOGGER.log(Level.FINE, "Could not cancel missing Slurm job " + jobId, cancelEx);
-        }
-
-        computer.updateProvisioningStatus(new SlurmJobStatus(jobId, null, null, null));
-        computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
-
-        try {
-            agent.terminate();
-        } catch (IOException | InterruptedException removeEx) {
-            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
-        }
-
-        throw exception;
+        // A job that disappears before RUNNING never secured a node. Leave the build queued.
+        failProvisioning(
+                computer,
+                agent,
+                cloud,
+                template,
+                jobId,
+                null,
+                errorMsg,
+                listener,
+                true,
+                jobWasRunning,
+                () -> listener.getLogger().println("[Slurm] " + errorMsg));
     }
 
     private void failProvisioning(
@@ -543,6 +676,7 @@ public class SlurmLauncher extends JNLPLauncher {
             String errorMsg,
             TaskListener listener,
             boolean cancelJob,
+            boolean failClaimedBuild,
             Runnable logDetails)
             throws IOException, InterruptedException {
         IOException exception = new IOException(errorMsg);
@@ -563,8 +697,13 @@ public class SlurmLauncher extends JNLPLauncher {
             }
         }
 
-        JobUtils.cancelQueueItemFor(agent, errorMsg);
+        if (failClaimedBuild) {
+            JobUtils.cancelQueueItemFor(agent, errorMsg);
+        } else {
+            console.getLogger().println("[Slurm] The build is still queued and will be provisioned again.");
+        }
         computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
+        computer.updateProvisioningStatus(new SlurmJobStatus(jobId, jobState, null, null));
 
         try {
             agent.terminate();
@@ -572,7 +711,7 @@ public class SlurmLauncher extends JNLPLauncher {
             LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
         }
 
-        throw exception;
+        throw new HandledLaunchException(errorMsg);
     }
 
     /**
@@ -603,13 +742,15 @@ public class SlurmLauncher extends JNLPLauncher {
         Set<String> attachedJobStatusKeys = new HashSet<>();
 
         SlurmClient client = null;
-        try {
-            client = SlurmClientProvider.createClient(cloud);
-        } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Failed to create Slurm client for status checking", e);
-            listener.getLogger()
-                    .println("Warning: Could not create Slurm client for status checking. "
-                            + "Will wait for agent connection without status monitoring.");
+        if (jobStatusSource == null) {
+            try {
+                client = SlurmClientProvider.createClient(cloud);
+            } catch (Exception e) {
+                LOGGER.log(Level.WARNING, "Failed to create Slurm client for status checking", e);
+                listener.getLogger()
+                        .println("Warning: Could not create Slurm client for status checking. "
+                                + "Will wait for agent connection without status monitoring.");
+            }
         }
 
         TaskListener console = consoleListener(agent, listener);
@@ -618,13 +759,22 @@ public class SlurmLauncher extends JNLPLauncher {
         abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
         while (System.currentTimeMillis() < timeout) {
             abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
-            if (client != null && System.currentTimeMillis() - lastStatusCheck >= STATUS_CHECK_INTERVAL_MS) {
+            JobStatusSource statusSource = jobStatusSource;
+            boolean canPollStatus = statusSource != null || client != null;
+            if (canPollStatus && System.currentTimeMillis() - lastStatusCheck >= statusCheckIntervalMs) {
                 try {
-                    SlurmJobStatus status = client.getJobStatus(jobId);
+                    SlurmJobStatus status;
+                    if (statusSource != null) {
+                        status = statusSource.getJobStatus(jobId);
+                    } else if (client != null) {
+                        status = client.getJobStatus(jobId);
+                    } else {
+                        status = null;
+                    }
 
                     if (status == null) {
                         if (shouldTreatJobAsMissing(computer, startTime)) {
-                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener, jobRunning);
                         } else {
                             long elapsed = (System.currentTimeMillis() - startTime) / 1000;
                             console.getLogger()
@@ -656,6 +806,7 @@ public class SlurmLauncher extends JNLPLauncher {
 
                             if ("CANCELLED".equals(jobState)) {
                                 String errorMsg = "Slurm job was cancelled (job ID: " + jobId + ")";
+                                // Cancelled before the job ever ran: the build did not get a node.
                                 failProvisioning(
                                         computer,
                                         agent,
@@ -666,6 +817,7 @@ public class SlurmLauncher extends JNLPLauncher {
                                         errorMsg,
                                         listener,
                                         false,
+                                        jobRunning,
                                         () -> logProvisioningFailure(console, jobId, jobState, template));
                             }
 
@@ -682,6 +834,7 @@ public class SlurmLauncher extends JNLPLauncher {
                                         jobState,
                                         errorMsg,
                                         listener,
+                                        true,
                                         true,
                                         () -> logProvisioningFailure(console, jobId, jobState, template));
                             }
@@ -701,6 +854,7 @@ public class SlurmLauncher extends JNLPLauncher {
                                         errorMsg,
                                         listener,
                                         false,
+                                        true,
                                         () -> logAgentConnectionFailure(console, jobId, template));
                             }
                         }
@@ -711,7 +865,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 } catch (ApiException e) {
                     if (e.getCode() == 404) {
                         if (shouldTreatJobAsMissing(computer, startTime)) {
-                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener);
+                            handleMissingSlurmJob(computer, agent, cloud, template, jobId, listener, jobRunning);
                         } else {
                             long elapsed = (System.currentTimeMillis() - startTime) / 1000;
                             console.getLogger()
@@ -725,6 +879,8 @@ public class SlurmLauncher extends JNLPLauncher {
                     }
                 } catch (IOException ioe) {
                     throw ioe;
+                } catch (Exception e) {
+                    throw new IOException("Failed to read Slurm job status for " + jobId, e);
                 }
             }
 
@@ -785,51 +941,31 @@ public class SlurmLauncher extends JNLPLauncher {
             abandonIfBuildFinished(computer, agent, cloud, jobId, listener);
 
             // Sleep before next check
-            Thread.sleep(1000);
+            Thread.sleep(Math.max(0L, connectionPollMs));
         }
 
-        // Timeout reached - cancel job and terminate node
+        // Timeout. A job that never reached RUNNING did not secure a node: cancel that Slurm
+        // job so it cannot start later, and leave the Jenkins build queued. A job that was
+        // already RUNNING and never connected is a broken agent startup, so fail the build.
         String timeoutReason = !jobRunning
                 ? "job never reached RUNNING state"
                 : !computer.isOnline() ? "JNLP connection never established" : "unknown reason";
         String errorMsg = "Timeout waiting for agent to launch after " + (agentTimeoutMs / 1000)
                 + " seconds (" + timeoutReason + "). " + "Slurm job ID: "
                 + jobId + ". Check Slurm job logs: slurm-" + jobId + ".out";
-
-        // Set problem field to prevent retries
-        IOException exception = new IOException(errorMsg);
-        setProblem(exception);
-        SlurmCloudStats.attachLaunchingFail(
-                agent, SlurmCloudStats.formatFailureTitle(jobId, jobRunning ? "RUNNING" : "PENDING", errorMsg));
-
-        logLaunchTimeout(console, jobId, template, jobRunning, agentTimeoutMs);
-
-        listener.error(errorMsg);
-        LOGGER.severe(errorMsg);
-
-        // Cancel the Slurm job
-        try {
-            cloud.cancelJob(jobId, listener);
-            LOGGER.info("Canceled timed-out Slurm job: " + jobId);
-        } catch (Exception cancelEx) {
-            LOGGER.log(Level.WARNING, "Failed to cancel job " + jobId, cancelEx);
-        }
-
-        // Kubernetes pattern: Cancel queue item to prevent infinite loop
-        JobUtils.cancelQueueItemFor(agent, "Agent connection timeout: " + timeoutReason);
-
-        // Mark computer offline
-        computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
-
-        // Terminate node BEFORE throwing - prevents Jenkins from retrying launch on same computer
-        try {
-            agent.terminate();
-            LOGGER.info("Terminated timed-out agent node: " + agent.getNodeName());
-        } catch (IOException | InterruptedException removeEx) {
-            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
-        }
-
-        throw exception;
+        boolean reachedRunning = jobRunning;
+        failProvisioning(
+                computer,
+                agent,
+                cloud,
+                template,
+                jobId,
+                reachedRunning ? "RUNNING" : "PENDING",
+                errorMsg,
+                listener,
+                true,
+                reachedRunning,
+                () -> logLaunchTimeout(console, jobId, template, reachedRunning, agentTimeoutMs));
     }
 
     /**
@@ -1007,6 +1143,25 @@ public class SlurmLauncher extends JNLPLauncher {
             return "Queue item taken by another executor; cancelling Slurm job " + jobId;
         }
         return "Queue item taken by another executor; no Slurm job was submitted";
+    }
+
+    /** Status reads used by tests in place of slurmrestd. */
+    @FunctionalInterface
+    interface JobStatusSource {
+        @CheckForNull
+        SlurmJobStatus getJobStatus(String jobId) throws Exception;
+    }
+
+    /**
+     * The wait loop already removed the agent and decided whether the claimed build fails.
+     * The outer {@code launch} catch must not cancel a second queue item.
+     */
+    static final class HandledLaunchException extends IOException {
+        private static final long serialVersionUID = 1L;
+
+        HandledLaunchException(String message) {
+            super(message);
+        }
     }
 
     /** The build that caused provisioning ended before this launcher finished connecting. */
