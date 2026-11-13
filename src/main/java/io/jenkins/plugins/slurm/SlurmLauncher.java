@@ -379,6 +379,7 @@ public class SlurmLauncher extends JNLPLauncher {
         }
         setProblem(new IOException(errorMsg, error));
         SlurmCloudStats.attachLaunchingFail(agent, error);
+        SlurmMetrics.launchFailed(agent.getSlurmJobId());
 
         TaskListener console = consoleListener(agent, listener);
         console.getLogger().println("[Slurm] " + errorMsg);
@@ -414,6 +415,7 @@ public class SlurmLauncher extends JNLPLauncher {
             try {
                 LOGGER.info("Canceling Slurm job " + jobId + " due to launch failure");
                 cloud.cancelJob(jobId, listener);
+                SlurmMetrics.jobCancelled(jobId);
                 listener.getLogger().println("Canceled Slurm job: " + jobId);
             } catch (Exception cancelEx) {
                 LOGGER.log(Level.WARNING, "Failed to cancel Slurm job " + jobId, cancelEx);
@@ -612,6 +614,7 @@ public class SlurmLauncher extends JNLPLauncher {
 
     private void recordSubmittedJob(SlurmAgent agent, String jobId) {
         SlurmJobHeartbeats.refresh(agent.getCloudName(), jobId, agent.getNodeName());
+        SlurmMetrics.jobSubmitted(jobId);
     }
 
     private TaskListener consoleListener(SlurmAgent agent, TaskListener launchListener) {
@@ -682,6 +685,7 @@ public class SlurmLauncher extends JNLPLauncher {
         IOException exception = new IOException(errorMsg);
         setProblem(exception);
         SlurmCloudStats.attachLaunchingFail(agent, SlurmCloudStats.formatFailureTitle(jobId, jobState, errorMsg));
+        SlurmMetrics.launchFailed(jobId);
 
         TaskListener console = consoleListener(agent, listener);
         logDetails.run();
@@ -692,6 +696,7 @@ public class SlurmLauncher extends JNLPLauncher {
         if (cancelJob) {
             try {
                 cloud.cancelJob(jobId, listener);
+                SlurmMetrics.jobCancelled(jobId);
             } catch (Exception cancelEx) {
                 LOGGER.log(Level.WARNING, "Failed to cancel job " + jobId, cancelEx);
             }
@@ -912,6 +917,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 LOGGER.info("Agent " + agent.getNodeName() + " connected successfully after " + elapsed + " seconds");
                 SlurmCloudStats.attachLaunchingOk(
                         agent, "Agent connected after " + elapsed + "s (Slurm job " + jobId + ")");
+                SlurmMetrics.agentConnected(jobId);
 
                 computer.clearProvisioningStatus();
                 markAgentReady(computer);
@@ -954,6 +960,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 + " seconds (" + timeoutReason + "). " + "Slurm job ID: "
                 + jobId + ". Check Slurm job logs: slurm-" + jobId + ".out";
         boolean reachedRunning = jobRunning;
+        SlurmMetrics.launchTimedOut();
         failProvisioning(
                 computer,
                 agent,
@@ -1089,6 +1096,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 listener.getLogger().println("[Slurm] " + message);
             }
             SlurmCloudStats.attachLaunchingOk(agent, message);
+            SlurmMetrics.discard(jobId);
         } else {
             console.getLogger().println("[Slurm] Agent provisioning interrupted: " + message);
             console.error(message);
@@ -1096,6 +1104,7 @@ public class SlurmLauncher extends JNLPLauncher {
                 listener.getLogger().println("[Slurm] Agent provisioning interrupted: " + message);
             }
             SlurmCloudStats.attachLaunchingFail(agent, message);
+            SlurmMetrics.launchFailed(jobId);
         }
 
         ProvisioningOwnerGoneException failure = new ProvisioningOwnerGoneException(message);
@@ -1104,6 +1113,7 @@ public class SlurmLauncher extends JNLPLauncher {
 
         if (jobId != null && cloud != null) {
             cloud.cancelJob(jobId, console);
+            SlurmMetrics.jobCancelled(jobId);
             if (handoff) {
                 SlurmCloudStats.attachLaunchingOk(agent, "Slurm job " + jobId + " cancelled");
             }

@@ -81,6 +81,13 @@
       <groupId>org.jenkins-ci.plugins</groupId>
       <artifactId>cloud-stats</artifactId>
     </dependency>
+    <!-- Optional. Counters are published only when this plugin is installed.
+         The Prometheus plugin scrapes the same registry when it is installed too. -->
+    <dependency>
+      <groupId>org.jenkins-ci.plugins</groupId>
+      <artifactId>metrics</artifactId>
+      <optional>true</optional>
+    </dependency>
 
     <!-- Folder plugin for access control -->
     <dependency>
