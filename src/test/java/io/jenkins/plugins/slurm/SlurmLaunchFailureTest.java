@@ -1,5 +1,6 @@
 package io.jenkins.plugins.slurm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -36,6 +37,9 @@ class SlurmLaunchFailureTest {
         RecordingCloud cloud = cloud(j, "transient-cloud");
         cloud.submitFailure = new ApiException(new IOException("Invalid status line: \"HTTP/0.9 400 BAD REQUEST\""));
         WaitingBuilds waiting = waitingBuilds(j);
+        long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+        long submitted = SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED);
+        long cancelled = SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED);
         try {
             SlurmLauncher launcher = fastLauncher();
             SlurmAgent agent = agent(cloud, "transient-agent", launcher);
@@ -52,6 +56,9 @@ class SlurmLaunchFailureTest {
             assertTrue(problem.contains("Invalid status line"), problem);
             assertFalse(problem.contains("retention strategy"), problem);
             assertTrue(cloud.cancelled.isEmpty());
+            assertEquals(failed + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+            assertEquals(submitted, SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED));
+            assertEquals(cancelled, SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED));
         } finally {
             waiting.close(j);
         }
@@ -62,6 +69,8 @@ class SlurmLaunchFailureTest {
         RecordingCloud cloud = cloud(j, "reject-cloud");
         cloud.submitFailure = new ApiException(400, "Invalid partition name");
         WaitingBuilds waiting = waitingBuilds(j);
+        long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+        long submitted = SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED);
         try {
             SlurmLauncher launcher = fastLauncher();
             SlurmAgent agent = agent(cloud, "reject-agent", launcher);
@@ -77,6 +86,8 @@ class SlurmLaunchFailureTest {
             assertTrue(problem.contains("Slurm submit failed"), problem);
             assertTrue(problem.contains("Invalid partition name"), problem);
             assertFalse(problem.contains("retention strategy"), problem);
+            assertEquals(failed + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+            assertEquals(submitted, SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED));
         } finally {
             waiting.close(j);
         }
@@ -87,6 +98,10 @@ class SlurmLaunchFailureTest {
         RecordingCloud cloud = cloud(j, "pending-cloud");
         cloud.jobId = "424200";
         WaitingBuilds waiting = waitingBuilds(j);
+        long submitted = SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED);
+        long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+        long timedOut = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED_TIMEOUT);
+        long cancelled = SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED);
         try {
             SlurmLauncher launcher = fastLauncher();
             launcher.agentTimeoutOverrideMs = 0L;
@@ -102,6 +117,10 @@ class SlurmLaunchFailureTest {
             String problem = launcher.getProblem().getMessage();
             assertTrue(problem.contains("never reached RUNNING"), problem);
             assertFalse(problem.contains("retention strategy"), problem);
+            assertEquals(submitted + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED));
+            assertEquals(failed + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+            assertEquals(timedOut + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED_TIMEOUT));
+            assertEquals(cancelled + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED));
         } finally {
             waiting.close(j);
         }
@@ -112,6 +131,10 @@ class SlurmLaunchFailureTest {
         RecordingCloud cloud = cloud(j, "running-cloud");
         cloud.jobId = "424201";
         WaitingBuilds waiting = waitingBuilds(j);
+        long submitted = SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED);
+        long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+        long timedOut = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED_TIMEOUT);
+        long cancelled = SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED);
         try {
             SlurmLauncher launcher = fastLauncher();
             launcher.agentTimeoutOverrideMs = 30_000L;
@@ -135,6 +158,10 @@ class SlurmLaunchFailureTest {
             String problem = launcher.getProblem().getMessage();
             assertTrue(problem.contains("FAILED"), problem);
             assertFalse(problem.contains("retention strategy"), problem);
+            assertEquals(submitted + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_SUBMITTED));
+            assertEquals(failed + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+            assertEquals(timedOut, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED_TIMEOUT));
+            assertEquals(cancelled + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED));
         } finally {
             waiting.close(j);
         }

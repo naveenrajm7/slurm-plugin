@@ -137,6 +137,8 @@ class SlurmProvisioningAbortTest {
 
         SlurmComputer computer = (SlurmComputer) agent.toComputer();
         assertNotNull(computer);
+        long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+        long cancelled = SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED);
         SlurmLauncher launcher = new SlurmLauncher();
         SlurmLauncher.ProvisioningOwnerGoneException failure = assertThrows(
                 SlurmLauncher.ProvisioningOwnerGoneException.class,
@@ -149,6 +151,8 @@ class SlurmProvisioningAbortTest {
         String log = output.toString();
         assertTrue(log.contains("[Slurm] Agent provisioning interrupted"), log);
         assertTrue(log.contains("Canceled Slurm job: 68298173"), log);
+        assertEquals(failed + 1, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+        assertEquals(cancelled + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED));
         SlurmTestHelper.awaitLaunchThreadsSettled(j.jenkins);
     }
 
@@ -184,6 +188,8 @@ class SlurmProvisioningAbortTest {
             TaskListener listener = new StreamTaskListener(output);
             agent.setRunListener(listener);
             j.jenkins.addNode(agent);
+            long failed = SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED);
+            long cancelled = SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED);
             SlurmComputer computer = (SlurmComputer) agent.toComputer();
             assertNotNull(computer);
 
@@ -207,6 +213,8 @@ class SlurmProvisioningAbortTest {
             assertTrue(titles.contains("Queue item taken by another executor; cancelling Slurm job 68355353"), titles);
             assertTrue(titles.contains("Slurm job 68355353 cancelled"), titles);
             assertFalse(titles.contains("Build finished"), titles);
+            assertEquals(failed, SlurmMetrics.count(SlurmMetricNames.LAUNCH_FAILED));
+            assertEquals(cancelled + 1, SlurmMetrics.count(SlurmMetricNames.JOBS_CANCELLED));
         } finally {
             JobUtils.clearProvisioningClaimsForTest();
             abortIfBuilding(j, run);

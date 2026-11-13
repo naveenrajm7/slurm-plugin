@@ -388,6 +388,7 @@ public class SlurmAgent extends AbstractCloudSlave implements TrackedItem {
                 // Cancel the Slurm job
                 listener.getLogger().println("Cancelling Slurm job: " + slurmJobId);
                 cloud.cancelJob(slurmJobId, listener);
+                SlurmMetrics.jobCancelled(slurmJobId);
                 listener.getLogger().println("Slurm job cancelled successfully");
             }
 

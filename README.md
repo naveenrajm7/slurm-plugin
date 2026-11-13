@@ -638,12 +638,33 @@ GET /cloud-stats/api/json?depth=2
 Filter for Slurm agents by `trackedItem` name or cloud name. Each activity exposes `phases`
 with `attachments` (title, status, timestamp).
 
+## Metrics
+
+Counters are published when the [Metrics plugin](https://plugins.jenkins.io/metrics/) is installed.
+That dependency is optional: without it, provisioning is unchanged. The
+[Prometheus plugin](https://plugins.jenkins.io/prometheus/) scrapes the same registry at
+`/prometheus/` when it is installed, and that is where the totals are retained. Counters reset
+when the controller restarts. Cloud Statistics remains the per-job record for the last 100
+completed activities.
+
+| Metric | Type | Meaning |
+|--------|------|---------|
+| `slurm.cloud.jobs.submitted` | counter | Slurm job submitted for an agent |
+| `slurm.cloud.agents.connected` | counter | Agent connected and can run a build |
+| `slurm.cloud.launch.failed` | counter | Launch failed, including timeouts |
+| `slurm.cloud.launch.failed.timeout` | counter | Agent did not connect before the timeout |
+| `slurm.cloud.jobs.cancelled` | counter | This plugin cancelled a Slurm job |
+| `slurm.cloud.launch.duration` | timer | Time from submit until the agent connects |
+
+Names are controller-wide. A cloud, template, or job id is not a label, so the registry stays bounded.
+A spare agent whose queue item was taken by another executor counts as a cancel, and does not count
+as a launch failure. A timeout increments both `launch.failed` and `launch.failed.timeout`.
+
 ## Compared to the Kubernetes plugin
 
-The Kubernetes plugin does **not** use cloud-stats; it exposes counters via
-[jenkins-metrics](https://plugins.jenkins.io/metrics/). The Slurm plugin already uses cloud-stats
-for activity tracking — Phase A enriches LAUNCHING attachments with Slurm job IDs, states, and
-failure context. Future work may add jenkins-metrics counters for dashboard parity.
+The Kubernetes plugin does not use cloud-stats. It requires the Metrics plugin and publishes
+unlabeled counters such as `kubernetes.cloud.pods.launched`. This plugin keeps Cloud Statistics
+for the recent activity log and publishes the counters above only when Metrics is installed.
 
 
 # Building and Testing

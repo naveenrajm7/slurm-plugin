@@ -169,6 +169,7 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
                     LOGGER.info("Cancelling orphaned Slurm job " + jobId + " (" + jobName + ") on cloud " + cloud.name);
                     try {
                         client.cancelJob(jobId);
+                        SlurmMetrics.jobCancelled(jobId);
                         SlurmJobHeartbeats.remove(jobId);
                     } catch (ApiException e) {
                         LOGGER.log(Level.WARNING, "Failed to cancel orphaned Slurm job " + jobId, e);

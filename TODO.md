@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Optional provisioning metrics** (`feature/optional-provisioning-metrics`)
+  - Counters and a submit-to-connect timer in the Metrics plugin registry when that plugin is installed
+  - No dependency on the Prometheus plugin; it scrapes the same registry if present
+  - Absent Metrics plugin: provisioning is unchanged
+
 - [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
   - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row
   - Abort, a finished build, and a cancelled queue item keep the failure message and the failure statistic
