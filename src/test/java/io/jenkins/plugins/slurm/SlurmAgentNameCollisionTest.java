@@ -163,20 +163,29 @@ class SlurmAgentNameCollisionTest {
 
                 Set<String> liveJobIds =
                         SlurmGarbageCollection.PeriodicGarbageCollection.liveJobIdsForCloud(cloud.name);
-                assertEquals(jobIds, liveJobIds);
+                assertTrue(liveJobIds.isEmpty(), "an offline computer does not protect its Slurm job");
 
                 SlurmGarbageCollection.PeriodicGarbageCollection.refreshLiveAgents();
                 long afterTimeout = System.currentTimeMillis() + Duration.ofHours(1).toMillis();
                 for (String jobId : jobIds) {
                     assertNotNull(SlurmJobHeartbeats.getLastRefresh(jobId));
-                    assertFalse(
-                            SlurmGarbageCollection.shouldCancelOrphan(
-                                    jobId, liveJobIds, Duration.ofMinutes(5), afterTimeout),
-                            "registered agent job " + jobId + " must not be treated as an orphan");
                     assertTrue(
                             SlurmGarbageCollection.shouldCancelOrphan(
-                                    jobId, Set.of(), Duration.ofMinutes(5), afterTimeout),
-                            "the same job is an orphan once no registered agent owns it");
+                                    jobId, liveJobIds, Duration.ofMinutes(5), afterTimeout),
+                            "offline agent job " + jobId + " is an orphan once its heartbeat is stale");
+                }
+
+                for (SlurmAgent agent : created) {
+                    ((SlurmComputer) agent.toComputer()).setLaunching(true);
+                }
+                Set<String> connecting =
+                        SlurmGarbageCollection.PeriodicGarbageCollection.liveJobIdsForCloud(cloud.name);
+                assertEquals(jobIds, connecting, "a job still waiting for the agent to connect is live");
+                for (String jobId : jobIds) {
+                    assertFalse(
+                            SlurmGarbageCollection.shouldCancelOrphan(
+                                    jobId, connecting, Duration.ofMinutes(5), afterTimeout),
+                            "connecting agent job " + jobId + " must not be cancelled");
                 }
             } finally {
                 cloud.gate.countDown();

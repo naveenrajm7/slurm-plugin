@@ -16,6 +16,24 @@ final class SlurmTestHelper {
 
     private SlurmTestHelper() {}
 
+    /**
+     * Retention that does not call {@code connect()}. {@link RetentionStrategy#NOOP} still does, which
+     * starts {@link SlurmLauncher} and removes the node on submit failure.
+     */
+    static RetentionStrategy<Computer> noConnect() {
+        return new RetentionStrategy<>() {
+            @Override
+            public long check(Computer c) {
+                return 60;
+            }
+
+            @Override
+            public void start(Computer c) {
+                // The test calls launch() itself, or leaves the computer idle for the reaper.
+            }
+        };
+    }
+
     static SlurmCloud createCloud(String name, int maxAgents) {
         return new SlurmCloud(name, "http://localhost:6820", null, "compute", maxAgents, 60);
     }

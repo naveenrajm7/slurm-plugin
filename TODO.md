@@ -23,7 +23,7 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [x] **[MED]** Periodic cleanup for orphaned Slurm jobs — `SlurmGarbageCollection` (opt-in per cloud; cancels stale `{cloudName}-*` jobs not tracked by live agents)
-  - [ ] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
+  - [x] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
 - [ ] **Federated `getJobStatus()` reports coarse state (validated on a federated cluster, PR #28 follow-up)** (`SlurmClient.getJobStatus` / `resolveJobState`)
   - Verified end-to-end on a real federated cluster: job ID `67561473` (> `MAX_JOB_ID` `0x03FFFFFF`). Old singular `GET /job/{id}` returns `2017 Invalid JobID` (repro); new plural path works, build succeeds, and cancel works — Slurm shows `JobState=CANCELLED`, `squeue` empty, **no leak**. Core fix confirmed.
   - **[MED]** Nuance: the plural `GET /jobs/state/?job_id=<fedId>` returns a record whose `job_state` is empty/absent for a **terminal federated job** (while still in `slurmctld` memory), so `resolveJobState()` falls through to its `PENDING` default. Result: a just-cancelled federated job briefly reports `PENDING` instead of `CANCELLED`/`COMPLETED`, then returns `null` once it ages out. State granularity is effectively exists→`PENDING` vs gone→`null` for federated jobs. Does not affect provisioning (gated by JNLP connect) or cancellation (targets the ID directly), but status display is inaccurate.
@@ -38,6 +38,12 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - **Workaround today:** open the agent **Log** (launch log lists Slurm job ID when RUNNING); on the login node run `squeue -u $USER` or `scontrol show job <id>`; inside the running pipeline use `sh 'hostname'` (build is already on the compute node, but Jenkins UI does not show that hostname)
 
 ## Done
+
+- [x] **Offline agents stay registered and hold the template cap (issue #54)** (`fix/reap-stuck-slurm-agents`)
+  - A failed launch sets persisted `launchFailed`, so `isLaunchSupported()` is false and `OnceRetentionStrategy` cannot relaunch the corpse
+  - The "Not retrying" path removes the node. A save that puts the agent back after `terminate()` is removed again
+  - `SlurmReaper` deletes offline agents with no job, a missing or finished job, or a still-running job whose channel has been gone past a short grace, and cancels that job
+  - `liveJobIdsForCloud()` is online agents and agents still inside the connect wait, so an offline computer no longer shields its Slurm job from garbage collection
 
 - [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
   - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row

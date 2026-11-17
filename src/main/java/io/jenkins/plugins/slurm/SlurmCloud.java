@@ -20,7 +20,9 @@ import hudson.slaves.NodeProvisioner.PlannedNode;
 import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import hudson.util.Secret;
+import io.jenkins.plugins.slurm.client.ApiException;
 import io.jenkins.plugins.slurm.client.SlurmClient;
+import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import io.jenkins.plugins.slurm.client.SlurmPingInfo;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -1016,6 +1018,28 @@ public class SlurmCloud extends AbstractCloudImpl {
                 listener.error("Failed to cancel job: " + e.getMessage());
             }
         }
+    }
+
+    /**
+     * Job state for the reaper. {@code null} means slurmrestd has no record of the job.
+     *
+     * @throws ApiException when the client is missing or the request failed for a reason other
+     *     than a missing job. Callers must not treat that as "the job is gone".
+     */
+    @CheckForNull
+    SlurmJobStatus fetchJobStatus(@NonNull String jobId) throws ApiException {
+        final SlurmClient client;
+        try {
+            client = SlurmClientProvider.createClient(this);
+        } catch (ApiException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ApiException(e);
+        }
+        if (client == null) {
+            throw new ApiException(0, "Slurm client is not available");
+        }
+        return client.getJobStatus(jobId);
     }
 
     // Template management methods for web UI navigation
