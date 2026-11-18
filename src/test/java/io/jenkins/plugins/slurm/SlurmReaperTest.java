@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.slaves.OfflineCause;
+import hudson.slaves.SlaveComputer;
 import io.jenkins.plugins.slurm.client.ApiException;
 import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import java.time.Duration;
@@ -49,6 +50,24 @@ class SlurmReaperTest {
         SlurmReaper.reap(now + 60_000, 60_000);
         assertNull(j.jenkins.getNode(agent.getNodeName()));
         assertEquals(List.of("55"), cloud.cancelled);
+    }
+
+    @Test
+    void offlineAgentWithPendingJob_isKeptAndNotCancelled(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-pending");
+        cloud.status = new SlurmJobStatus("58", "PENDING", "JobHeldUser", null);
+        SlurmAgent agent = agent(cloud, "still-queued");
+        agent.setSlurmJobId("58");
+        j.jenkins.addNode(agent);
+        // The launch thread is gone, which is what a controller restart leaves behind.
+        ((SlurmLauncher) ((SlaveComputer) agent.toComputer()).getLauncher())
+                .setProblem(new java.io.IOException("launch thread gone"));
+
+        long now = 1_000_000L;
+        SlurmReaper.reap(now, 60_000);
+        SlurmReaper.reap(now + 120_000, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()));
+        assertTrue(cloud.cancelled.isEmpty(), "a PENDING job is waiting for a machine");
     }
 
     @Test

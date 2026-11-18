@@ -40,7 +40,8 @@ public class SlurmReaper extends AsyncPeriodicWork {
     private static final Logger LOGGER = Logger.getLogger(SlurmReaper.class.getName());
 
     /**
-     * How long an offline computer may keep a Slurm job that is still PENDING or RUNNING.
+     * How long an offline computer may keep a Slurm job that is already RUNNING.
+     * A job that is still PENDING is waiting for a machine and is never reaped.
      * Launch that is still inside {@code waitForAgentConnection} is not subject to this.
      */
     static final long OFFLINE_GRACE_MS = SystemProperties.getLong(
@@ -116,18 +117,26 @@ public class SlurmReaper extends AsyncPeriodicWork {
 
         SlurmCloud cloud = cloudOrNull(agent);
         JobLookup lookup = lookupJob(cloud, jobId);
-        if (launchFailed || lookup.missing || lookup.terminal) {
-            // A launch that already failed must not keep the slot while the job winds down.
-            boolean stillRunning = launchFailed && !lookup.missing && !lookup.terminal;
-            removeNode(jenkins, agent, cloud, stillRunning);
+        if (lookup.pending || lookup.unknown) {
+            // Queued work, or a status we could not read. Cancelling here would drop a job
+            // that is still waiting for a machine. The in-memory launching flag is not required.
+            OFFLINE_SINCE.remove(agent.getNodeName());
+            return;
+        }
+        if (lookup.missing || lookup.terminal) {
+            removeNode(jenkins, agent, cloud, false);
             return;
         }
 
+        // RUNNING, or another non-terminal state that already has a node.
+        if (launchFailed) {
+            removeNode(jenkins, agent, cloud, true);
+            return;
+        }
         long offlineSince = OFFLINE_SINCE.computeIfAbsent(agent.getNodeName(), name -> nowEpochMs);
         if (nowEpochMs - offlineSince < offlineGraceMs) {
             return;
         }
-        // Still PENDING or RUNNING, or slurmrestd could not be asked. The channel is gone.
         removeNode(jenkins, agent, cloud, true);
     }
 
@@ -185,10 +194,15 @@ public class SlurmReaper extends AsyncPeriodicWork {
             if (status == null || status.isMissing()) {
                 return JobLookup.missing();
             }
-            if (SlurmClient.isTerminalState(status.getState())) {
+            String state = status.getState();
+            if (SlurmClient.isTerminalState(state)) {
                 return JobLookup.terminal();
             }
-            return JobLookup.active();
+            // A missing state is how slurmrestd reports a job that has not started yet.
+            if (state == null || "PENDING".equals(state)) {
+                return JobLookup.pending();
+            }
+            return JobLookup.running();
         } catch (ApiException e) {
             if (e.getCode() == 404) {
                 return JobLookup.missing();
@@ -212,26 +226,34 @@ public class SlurmReaper extends AsyncPeriodicWork {
     private static final class JobLookup {
         final boolean missing;
         final boolean terminal;
+        final boolean pending;
+        final boolean unknown;
 
-        private JobLookup(boolean missing, boolean terminal) {
+        private JobLookup(boolean missing, boolean terminal, boolean pending, boolean unknown) {
             this.missing = missing;
             this.terminal = terminal;
+            this.pending = pending;
+            this.unknown = unknown;
         }
 
         static JobLookup missing() {
-            return new JobLookup(true, false);
+            return new JobLookup(true, false, false, false);
         }
 
         static JobLookup terminal() {
-            return new JobLookup(false, true);
+            return new JobLookup(false, true, false, false);
         }
 
-        static JobLookup active() {
-            return new JobLookup(false, false);
+        static JobLookup pending() {
+            return new JobLookup(false, false, true, false);
+        }
+
+        static JobLookup running() {
+            return new JobLookup(false, false, false, false);
         }
 
         static JobLookup unknown() {
-            return new JobLookup(false, false);
+            return new JobLookup(false, false, false, true);
         }
     }
 }
