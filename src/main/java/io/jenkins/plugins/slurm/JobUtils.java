@@ -96,7 +96,7 @@ public final class JobUtils {
         if (templateLabelString.equals(assignedLabel.getName())) {
             return true;
         }
-        return assignedLabel.matches(new java.util.LinkedHashSet<>(Label.parse(templateLabelString.trim())));
+        return assignedLabel.matches(SlurmJobTemplate.splitLabelAtoms(templateLabelString));
     }
 
     /**
