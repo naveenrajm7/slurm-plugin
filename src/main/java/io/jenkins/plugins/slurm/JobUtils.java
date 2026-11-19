@@ -179,8 +179,8 @@ public final class JobUtils {
      * Pairs {@code agentName} with one queued build for {@code provisionLabel}.
      *
      * <p>The oldest unclaimed item is taken so two agents planned for the same label watch
-     * different builds. Returns null when nothing is waiting; the launcher then keeps the
-     * agent-timeout path.
+     * different builds. Returns null when nothing is waiting. The launcher treats that as
+     * surplus and cancels the agent instead of waiting out the connect timeout.
      */
     @CheckForNull
     static ProvisioningOwner claimProvisioningOwner(

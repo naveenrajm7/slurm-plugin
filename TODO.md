@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Surplus pending Slurm jobs after the queue drains (issue #58)** (`fix/issue-58-unclaimed-slurm-jobs`)
+  - [PR #57](https://github.com/naveenrajm7/slurm-plugin/pull/57) is the collapsed-label fix. On mici-alola that collapse is what made `inProvisioning` drop to 0 after the agent connected, so the next pass submitted another job
+  - This change is the step after that: an agent that cannot claim a queued build cancels its Slurm job instead of waiting out the connect timeout. Those unclaimed jobs were still pending after the queue was empty
+  - A not-yet-connected agent with a multi-word template label counts in `getInProvisioning` for `gfx1101`, so one queued executor does not plan a second node
+
 - [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
   - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row
   - Abort, a finished build, and a cancelled queue item keep the failure message and the failure statistic
