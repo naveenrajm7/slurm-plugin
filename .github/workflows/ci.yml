@@ -30,7 +30,7 @@ jobs:
           cache: maven
 
       - name: Run unit tests
-        run: mvn --batch-mode -ntp clean test
+        run: mvn --batch-mode -ntp -s .github/maven-settings.xml clean test
 
       - name: Publish test report
         if: always()
