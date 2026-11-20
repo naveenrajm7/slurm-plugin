@@ -19,7 +19,7 @@
      <f:enum default="EXCLUSIVE">${it.description}</f:enum>
   </f:entry>
 
-  <!-- Core Slurm Job Parameters (maps to v0.0.42_job_desc_msg) -->
+  <!-- Core Slurm Job Parameters (maps to the Slurm REST job_desc_msg) -->
   <f:section title="Slurm Job Configuration">
     
     <f:entry field="partition" title="Partition" 

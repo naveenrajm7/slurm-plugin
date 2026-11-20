@@ -124,8 +124,9 @@ def preprocess_spec(input_file, output_file):
     
     # Write the processed spec
     print(f"\nWriting processed spec to: {output_file}")
-    with open(output_file, 'w', encoding='utf-8') as f:
+    with open(output_file, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(spec, f, indent=2)
+        f.write('\n')
     
     print("[SUCCESS] OpenAPI spec preprocessing complete!")
 

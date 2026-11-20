@@ -141,12 +141,6 @@
       <optional>true</optional>
     </dependency>
 
-    <dependency>
-      <groupId>org.openapitools</groupId>
-      <artifactId>jackson-databind-nullable</artifactId>
-      <version>0.2.6</version>
-    </dependency>
-
     <!-- Configuration as Code support -->
     <dependency>
       <groupId>io.jenkins</groupId>
@@ -199,40 +193,18 @@
         </configuration>
       </plugin>
 
-      <!-- Exec Plugin to preprocess OpenAPI spec and remove version prefixes -->
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>3.1.0</version>
-        <executions>
-          <execution>
-            <id>preprocess-openapi-spec</id>
-            <goals>
-              <goal>exec</goal>
-            </goals>
-            <phase>generate-sources</phase>
-            <configuration>
-              <executable>python</executable>
-              <arguments>
-                <argument>${project.basedir}/scripts/preprocess-openapi-spec.py</argument>
-                <argument>${project.basedir}/src/main/resources/openapi/slurm-v0.0.42.json</argument>
-                <argument>${project.build.directory}/generated-resources/openapi/slurm-processed.json</argument>
-              </arguments>
-              <successCodes>
-                <successCode>0</successCode>
-              </successCodes>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-
-      <!-- OpenAPI Generator for Slurm (Version-Independent) -->
+      <!--
+        Slurm REST client, generated from src/main/openapi/client/slurm-client.json.
+        That file is the reference spec with version prefixes stripped from schema names and
+        operation ids (scripts/preprocess-openapi-spec.py, run by hand when a spec is added), so
+        the build needs nothing beyond Maven and a JDK. The version segment of each request path
+        is chosen at runtime, see SlurmApiVersion.
+      -->
       <plugin>
         <groupId>org.openapitools</groupId>
         <artifactId>openapi-generator-maven-plugin</artifactId>
         <version>7.0.1</version>
         <executions>
-          <!-- Generate version-independent client from preprocessed spec -->
           <execution>
             <id>generate-slurm-client</id>
             <goals>
@@ -240,8 +212,7 @@
             </goals>
             <phase>generate-sources</phase>
             <configuration>
-              <!-- Use preprocessed spec with version prefixes removed -->
-              <inputSpec>${project.build.directory}/generated-resources/openapi/slurm-processed.json</inputSpec>
+              <inputSpec>${project.basedir}/src/main/openapi/client/slurm-client.json</inputSpec>
               <generatorName>java</generatorName>
               <packageName>io.jenkins.plugins.slurm.client</packageName>
               <modelPackage>io.jenkins.plugins.slurm.client.model</modelPackage>
@@ -255,6 +226,10 @@
                 <dateLibrary>java8</dateLibrary>
                 <sourceFolder>src/gen/java</sourceFolder>
                 <hideGenerationTimestamp>true</hideGenerationTimestamp>
+                <!-- No JsonNullable wrapper types, so no extra jar is bundled in the hpi. -->
+                <openApiNullable>false</openApiNullable>
+                <!-- A value added by a newer Slurm release parses to a sentinel instead of failing the response. -->
+                <enumUnknownDefaultCase>true</enumUnknownDefaultCase>
               </configOptions>
               <globalProperties>
                 <property>modelDocs=false</property>

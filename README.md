@@ -40,7 +40,7 @@ It is not required to run the Jenkins controller inside the Slurm cluster.
 
 ## Prerequisites
 
-* A running Slurm cluster **24.11 or later**
+* A running Slurm cluster **24.11 or later** (see [Supported Slurm versions](#supported-slurm-versions))
 * `slurmrestd` enabled with JWT authentication ([Slurm REST quick start](https://slurm.schedmd.com/rest_quickstart.html#basic_usage))
 * A Jenkins instance
 * The Slurm plugin installed
@@ -480,10 +480,50 @@ See [Agent reachability](#agent-reachability-tunnel) below.
 | Path | Purpose |
 |------|---------|
 | `http://{controller}:6820` | Base URL configured on the Slurm cloud (*Slurm REST URL*) |
-| `http://{controller}:6820/slurm/v0.0.42/ping/` | Health check used by **Test Connection** |
-| `http://{controller}:6820/slurm/v0.0.42/jobs/` | Job submission (`POST`) and queries |
+| `http://{controller}:6820/slurm/{version}/ping/` | Health check used by **Test Connection** |
+| `http://{controller}:6820/slurm/{version}/job/submit` | Job submission |
+| `http://{controller}:6820/slurm/{version}/jobs/` | Job listing and cancellation |
+| `http://{controller}:6820/slurm/{version}/jobs/state/` | Job state |
+| `http://{controller}:6820/slurmdb/{version}/job/{id}` | Job state and nodes from accounting, when slurmdbd is available |
 
-The plugin client appends `/slurm/v0.0.42/...` to the configured base URL automatically.
+The plugin appends `/slurm/{version}/...` to the configured base URL automatically.
+
+### Supported Slurm versions
+
+slurmrestd puts a REST API version in every path. Each Slurm release serves several versions
+and removes the oldest, about two years after it was added.
+
+| REST API version | Served by Slurm | Removed in Slurm |
+|------------------|-----------------|------------------|
+| `v0.0.42` | 24.11, 25.05, 25.11, 26.05 | 26.11 |
+| `v0.0.43` | 25.05, 25.11, 26.05, 26.11 | 27.05 |
+| `v0.0.44` | 25.11, 26.05, 26.11, 27.05 | 27.11 |
+| `v0.0.45` | 26.05, 26.11, 27.05, 27.11 | 28.05 |
+
+By default the plugin asks the server on first use and takes the newest version in this table
+that the server answers on. **Test Connection** shows the version in use. The choice is
+refreshed with the cached connection (every 30 minutes), so a cluster upgrade needs no
+configuration change.
+
+To pin a cloud to one version, set **REST API version** on the cloud, or `apiVersion` in JCasC:
+
+```yaml
+jenkins:
+  clouds:
+    - slurm:
+        name: "my-cluster"
+        slurmRestApiUrl: "http://slurm-controller:6820"
+        credentialsId: "slurm-jwt"
+        apiVersion: "v0.0.44"   # omit to auto-detect
+```
+
+The plugin uses the same request and response types for every version. It relies on the few
+endpoints it calls keeping their shape, and ignores fields and values it does not know.
+A test in the build checks those endpoints and fields against the OpenAPI spec of every version
+in the table (see [docs/SLURM_VERSION_UPGRADE_GUIDE.md](docs/SLURM_VERSION_UPGRADE_GUIDE.md)).
+
+Versions are added to and dropped from the plugin following the SchedMD lifecycle above. The
+release notes say when that happens.
 
 ## Slurm job working directory
 
@@ -584,7 +624,8 @@ No SSH reverse tunnel is required.
 
 | Path | Purpose |
 |------|---------|
-| `src/main/resources/openapi/slurm-v0.0.42.json` | OpenAPI spec; preprocessed before code generation |
+| `src/main/openapi/slurm-v*.json` | slurmrestd OpenAPI specs, one per supported REST API version |
+| `src/main/openapi/client/slurm-client.json` | Reference spec with version prefixes removed; input to code generation |
 | `target/generated-sources/` | Generated Slurm REST Java client (recreated on each build) |
 | `examples/` | Sample pipeline definitions |
 | `scripts/e2e/config.env.example` | Local e2e placeholders; copy to gitignored `config.env` |
@@ -687,8 +728,8 @@ mvn hpi:run
 Then open `http://localhost:8080/jenkins` and configure a Slurm cloud pointing at a real or mock `slurmrestd`.
 
 > **Note:** The build auto-generates a Slurm REST API Java client from
-> `src/main/resources/openapi/slurm-v0.0.42.json` via the `openapi-generator-maven-plugin`.
-> Generated code lands in `target/generated-sources/`.
+> `src/main/openapi/client/slurm-client.json` via the `openapi-generator-maven-plugin`.
+> Generated code lands in `target/generated-sources/`. The build needs only Maven and a JDK.
 
 
 # Related Projects

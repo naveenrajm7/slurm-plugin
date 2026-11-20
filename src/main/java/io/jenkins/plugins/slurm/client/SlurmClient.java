@@ -14,9 +14,12 @@ import io.jenkins.plugins.slurm.client.model.JobState1;
 import io.jenkins.plugins.slurm.client.model.OpenapiPingArrayResp;
 import io.jenkins.plugins.slurm.client.model.OpenapiSlurmdbdJobsResp;
 import io.jenkins.plugins.slurm.client.model.ProcessExitCodeVerbose;
+import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.List;
 import java.util.logging.Level;
@@ -24,17 +27,45 @@ import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
- * Simplified Slurm REST API client for v0.0.42
- * This replaces the multi-version factory pattern with a direct client approach
+ * Slurm REST API client.
+ *
+ * <p>The request and response types are generated from one reference spec
+ * ({@link SlurmApiVersion#REFERENCE}). The version segment of each request path is chosen per
+ * client: either the version the cloud is configured with, or the newest supported version the
+ * server answers on. Detection runs on the first call, not in the constructor, so building a
+ * client never touches the network.
  */
 public class SlurmClient {
     private static final Logger LOGGER = Logger.getLogger(SlurmClient.class.getName());
 
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * Status for "the server serves none of our versions". Not 404, which callers read as a missing
+     * job, and not a 4xx, which the launcher reads as Slurm rejecting the job.
+     */
+    static final int NO_SUPPORTED_VERSION_STATUS = 501;
+
     private final SlurmApi api;
     private final SlurmdbApi slurmdbApi;
     private final String baseUrl;
+    private final String authToken;
+    private final boolean versionConfigured;
 
+    /** Null until the first call when the version is detected. */
+    private volatile SlurmApiVersion apiVersion;
+
+    /** Client that detects the API version on first use. */
     public SlurmClient(String slurmRestApiUrl, String authToken) throws MalformedURLException {
+        this(slurmRestApiUrl, authToken, null);
+    }
+
+    /**
+     * @param configuredVersion the version to use, or {@code null} to detect the newest version
+     *     the server serves
+     */
+    public SlurmClient(String slurmRestApiUrl, String authToken, @CheckForNull SlurmApiVersion configuredVersion)
+            throws MalformedURLException {
         if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
             throw new IllegalArgumentException("Slurm REST API URL cannot be null or empty");
         }
@@ -48,41 +79,121 @@ public class SlurmClient {
                 ? slurmRestApiUrl.substring(0, slurmRestApiUrl.length() - 1)
                 : slurmRestApiUrl;
 
-        // Create custom HttpClient to handle Slurm server response parsing
-        HttpClient.Builder httpClientBuilder = HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1) // More lenient HTTP parsing
-                .connectTimeout(Duration.ofSeconds(30))
-                .followRedirects(HttpClient.Redirect.NORMAL);
+        this.authToken = authToken != null && !authToken.trim().isEmpty() ? authToken : null;
+        this.versionConfigured = configuredVersion != null;
+        this.apiVersion = configuredVersion;
 
         // Create ApiClient with custom HttpClient to avoid HTTP parsing issues
         ApiClient apiClient = new ApiClient();
-        apiClient.setHttpClientBuilder(httpClientBuilder);
+        apiClient.setHttpClientBuilder(newHttpClientBuilder());
         apiClient.updateBaseUri(this.baseUrl);
 
-        LOGGER.info("ApiClient base path set to: " + this.baseUrl);
-
-        if (authToken != null && !authToken.trim().isEmpty()) {
-            apiClient.setRequestInterceptor(builder -> {
+        // The generated code sets the request URI before it calls the interceptor, so the
+        // interceptor can replace the reference version in the path with the selected one.
+        apiClient.setRequestInterceptor(builder -> {
+            if (this.authToken != null) {
                 // builder.header("X-Slurm-USER-NAME", "jenkins");
-                builder.header("X-Slurm-USER-TOKEN", authToken);
-                LOGGER.fine("Added authentication headers for Slurm REST API request");
-            });
-        }
+                builder.header("X-Slurm-USER-TOKEN", this.authToken);
+            }
+            SlurmApiVersion selected = this.apiVersion;
+            if (selected != null && selected != SlurmApiVersion.REFERENCE) {
+                builder.uri(selected.rewrite(builder.copy().build().uri()));
+            }
+        });
 
         this.api = new SlurmApi(apiClient);
         this.slurmdbApi = new SlurmdbApi(apiClient);
-        LOGGER.info("SlurmClient initialized with base URL: " + this.baseUrl
-                + " (API endpoints will use /slurm/v0.0.42/... paths)");
+        LOGGER.fine(() -> "SlurmClient initialized with base URL: " + this.baseUrl + ", API version: "
+                + (configuredVersion != null ? configuredVersion : "detect on first use"));
+    }
+
+    private static HttpClient.Builder newHttpClientBuilder() {
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1) // More lenient HTTP parsing
+                .connectTimeout(CONNECT_TIMEOUT)
+                .followRedirects(HttpClient.Redirect.NORMAL);
+    }
+
+    /**
+     * The REST API version this client sends requests to. The first call on a client without a
+     * configured version asks the server; a failed detection is not remembered, so the next call
+     * tries again.
+     *
+     * @throws ApiException if the server cannot be reached, rejects the token, or serves none of
+     *     the supported versions
+     */
+    @NonNull
+    public SlurmApiVersion getApiVersion() throws ApiException {
+        SlurmApiVersion selected = apiVersion;
+        if (selected != null) {
+            return selected;
+        }
+        synchronized (this) {
+            if (apiVersion == null) {
+                apiVersion = detectApiVersion();
+                LOGGER.info("Slurm REST API at " + baseUrl + ": using " + apiVersion);
+            }
+            return apiVersion;
+        }
+    }
+
+    /** True when the version came from the cloud configuration and not from detection. */
+    public boolean isApiVersionConfigured() {
+        return versionConfigured;
+    }
+
+    /**
+     * Pings each supported version, newest first, and returns the first one the server has. A 404
+     * means slurmrestd does not serve that version. Any other failure stops detection: it says
+     * nothing about which versions exist.
+     */
+    @NonNull
+    private SlurmApiVersion detectApiVersion() throws ApiException {
+        HttpClient httpClient = newHttpClientBuilder().build();
+        for (SlurmApiVersion candidate : SlurmApiVersion.newestFirst()) {
+            HttpRequest.Builder request = HttpRequest.newBuilder(candidate.pingUri(baseUrl))
+                    .timeout(CONNECT_TIMEOUT)
+                    .GET();
+            if (authToken != null) {
+                request.header("X-Slurm-USER-TOKEN", authToken);
+            }
+            HttpResponse<String> response;
+            try {
+                response = httpClient.send(request.build(), HttpResponse.BodyHandlers.ofString());
+            } catch (IOException e) {
+                throw new ApiException(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new ApiException(e);
+            }
+            int status = response.statusCode();
+            if (status / 100 == 2) {
+                return candidate;
+            }
+            if (status != 404) {
+                throw new ApiException(
+                        status,
+                        "Slurm REST API version check failed on " + candidate.pingUri(baseUrl) + ": HTTP " + status,
+                        response.headers(),
+                        response.body());
+            }
+            LOGGER.fine(() -> "slurmrestd at " + baseUrl + " does not serve " + candidate);
+        }
+        throw new ApiException(
+                NO_SUPPORTED_VERSION_STATUS,
+                "slurmrestd at " + baseUrl + " serves none of the REST API versions this plugin supports ("
+                        + SlurmApiVersion.supportedWireNames()
+                        + "). Check the URL, or use a plugin release that supports this Slurm release.");
     }
 
     /**
      * Test connectivity by pinging the Slurm controller and return detailed info
-     * @return Slurm controller information from v0.0.43_controller_ping response or null if failed
+     * @return Slurm controller information from the controller ping response, or null if failed
      */
     public SlurmPingInfo getSlurmInfo() {
         try {
-            LOGGER.info("Attempting to ping Slurm controller at: " + baseUrl);
-            LOGGER.info("Full expected URL will be: " + baseUrl + "/slurm/v0.0.42/ping/");
+            SlurmApiVersion pingVersion = getApiVersion();
+            LOGGER.fine(() -> "Pinging Slurm controller at " + pingVersion.pingUri(baseUrl));
 
             OpenapiPingArrayResp response = api.slurmGetPing();
 
@@ -91,7 +202,7 @@ public class SlurmClient {
                     && !response.getPings().isEmpty()) {
                 ControllerPing ping = response.getPings().get(0);
 
-                // Extract all fields from v0.0.43_controller_ping
+                // Extract all fields from controller_ping
                 String hostname = ping.getHostname(); // Target for ping
                 String pinged = ping.getPinged(); // Ping result
                 Boolean responding = ping.getResponding(); // If ping RPC responded with pong from controller
@@ -173,6 +284,7 @@ public class SlurmClient {
             throw new IllegalArgumentException("Job submission request and job description cannot be null");
         }
 
+        getApiVersion();
         LOGGER.info("Submitting job to Slurm: " + submitReq.getJob().getName());
         LOGGER.fine("Job details - partition: " + submitReq.getJob().getPartition() + ", CPUs: "
                 + submitReq.getJob().getCpusPerTask());
@@ -207,9 +319,9 @@ public class SlurmClient {
     /**
      * Cancel a Slurm job by job ID.
      *
-     * <p>Uses the <b>plural</b> {@code DELETE /slurm/v0.0.42/jobs/} endpoint
-     * ({@code slurm_v0042_delete_jobs}) rather than the singular
-     * {@code DELETE /slurm/v0.0.42/job/{job_id}} endpoint. The singular handler
+     * <p>Uses the <b>plural</b> {@code DELETE /slurm/<version>/jobs/} endpoint
+     * ({@code slurm_delete_jobs}) rather than the singular
+     * {@code DELETE /slurm/<version>/job/{job_id}} endpoint. The singular handler
      * ({@code op_handler_job}) rejects any job ID {@code >= MAX_JOB_ID}
      * (0x03FFFFFF / 67,108,863) <em>before</em> contacting {@code slurmctld}, and
      * federated Slurm encodes the origin cluster ID in the top 6 bits of the job
@@ -232,6 +344,7 @@ public class SlurmClient {
         LOGGER.info("Canceling Slurm job: " + jobId);
 
         try {
+            getApiVersion();
             io.jenkins.plugins.slurm.client.model.KillJobsMsg killMsg =
                     new io.jenkins.plugins.slurm.client.model.KillJobsMsg()
                             .jobs(java.util.List.of(jobId))
@@ -282,6 +395,7 @@ public class SlurmClient {
      */
     @NonNull
     public java.util.List<JobInfo> listJobs() throws ApiException {
+        getApiVersion();
         io.jenkins.plugins.slurm.client.model.OpenapiJobInfoResp response = api.slurmGetJobs(null, null);
         if (response == null || response.getJobs() == null) {
             return java.util.List.of();
@@ -311,9 +425,10 @@ public class SlurmClient {
         if (jobId == null || jobId.isEmpty()) {
             throw new IllegalArgumentException("Job ID cannot be null or empty");
         }
+        getApiVersion();
 
-        // Primary source: the slurmdbd single-job endpoint GET /slurmdb/v0.0.42/job/{job_id}
-        // (slurmdb_v0042_get_job). Unlike the slurmctld handlers, slurmdbd has no MAX_JOB_ID
+        // Primary source: the slurmdbd single-job endpoint GET /slurmdb/<version>/job/{job_id}
+        // (slurmdb_get_job). Unlike the slurmctld handlers, slurmdbd has no MAX_JOB_ID
         // guard, so it is federation-safe, and it is a single-id lookup (no "list all jobs"
         // latency). Crucially it returns the FULL accounting record — job state AND the
         // allocated node list — which the lightweight slurmctld jobs/state endpoint does not.
@@ -323,7 +438,7 @@ public class SlurmClient {
             return fromAccounting;
         }
 
-        // Fallback: the lightweight slurmctld GET /slurm/v0.0.42/jobs/state/ endpoint. Used when
+        // Fallback: the lightweight slurmctld GET /slurm/<version>/jobs/state/ endpoint. Used when
         // slurmdbd has no record yet (brief window right after submit) or accounting is disabled.
         // It reports state only (no node), and is federation-safe.
         return getJobStatusFromStateEndpoint(jobId);
@@ -420,10 +535,17 @@ public class SlurmClient {
             return null;
         }
         List<JobState1.CurrentEnum> current = job.getState().getCurrent();
-        if (current == null || current.isEmpty()) {
+        if (current == null) {
             return null;
         }
-        return current.get(0).toString();
+        // A state this client does not know (added by a newer Slurm release) parses to the
+        // sentinel. Skip it; with nothing else to go on the caller falls back to slurmctld.
+        for (JobState1.CurrentEnum state : current) {
+            if (state != null && state != JobState1.CurrentEnum.UNKNOWN_DEFAULT_OPEN_API) {
+                return state.toString();
+            }
+        }
+        return null;
     }
 
     /**
@@ -450,9 +572,9 @@ public class SlurmClient {
      */
     private SlurmJobStatus getJobStatusFromStateEndpoint(String jobId) throws ApiException {
         try {
-            // Use the plural GET /slurm/v0.0.42/jobs/state/ endpoint
-            // (slurm_v0042_get_jobs_state) with server-side job_id filtering rather
-            // than the singular GET /slurm/v0.0.42/job/{job_id}. The singular handler
+            // Use the plural GET /slurm/<version>/jobs/state/ endpoint
+            // (slurm_get_jobs_state) with server-side job_id filtering rather
+            // than the singular GET /slurm/<version>/job/{job_id}. The singular handler
             // (op_handler_job) rejects any job ID >= MAX_JOB_ID (0x03FFFFFF) before
             // reaching slurmctld; federated job IDs encode the cluster ID in their top
             // bits and therefore always exceed that bound (2017 Invalid JobID). The
@@ -572,7 +694,14 @@ public class SlurmClient {
     @CheckForNull
     public static String resolveJobState(@NonNull io.jenkins.plugins.slurm.client.model.JobInfo jobInfo) {
         if (jobInfo.getJobState() != null && !jobInfo.getJobState().isEmpty()) {
-            return jobInfo.getJobState().get(0).toString();
+            for (JobInfo.JobStateEnum state : jobInfo.getJobState()) {
+                if (state != null && state != JobInfo.JobStateEnum.UNKNOWN_DEFAULT_OPEN_API) {
+                    return state.toString();
+                }
+            }
+            // Only states this client does not know (added by a newer Slurm release). The job
+            // exists, so do not report it as missing or as PENDING.
+            return "UNKNOWN";
         }
         LOGGER.fine("Job record present but job_state empty - treating as PENDING");
         return "PENDING";

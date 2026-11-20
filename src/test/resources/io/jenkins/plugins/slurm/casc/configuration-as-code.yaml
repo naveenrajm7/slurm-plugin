@@ -4,6 +4,7 @@ jenkins:
         name: "slurm-casc-roundtrip"
         slurmRestApiUrl: "http://slurm-controller:6820"
         credentialsId: "slurm-jwt"
+        apiVersion: "v0.0.44"
         defaultPartition: "compute"
         maxAgents: 20
         agentTimeoutMinutes: 5

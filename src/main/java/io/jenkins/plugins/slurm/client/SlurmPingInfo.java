@@ -1,7 +1,7 @@
 package io.jenkins.plugins.slurm.client;
 
 /**
- * Simple data class to hold Slurm controller information from v0.0.43_controller_ping response.
+ * Simple data class to hold Slurm controller information from the controller ping response.
  * This provides a clean interface for Slurm controller data without exposing OpenAPI-specific types.
  */
 public class SlurmPingInfo {

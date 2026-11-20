@@ -66,7 +66,10 @@ public class SlurmClientProvider {
         // SaveableListenerImpl (that listener only fires on Jenkins global-config saves).
         if (c == null || c.getValidity() != currentValidity) {
             String authToken = getAuthToken(cloud);
-            SlurmClient client = new SlurmClient(cloud.getSlurmRestApiUrl(), authToken);
+            // The client detects the REST API version on its first call and keeps it for its
+            // lifetime, so a cluster upgrade is picked up when this cache entry expires.
+            SlurmClient client =
+                    new SlurmClient(cloud.getSlurmRestApiUrl(), authToken, cloud.getConfiguredApiVersion());
 
             clients.put(displayName, new Client(currentValidity, client));
             LOGGER.log(
@@ -135,7 +138,11 @@ public class SlurmClientProvider {
     @Restricted(NoExternalUse.class)
     public static int getValidity(@NonNull SlurmCloud cloud) {
         Object[] cloudObjects = {
-            cloud.getSlurmRestApiUrl(), cloud.getCredentialsId(), cloud.getDefaultPartition(), tokenFingerprint(cloud)
+            cloud.getSlurmRestApiUrl(),
+            cloud.getCredentialsId(),
+            cloud.getDefaultPartition(),
+            cloud.getApiVersion(),
+            tokenFingerprint(cloud)
         };
         return Arrays.hashCode(cloudObjects);
     }

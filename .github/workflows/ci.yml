@@ -29,11 +29,6 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
       - name: Run unit tests
         run: mvn --batch-mode -ntp clean test
 

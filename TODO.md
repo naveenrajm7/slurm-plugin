@@ -39,6 +39,14 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **One plugin release talks to several Slurm REST API versions** (`feature/multi-slurm-api-versions`)
+  - `SlurmApiVersion` lists v0.0.42 to v0.0.45. The client is generated once from the v0.0.42 spec and the version in each request path is replaced at runtime
+  - A cloud auto-detects the newest version the server answers on (first call, cached with the client for 30 minutes), or is pinned with **REST API version** / JCasC `apiVersion`. Test Connection shows the version
+  - The build no longer runs Python: `src/main/openapi/client/slurm-client.json` is committed, and specs moved out of `src/main/resources` so they are not shipped. `jackson-databind-nullable` is no longer bundled
+  - Unknown enum values from a newer server parse to a sentinel instead of failing the response
+  - `SlurmApiCompatibilityTest` checks the six operations and the fields the plugin uses against the spec of each version (v0.0.43 to v0.0.45 specs from SlinkyProject/slurm-client). v0.0.45 drops the display-only ping fields `pinged` and `mode`
+  - Not yet run against a live cluster on any version
+
 - [x] **Template UI minimum time limit (issue #60)** (`fix/issue-60-minimum-time-limit`)
   - Template form has Minimum Time Limit (minutes) beside Time Limit. Empty or 0 is not sent. The value must be ≤ the time limit
   - Help text notes that Slurm may start the job in a shorter slot and kill it (exit 143, "Connection was broken")

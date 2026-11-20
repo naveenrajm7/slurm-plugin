@@ -1,0 +1,16 @@
+<div>
+  The Slurm REST API version the plugin uses for this cluster. slurmrestd puts the version in
+  every request path, for example <code>/slurm/v0.0.44/jobs/</code>.
+  <p>
+    <b>Auto-detect</b> (the default) asks the server and uses the newest version that both the
+    server and this plugin support. The choice is refreshed periodically, so a cluster upgrade
+    needs no change here.
+  </p>
+  <p>
+    Select a specific version only to pin the plugin to it, for example while investigating a
+    difference between versions. Each Slurm release serves several versions and removes the
+    oldest one, so a pinned version stops working when the cluster is upgraded past the release
+    shown in the list.
+  </p>
+  <p><b>Test Connection</b> shows the version in use.</p>
+</div>

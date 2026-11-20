@@ -31,6 +31,7 @@ class SlurmCasCTest {
         assertEquals("slurm-casc-roundtrip", cloud.name);
         assertEquals("http://slurm-controller:6820", cloud.getSlurmRestApiUrl());
         assertEquals("slurm-jwt", cloud.getCredentialsId());
+        assertEquals("v0.0.44", cloud.getApiVersion());
         assertEquals("compute", cloud.getDefaultPartition());
         assertEquals(20, cloud.getMaxAgents());
         assertEquals(5, cloud.getAgentTimeoutMinutes());

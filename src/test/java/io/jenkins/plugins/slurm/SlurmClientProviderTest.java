@@ -1,13 +1,19 @@
 package io.jenkins.plugins.slurm;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.cloudbees.plugins.credentials.CredentialsScope;
 import com.cloudbees.plugins.credentials.SystemCredentialsProvider;
 import hudson.util.Secret;
+import io.jenkins.plugins.slurm.client.SlurmApiVersion;
 import io.jenkins.plugins.slurm.client.SlurmClient;
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -82,6 +88,40 @@ class SlurmClientProviderTest {
         int validityB = SlurmClientProvider.getValidity(cloud);
 
         assertNotEquals(validityA, validityB, "Validity hash must reflect the current token secret");
+    }
+
+    @Test
+    void apiVersionChange_returnsFreshInstance(JenkinsRule j) throws Exception {
+        setToken("token-A");
+        SlurmCloud cloud = cloud();
+        SlurmClient autoDetect = SlurmClientProvider.createClient(cloud);
+        assertFalse(autoDetect.isApiVersionConfigured());
+
+        cloud.setApiVersion("v0.0.43");
+        SlurmClient pinned = SlurmClientProvider.createClient(cloud);
+
+        assertNotSame(autoDetect, pinned, "Changing the REST API version must rebuild the cached client");
+        assertTrue(pinned.isApiVersionConfigured());
+        assertEquals(SlurmApiVersion.V0_0_43, pinned.getApiVersion());
+    }
+
+    @Test
+    void apiVersion_blankMeansAutoDetectAndUnknownIsRejected(JenkinsRule j) {
+        SlurmCloud cloud = cloud();
+        assertNull(cloud.getApiVersion());
+
+        cloud.setApiVersion("  ");
+        assertNull(cloud.getApiVersion());
+        assertNull(cloud.getConfiguredApiVersion());
+
+        cloud.setApiVersion(" v0.0.44 ");
+        assertEquals("v0.0.44", cloud.getApiVersion());
+        assertEquals(SlurmApiVersion.V0_0_44, cloud.getConfiguredApiVersion());
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> cloud.setApiVersion("v0.0.39"));
+        assertTrue(error.getMessage().contains("v0.0.45"), error.getMessage());
+        assertEquals("v0.0.44", cloud.getApiVersion(), "a rejected value must not replace the current one");
     }
 
     @Test
