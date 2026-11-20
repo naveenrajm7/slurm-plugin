@@ -1132,10 +1132,21 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
      */
     @NonNull
     public Set<LabelAtom> getLabelAtoms() {
-        if (label == null || label.trim().isEmpty()) {
+        return splitLabelAtoms(label);
+    }
+
+    /**
+     * Whitespace-separated label tokens as atoms.
+     *
+     * <p>{@link Label#parse(String)} returns a single atom when that exact string was previously
+     * passed to {@link Jenkins#getLabel(String)}. Splitting here keeps template matching on the
+     * individual tokens.
+     */
+    @NonNull
+    static Set<LabelAtom> splitLabelAtoms(@CheckForNull String label) {
+        if (label == null || label.isBlank()) {
             return Collections.emptySet();
         }
-        // Split explicitly — Label.parse() can collapse to a single atom if that name already exists.
         Set<LabelAtom> atoms = new LinkedHashSet<>();
         for (String part : label.trim().split("\\s+")) {
             if (!part.isEmpty()) {
@@ -1190,7 +1201,8 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             return canTake(Label.parseExpression(trimmed));
         }
         // Space-separated labels are ANDed (same as Jenkins node label assignment).
-        String[] atoms = Label.parse(trimmed).stream().map(LabelAtom::getName).toArray(String[]::new);
+        String[] atoms =
+                splitLabelAtoms(trimmed).stream().map(LabelAtom::getName).toArray(String[]::new);
         return canTake(Label.parseExpression(String.join(" && ", atoms)));
     }
 

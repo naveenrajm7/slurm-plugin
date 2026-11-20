@@ -45,6 +45,10 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - `SlurmReaper` deletes offline agents with no job, a missing or finished job, or a still-running job whose channel has been gone past a short grace, and cancels that job
   - `liveJobIdsForCloud()` is online agents and agents still inside the connect wait, so an offline computer no longer shields its Slurm job from garbage collection
 
+- [x] **Space-separated template labels stay separate atoms (issue #56)** (`fix/split-agent-label-atoms`)
+  - `SlurmComputer.setAcceptingTasks` no longer calls `Jenkins.getLabel` on the whole label string. That call cached the string as one `LabelAtom`, and `Label.parse` then assigned that single atom to every later agent
+  - Template matching splits tokens itself, so a previously cached joined atom does not hide `gfx1101` / `miopen` from `canTake` or the queue listener lookup
+
 - [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
   - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row
   - Abort, a finished build, and a cancelled queue item keep the failure message and the failure statistic

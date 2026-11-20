@@ -176,15 +176,11 @@ public class SlurmComputer extends AbstractCloudComputer<SlurmAgent> implements 
         super.setAcceptingTasks(acceptingTasks);
         if (acceptingTasks) {
             setLaunching(false);
-            // Agent has connected - remove from in-provisioning tracking
             SlurmAgent agent = getNode();
             if (agent != null) {
-                // Get the label from the agent to remove from correct tracking set
-                hudson.model.Label label = null;
-                String labelString = agent.getLabelString();
-                if (labelString != null && !labelString.isEmpty()) {
-                    label = jenkins.model.Jenkins.get().getLabel(labelString);
-                }
+                // Do not resolve the label string with Jenkins.getLabel(). A space-separated
+                // value is not an expression, so getLabel caches it as one LabelAtom and
+                // Label.parse then assigns that single atom to every later agent.
                 LOGGER.fine("Agent " + agent.getNodeName() + " connected");
             }
         }
