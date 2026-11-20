@@ -3,7 +3,11 @@ package io.jenkins.plugins.slurm;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSetter;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.JsonDeserializer;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
@@ -14,6 +18,7 @@ import hudson.model.Node;
 import hudson.model.TaskListener;
 import hudson.model.labels.LabelAtom;
 import hudson.util.FormValidation;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -141,6 +146,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
 
     // Time limits
     @JsonProperty("time_minimum")
+    @JsonDeserialize(using = OptionalMinutesDeserializer.class)
     private Integer timeMinimum; // time_minimum: minimum time limit in minutes
 
     // Resource allocation - node specs
@@ -714,9 +720,13 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
         return timeMinimum;
     }
 
+    /**
+     * Optional Slurm {@code --time-min}. Empty, null, and values that are not positive are stored
+     * as unset so they are not sent.
+     */
     @DataBoundSetter
     public void setTimeMinimum(Integer timeMinimum) {
-        this.timeMinimum = timeMinimum;
+        this.timeMinimum = timeMinimum != null && timeMinimum > 0 ? timeMinimum : null;
     }
 
     // Resource allocation - node specs
@@ -1339,11 +1349,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             }
         }
 
-        public FormValidation doCheckTimeLimit(@QueryParameter String value) {
+        public FormValidation doCheckTimeLimit(@QueryParameter String value, @QueryParameter String timeMinimum) {
             try {
                 int minutes = Integer.parseInt(value);
                 if (minutes <= 0) {
                     return FormValidation.error("Time limit must be greater than 0 minutes");
+                }
+                Integer minimum = parseOptionalMinutes(timeMinimum);
+                if (minimum != null && minimum > minutes) {
+                    return FormValidation.error("Time limit must be greater than or equal to the minimum time limit ("
+                            + minimum + " minutes)");
                 }
                 if (minutes < 10) {
                     return FormValidation.warning("Time limit less than 10 minutes might be too short");
@@ -1351,6 +1366,48 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
                 return FormValidation.ok();
             } catch (NumberFormatException e) {
                 return FormValidation.error("Invalid number - enter time limit in minutes");
+            }
+        }
+
+        public FormValidation doCheckTimeMinimum(@QueryParameter String value, @QueryParameter String timeLimit) {
+            if (value == null || value.trim().isEmpty()) {
+                return FormValidation.ok();
+            }
+            try {
+                int minutes = Integer.parseInt(value.trim());
+                if (minutes < 0) {
+                    return FormValidation.error("Minimum time limit cannot be negative");
+                }
+                if (minutes == 0) {
+                    return FormValidation.ok();
+                }
+                try {
+                    if (timeLimit != null && !timeLimit.trim().isEmpty()) {
+                        int limit = Integer.parseInt(timeLimit.trim());
+                        if (minutes > limit) {
+                            return FormValidation.error(
+                                    "Minimum time limit must be less than or equal to the time limit (" + limit
+                                            + " minutes)");
+                        }
+                    }
+                } catch (NumberFormatException ignored) {
+                    // The time limit field reports its own error.
+                }
+                return FormValidation.ok();
+            } catch (NumberFormatException e) {
+                return FormValidation.error("Invalid number - enter minimum time limit in minutes");
+            }
+        }
+
+        private static Integer parseOptionalMinutes(String value) {
+            if (value == null || value.trim().isEmpty()) {
+                return null;
+            }
+            try {
+                int minutes = Integer.parseInt(value.trim());
+                return minutes > 0 ? minutes : null;
+            } catch (NumberFormatException e) {
+                return null;
             }
         }
 
@@ -1425,6 +1482,36 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             } catch (NumberFormatException e) {
                 return FormValidation.error("Invalid number");
             }
+        }
+    }
+
+    /**
+     * Accepts a minute count or a Slurm REST {@code {set, number}} object for {@code time_minimum}.
+     * Zero and negative values are unset.
+     */
+    public static final class OptionalMinutesDeserializer extends JsonDeserializer<Integer> {
+
+        @Override
+        public Integer deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+            JsonNode node = parser.readValueAsTree();
+            if (node == null || node.isNull()) {
+                return null;
+            }
+            int minutes;
+            if (node.isNumber()) {
+                minutes = node.asInt();
+            } else if (node.isTextual()) {
+                try {
+                    minutes = Integer.parseInt(node.asText().trim());
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+            } else if (node.isObject() && node.hasNonNull("number")) {
+                minutes = node.get("number").asInt();
+            } else {
+                return null;
+            }
+            return minutes > 0 ? minutes : null;
         }
     }
 }

@@ -20,6 +20,7 @@ jenkins:
             cpusPerTask: 4
             memoryPerNode: 8192
             timeLimit: 120
+            timeMinimum: 90
             instanceCap: 10
             idleMinutes: 3
             runOnce: true

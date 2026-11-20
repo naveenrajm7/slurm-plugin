@@ -140,6 +140,10 @@ public class SlurmDeclarativeAgentTest {
         agent.setTime("02:00:00");
         assertEquals("02:00:00", agent.getTime());
 
+        agent.setTimeMinimum("60");
+        assertEquals("60", agent.getTimeMinimum());
+        assertEquals("60", agent.getAsArgs().get("timeMinimum"));
+
         agent.setGres("gpu:gfx1030:1");
         assertEquals("gpu:gfx1030:1", agent.getGres());
 
@@ -148,6 +152,17 @@ public class SlurmDeclarativeAgentTest {
 
         agent.setTasks(4);
         assertEquals(Integer.valueOf(4), agent.getTasks());
+    }
+
+    @Test
+    public void testTimeMinimumAlongsideJson() {
+        SlurmDeclarativeAgent agent = new SlurmDeclarativeAgent();
+        agent.setJson("{\"job\": {\"partition\": \"gpu\"}}");
+        agent.setTimeMinimum("60");
+
+        Map<String, Object> args = agent.getAsArgs();
+        assertEquals("{\"job\": {\"partition\": \"gpu\"}}", args.get("json"));
+        assertEquals("60", args.get("timeMinimum"));
     }
 
     // Note: testDescriptor removed because it requires pipeline-model-definition runtime dependencies

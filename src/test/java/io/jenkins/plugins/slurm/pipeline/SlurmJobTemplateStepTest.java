@@ -3,6 +3,7 @@ package io.jenkins.plugins.slurm.pipeline;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +36,84 @@ public class SlurmJobTemplateStepTest {
         assertNotNull(template);
         assertEquals("gpu", template.getPartition());
         assertEquals(Integer.valueOf(16), template.getCpusPerTask());
+    }
+
+    @Test
+    public void testTimeMinimumProperty() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setTime("720");
+        step.setTimeMinimum("60");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals(Integer.valueOf(720), template.getTimeLimit());
+        assertEquals(Integer.valueOf(60), template.getTimeMinimum());
+    }
+
+    @Test
+    public void testTimeMinimumPropertyAcceptsClockFormat() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setTime("12:00:00");
+        step.setTimeMinimum("1:00:00");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals(Integer.valueOf(720), template.getTimeLimit());
+        assertEquals(Integer.valueOf(60), template.getTimeMinimum());
+    }
+
+    @Test
+    public void testTimeMinimumAboveTimeLimitThrows() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setTime("60");
+        step.setTimeMinimum("90");
+
+        IllegalArgumentException error =
+                assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));
+        assertTrue(error.getMessage().contains("Minimum time limit"));
+    }
+
+    @Test
+    public void testJsonTimeMinimum() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson(
+                "{\"job\": {\"partition\": \"gpu\", \"time_limit\": 720, \"time_minimum\": 60, \"cpus_per_task\": 1}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals(Integer.valueOf(720), template.getTimeLimit());
+        assertEquals(Integer.valueOf(60), template.getTimeMinimum());
+    }
+
+    @Test
+    public void testJsonTimeMinimumObjectForm() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson("{\"job\": {\"time_limit\": 720, \"time_minimum\": {\"set\": true, \"number\": 45}}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals(Integer.valueOf(45), template.getTimeMinimum());
+    }
+
+    @Test
+    public void testTimeMinimumPropertyOverridesJson() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson("{\"job\": {\"time_limit\": 720, \"time_minimum\": 30}}");
+        step.setTimeMinimum("90");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertEquals(Integer.valueOf(90), template.getTimeMinimum());
+    }
+
+    @Test
+    public void testJsonTimeMinimumZeroIsOmitted() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson("{\"job\": {\"time_limit\": 60, \"time_minimum\": 0}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
+        assertNull(template.getTimeMinimum());
     }
 
     @Test
@@ -196,9 +275,8 @@ public class SlurmJobTemplateStepTest {
     @Test
     public void testJsonRejectsCombinedLaunchModes() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
-        step.setJson(
-                "{\"job\": {\"partition\": \"vm\"}, \"pyxis\": {\"container_image\": \"/images/agent.sqsh\"}, "
-                        + "\"vmocs\": {\"vm_image\": \"base-ubuntu\"}}");
+        step.setJson("{\"job\": {\"partition\": \"vm\"}, \"pyxis\": {\"container_image\": \"/images/agent.sqsh\"}, "
+                + "\"vmocs\": {\"vm_image\": \"base-ubuntu\"}}");
 
         IllegalArgumentException error =
                 assertThrows(IllegalArgumentException.class, () -> step.buildJobTemplate(createTestCloud()));

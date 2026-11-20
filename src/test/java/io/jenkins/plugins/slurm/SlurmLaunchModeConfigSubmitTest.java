@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import io.jenkins.plugins.slurm.client.model.JobDescMsg;
 import java.util.ArrayList;
 import java.util.List;
 import org.htmlunit.FailingHttpStatusCodeException;
@@ -124,6 +125,65 @@ class SlurmLaunchModeConfigSubmitTest {
         assertTrue(nativeTemplate.isWebSocketConnection());
         assertEquals("NATIVE", nativeTemplate.getLaunchMode());
         assertNotNull(nativeTemplate.getAgent());
+    }
+
+    @Test
+    void configureTemplate_savesMinimumTimeLimit(JenkinsRule j) throws Throwable {
+        SlurmCloud owner = cloud("time-min-cloud");
+        j.jenkins.clouds.add(owner);
+        SlurmJobTemplate template = template(owner, "time-min");
+        template.setTimeLimit(720);
+
+        HtmlPage help = j.createWebClient()
+                .goTo("descriptor/" + template.getDescriptor().getId() + "/help/timeMinimum");
+        String helpBody = help.getWebResponse().getContentAsString();
+        assertTrue(helpBody.contains("143"), helpBody);
+        assertTrue(helpBody.contains("Connection was broken"), helpBody);
+
+        HtmlPage page = j.createWebClient().goTo("cloud/time-min-cloud/template/time-min/");
+        assertTrue(page.getWebResponse().getContentAsString().contains("Minimum Time Limit"));
+        HtmlForm form = page.getFormByName("config");
+        fillEmptyNumbers(form);
+        input(form, "timeLimit").setValue("720");
+        input(form, "timeMinimum").setValue("60");
+        submit(j, form);
+
+        assertEquals(Integer.valueOf(720), template.getTimeLimit());
+        assertEquals(Integer.valueOf(60), template.getTimeMinimum());
+        JobDescMsg job = jobFor(template);
+        assertNotNull(job.getTimeMinimum());
+        assertEquals(Boolean.TRUE, job.getTimeMinimum().getSet());
+        assertEquals(60, job.getTimeMinimum().getNumber().intValue());
+
+        HtmlPage cleared = j.createWebClient().goTo("cloud/time-min-cloud/template/time-min/");
+        HtmlForm clearForm = cleared.getFormByName("config");
+        fillEmptyNumbers(clearForm);
+        input(clearForm, "timeMinimum").setValue("0");
+        submit(j, clearForm);
+        assertNull(template.getTimeMinimum());
+        assertNull(jobFor(template).getTimeMinimum());
+
+        HtmlPage again = j.createWebClient().goTo("cloud/time-min-cloud/template/time-min/");
+        HtmlForm againForm = again.getFormByName("config");
+        fillEmptyNumbers(againForm);
+        input(againForm, "timeLimit").setValue("720");
+        input(againForm, "timeMinimum").setValue("60");
+        submit(j, againForm);
+        j.jenkins.save();
+        j.restart();
+
+        SlurmCloud reloaded = (SlurmCloud) j.jenkins.getCloud("time-min-cloud");
+        assertNotNull(reloaded);
+        SlurmJobTemplate saved = reloaded.getTemplate("time-min");
+        assertNotNull(saved);
+        assertEquals(Integer.valueOf(720), saved.getTimeLimit());
+        assertEquals(Integer.valueOf(60), saved.getTimeMinimum());
+        assertEquals(60, jobFor(saved).getTimeMinimum().getNumber().intValue());
+    }
+
+    private static JobDescMsg jobFor(SlurmJobTemplate template) {
+        template.setScript("#!/bin/bash\ntrue\n");
+        return new SlurmJobBuilder(template, "time-min-agent", "http://jenkins:8080/jenkins/", "secret").build();
     }
 
     @Test
@@ -311,6 +371,14 @@ class SlurmLaunchModeConfigSubmitTest {
         templates.add(template);
         owner.setJobTemplates(templates);
         return template;
+    }
+
+    private static HtmlInput input(HtmlForm form, String field) {
+        HtmlElement match = form.querySelector("input[name$='" + field + "']");
+        if (!(match instanceof HtmlInput input)) {
+            throw new AssertionError("No input ending with " + field);
+        }
+        return input;
     }
 
     private static HtmlRadioButtonInput selectRadio(HtmlForm form, String name, String value) {

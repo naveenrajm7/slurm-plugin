@@ -38,6 +38,8 @@ import org.kohsuke.stapler.QueryParameter;
  *     partition 'gpu'
  *     cpus 16
  *     memory '32G'
+ *     time '720'
+ *     timeMinimum '60'
  *   }
  * }
  * </pre>
@@ -51,6 +53,8 @@ import org.kohsuke.stapler.QueryParameter;
  *       {
  *         "job": {
  *           "partition": "gpu",
+ *           "time_limit": 720,
+ *           "time_minimum": 60,
  *           "cpus_per_task": 16,
  *           "memory_per_node": {"set": true, "number": 32768},
  *           "tres_per_job": "gres/gpu:gfx1030:1",
@@ -120,6 +124,9 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
 
     @CheckForNull
     private String time; // Time limit (e.g., "02:00:00", "120") - maps to time_limit
+
+    @CheckForNull
+    private String timeMinimum; // Minimum time limit (same formats as time) - maps to time_minimum
 
     @CheckForNull
     private String gres; // Generic resources (e.g., "gpu:gfx1030:1") - maps to tres_per_job
@@ -366,6 +373,16 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
     @DataBoundSetter
     public void setTime(String time) {
         this.time = Util.fixEmpty(time);
+    }
+
+    @CheckForNull
+    public String getTimeMinimum() {
+        return timeMinimum;
+    }
+
+    @DataBoundSetter
+    public void setTimeMinimum(String timeMinimum) {
+        this.timeMinimum = Util.fixEmpty(timeMinimum);
     }
 
     @CheckForNull
@@ -690,10 +707,14 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
             argMap.put("inheritFrom", inheritFrom);
         }
 
-        // JSON configuration takes precedence
+        // JSON configuration takes precedence. timeMinimum still applies so a Jenkinsfile can
+        // set --time-min next to a job JSON document.
         if (!StringUtils.isEmpty(json)) {
             argMap.put("json", json);
-            return argMap; // JSON mode - return early
+            if (!StringUtils.isEmpty(timeMinimum)) {
+                argMap.put("timeMinimum", timeMinimum);
+            }
+            return argMap;
         }
 
         // Property-based configuration
@@ -711,6 +732,9 @@ public class SlurmDeclarativeAgent extends RetryableDeclarativeAgent<SlurmDeclar
         }
         if (!StringUtils.isEmpty(time)) {
             argMap.put("time", time);
+        }
+        if (!StringUtils.isEmpty(timeMinimum)) {
+            argMap.put("timeMinimum", timeMinimum);
         }
         if (!StringUtils.isEmpty(gres)) {
             argMap.put("gres", gres);

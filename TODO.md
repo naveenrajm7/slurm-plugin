@@ -39,6 +39,11 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Template UI minimum time limit (issue #60)** (`fix/issue-60-minimum-time-limit`)
+  - Template form has Minimum Time Limit (minutes) beside Time Limit. Empty or 0 is not sent. The value must be ≤ the time limit
+  - Help text notes that Slurm may start the job in a shorter slot and kill it (exit 143, "Connection was broken")
+  - Jenkinsfile `agent { slurm { timeMinimum '60' } }` and JSON `time_minimum` (integer or `{set, number}`) both map onto the same field
+
 - [x] **Surplus pending Slurm jobs after the queue drains (issue #58)** (`fix/issue-58-unclaimed-slurm-jobs`)
   - [PR #57](https://github.com/naveenrajm7/slurm-plugin/pull/57) is the collapsed-label fix. On mici-alola that collapse is what made `inProvisioning` drop to 0 after the agent connected, so the next pass submitted another job
   - This change is the step after that: an agent that cannot claim a queued build cancels its Slurm job instead of waiting out the connect timeout. Those unclaimed jobs were still pending after the queue was empty

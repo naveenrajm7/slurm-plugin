@@ -102,6 +102,9 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     private String time;
 
     @CheckForNull
+    private String timeMinimum;
+
+    @CheckForNull
     private String gres;
 
     @CheckForNull
@@ -247,6 +250,14 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             // Parse time string (e.g., "02:00:00", "120") to minutes
             template.setTimeLimit(parseTimeToMinutes(time));
         }
+        if (!StringUtils.isEmpty(timeMinimum)) {
+            Integer minutes = parseTimeToMinutes(timeMinimum);
+            if (minutes == null || minutes <= 0) {
+                throw new IllegalArgumentException("Could not parse timeMinimum '" + timeMinimum
+                        + "'. Use minutes (60), hours (2h), or HH:MM:SS.");
+            }
+            template.setTimeMinimum(minutes);
+        }
         if (!StringUtils.isEmpty(gres)) {
             template.setTresPerJob(gres);
         }
@@ -315,6 +326,8 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
             template.setRunOnce(runOnce);
             template.setKeepJobOnFailure(keepJobOnFailure);
         }
+
+        rejectMinimumAboveTimeLimit(template);
 
         // CRITICAL: For pipeline temporary templates, ALWAYS enforce instanceCap = 1
         // This prevents Jenkins from provisioning multiple agents for a single pipeline stage
@@ -691,6 +704,15 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         }
     }
 
+    private static void rejectMinimumAboveTimeLimit(SlurmJobTemplate template) {
+        Integer minimum = template.getTimeMinimum();
+        Integer limit = template.getTimeLimit();
+        if (minimum != null && limit != null && minimum > limit) {
+            throw new IllegalArgumentException("Minimum time limit (" + minimum
+                    + " minutes) must be less than or equal to the time limit (" + limit + " minutes)");
+        }
+    }
+
     /**
      * Parse memory string to megabytes.
      * Supports formats: "32G", "4096M", "1024" (assumed MB)
@@ -864,6 +886,16 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
     @DataBoundSetter
     public void setTime(String time) {
         this.time = Util.fixEmpty(time);
+    }
+
+    @CheckForNull
+    public String getTimeMinimum() {
+        return timeMinimum;
+    }
+
+    @DataBoundSetter
+    public void setTimeMinimum(String timeMinimum) {
+        this.timeMinimum = Util.fixEmpty(timeMinimum);
     }
 
     @CheckForNull

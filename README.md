@@ -150,6 +150,7 @@ Templates can be configured via the Jenkins UI, JCasC YAML, or inline pipeline J
 | `cpusPerTask` | CPUs per task | `8` |
 | `memoryPerNode` | Memory in MB | `16384` |
 | `timeLimit` | Wall-clock minutes | `240` |
+| `timeMinimum` | Optional minimum runtime in minutes (`--time-min`). Empty or 0 is omitted. Must be ≤ `timeLimit` | `60` |
 | `tresPerJob` | Generic resources (GPUs, etc.) | `gres/gpu:a100:1` |
 | `instanceCap` | Max concurrent agents from this template | `5` |
 | `idleMinutes` | Minutes to keep idle agent before terminating | `10` |
@@ -169,6 +170,7 @@ The `json` field accepts a structure that maps directly to the [Slurm REST API `
     "cpus_per_task": 16,
     "memory_per_node": { "set": true, "number": 32768 },
     "time_limit": { "set": true, "number": 120 },
+    "time_minimum": { "set": true, "number": 60 },
     "tres_per_job": "gres/gpu:gfx942:4",
     "minimum_nodes": 1,
     "required_nodes": ["node1"],
@@ -182,7 +184,20 @@ The `json` field accepts a structure that maps directly to the [Slurm REST API `
 }
 ```
 
-Simple integer forms are also accepted for `memory_per_node` (MB) and `time_limit` (minutes).
+Simple integer forms are also accepted for `memory_per_node` (MB), `time_limit` (minutes), and `time_minimum` (minutes).
+
+A property-based Jenkinsfile agent can set the same limit without JSON. `timeMinimum` uses the same formats as `time` (`60`, `1h`, `01:00:00`):
+
+```groovy
+agent {
+  slurm {
+    cloud 'my-cluster'
+    partition 'gpu'
+    time '720'
+    timeMinimum '60'
+  }
+}
+```
 
 See [docs/JSON_CONFIGURATION.md](docs/JSON_CONFIGURATION.md) for the full field reference.
 

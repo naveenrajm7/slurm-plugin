@@ -1,0 +1,8 @@
+<div>
+  Optional minimum runtime in minutes (<code>--time-min</code> / <code>time_minimum</code>).
+  Leave this empty or set it to 0 to omit it. When it is set, it must be less than or equal to the time limit.
+  <br/><br/>
+  Slurm can then start the job in a shorter backfill gap and run it for at least this long, instead of waiting
+  for a slot that fits the full time limit. Slurm may give the job less time than the time limit and kill it
+  when that shorter limit ends. The build can fail with exit code 143 and &quot;Connection was broken&quot;.
+</div>
