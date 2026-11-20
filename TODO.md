@@ -23,7 +23,7 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 - [ ] **Graceful cloud deletion handling** (gap vs K8s plugin)
   - [ ] **[HIGH]** Add try/catch in SlurmAgent termination when cloud is missing — K8s logs warning + continues, we crash with IllegalStateException
   - [x] **[MED]** Periodic cleanup for orphaned Slurm jobs — `SlurmGarbageCollection` (opt-in per cloud; cancels stale `{cloudName}-*` jobs not tracked by live agents)
-  - [ ] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
+  - [x] **[MED]** **SlurmReaper** — inverse of GC (K8s plugin `Reaper`): remove Jenkins agent nodes when their Slurm job is no longer running; complements `SlurmGarbageCollection` (GC cancels orphan jobs, Reaper removes stale nodes)
 - [ ] **Federated `getJobStatus()` reports coarse state (validated on a federated cluster, PR #28 follow-up)** (`SlurmClient.getJobStatus` / `resolveJobState`)
   - Verified end-to-end on a real federated cluster: job ID `67561473` (> `MAX_JOB_ID` `0x03FFFFFF`). Old singular `GET /job/{id}` returns `2017 Invalid JobID` (repro); new plural path works, build succeeds, and cancel works — Slurm shows `JobState=CANCELLED`, `squeue` empty, **no leak**. Core fix confirmed.
   - **[MED]** Nuance: the plural `GET /jobs/state/?job_id=<fedId>` returns a record whose `job_state` is empty/absent for a **terminal federated job** (while still in `slurmctld` memory), so `resolveJobState()` falls through to its `PENDING` default. Result: a just-cancelled federated job briefly reports `PENDING` instead of `CANCELLED`/`COMPLETED`, then returns `null` once it ages out. State granularity is effectively exists→`PENDING` vs gone→`null` for federated jobs. Does not affect provisioning (gated by JNLP connect) or cancellation (targets the ID directly), but status display is inaccurate.
@@ -43,6 +43,16 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - [PR #57](https://github.com/naveenrajm7/slurm-plugin/pull/57) is the collapsed-label fix. On mici-alola that collapse is what made `inProvisioning` drop to 0 after the agent connected, so the next pass submitted another job
   - This change is the step after that: an agent that cannot claim a queued build cancels its Slurm job instead of waiting out the connect timeout. Those unclaimed jobs were still pending after the queue was empty
   - A not-yet-connected agent with a multi-word template label counts in `getInProvisioning` for `gfx1101`, so one queued executor does not plan a second node
+
+- [x] **Offline agents stay registered and hold the template cap (issue #54)** (`fix/reap-stuck-slurm-agents`)
+  - A failed launch sets persisted `launchFailed`, so `isLaunchSupported()` is false and `OnceRetentionStrategy` cannot relaunch the corpse
+  - The "Not retrying" path removes the node. A save that puts the agent back after `terminate()` is removed again
+  - `SlurmReaper` deletes offline agents with no job, a missing or finished job, or a still-running job whose channel has been gone past a short grace, and cancels that job
+  - `liveJobIdsForCloud()` is online agents and agents still inside the connect wait, so an offline computer no longer shields its Slurm job from garbage collection
+
+- [x] **Space-separated template labels stay separate atoms (issue #56)** (`fix/split-agent-label-atoms`)
+  - `SlurmComputer.setAcceptingTasks` no longer calls `Jenkins.getLabel` on the whole label string. That call cached the string as one `LabelAtom`, and `Label.parse` then assigned that single atom to every later agent
+  - Template matching splits tokens itself, so a previously cached joined atom does not hide `gfx1101` / `miopen` from `canTake` or the queue listener lookup
 
 - [x] **Cloud statistics treat a spare agent as a launch failure (issue #50)** (`fix/cloudstats-handoff-not-launch-failure`)
   - A queue item another executor took while the build is still running is an informational handoff (`Queue item taken by another executor; cancelling Slurm job <id>`), not `Build finished` and not a `FAIL` launch row

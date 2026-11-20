@@ -57,6 +57,13 @@ public class SlurmLauncher extends JNLPLauncher {
 
     private volatile boolean launched = false;
 
+    /**
+     * Persisted. {@link #problem} is transient, so the save inside {@code setTemporarilyOffline}
+     * drops it and {@link #isLaunchSupported()} would stay true. Once this is set, Jenkins must
+     * not launch the agent again.
+     */
+    private volatile boolean launchFailed;
+
     /** Override for tests. Production uses {@link #DEFAULT_SUBMIT_BACKOFF_MS}. */
     long[] submitBackoffMs = DEFAULT_SUBMIT_BACKOFF_MS.clone();
 
@@ -85,7 +92,12 @@ public class SlurmLauncher extends JNLPLauncher {
 
     @Override
     public boolean isLaunchSupported() {
-        return !launched;
+        return !launched && !launchFailed;
+    }
+
+    /** True once a launch has failed and must not be retried. Survives a node save. */
+    public boolean isLaunchFailed() {
+        return launchFailed;
     }
 
     @Override
@@ -107,17 +119,20 @@ public class SlurmLauncher extends JNLPLauncher {
 
         TaskListener console = consoleListener(agent, listener);
 
-        // Kubernetes pattern: Check if previous launch failed permanently
-        if (problem != null) {
-            LOGGER.severe("Launch previously failed permanently for agent: " + agent.getNodeName() + " - "
-                    + problem.getMessage());
-            console.getLogger().println("[Slurm] Agent launch previously failed: " + problem.getMessage());
-            console.error(problem.getMessage());
-            listener.error("Agent launch previously failed: " + problem.getMessage());
+        // A previous attempt failed. problem does not survive the node save, and an older
+        // corpse may only have the offline cause. Remove the node either way so it cannot
+        // keep holding a template slot, and persist launchFailed first so a save that lands
+        // after removal cannot be launched again.
+        if (launchFailed || problem != null || stuckWithoutJob(computer, agent)) {
+            String message = previousFailureMessage(computer);
+            LOGGER.severe("Launch previously failed permanently for agent: " + agent.getNodeName() + " - " + message);
+            console.getLogger().println("[Slurm] Agent launch previously failed: " + message);
+            console.error(message);
+            listener.error("Agent launch previously failed: " + message);
             listener.error("Not retrying - please check agent configuration and Slurm logs");
-            // Don't throw - just return and keep agent offline
-            // This prevents the exception from bubbling up and triggering retry logic
+            markLaunchFailed(agent);
             agent.releaseProvisioningOwner();
+            removeNodeOnFailure(agent);
             return;
         }
 
@@ -434,6 +449,55 @@ public class SlurmLauncher extends JNLPLauncher {
         } catch (IOException | InterruptedException removeEx) {
             LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
         }
+        // setTemporarilyOffline saves the node. On a busy controller that save can finish
+        // after removeNode and put the agent back. Drop it again if it is still registered.
+        removeIfStillRegistered(agent);
+    }
+
+    private void removeIfStillRegistered(SlurmAgent agent) {
+        Jenkins jenkins = Jenkins.getInstanceOrNull();
+        if (jenkins == null) {
+            return;
+        }
+        hudson.model.Node still = jenkins.getNode(agent.getNodeName());
+        if (still == null) {
+            return;
+        }
+        try {
+            LOGGER.info("Removing Slurm agent still registered after terminate: " + agent.getNodeName());
+            jenkins.removeNode(still);
+        } catch (IOException e) {
+            LOGGER.log(Level.WARNING, "Failed to remove node " + agent.getNodeName(), e);
+        }
+    }
+
+    /**
+     * No job id and an offline cause means a launch already failed and the node was saved back.
+     * A node that has not been launched yet has no offline cause.
+     */
+    private static boolean stuckWithoutJob(SlaveComputer computer, SlurmAgent agent) {
+        return agent.getSlurmJobId() == null && computer.getOfflineCause() != null;
+    }
+
+    private String previousFailureMessage(SlaveComputer computer) {
+        if (problem != null && problem.getMessage() != null) {
+            return problem.getMessage();
+        }
+        String reason = computer.getOfflineCauseReason();
+        if (reason != null && !reason.isBlank()) {
+            return reason;
+        }
+        return "launch failed";
+    }
+
+    /** Persist the failure before removal so a node written back afterwards cannot be relaunched. */
+    private void markLaunchFailed(SlurmAgent agent) {
+        launchFailed = true;
+        try {
+            agent.save();
+        } catch (IOException e) {
+            LOGGER.log(Level.FINE, "Could not persist launch failure for " + agent.getNodeName(), e);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -704,12 +768,7 @@ public class SlurmLauncher extends JNLPLauncher {
         }
         computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, errorMsg));
         computer.updateProvisioningStatus(new SlurmJobStatus(jobId, jobState, null, null));
-
-        try {
-            agent.terminate();
-        } catch (IOException | InterruptedException removeEx) {
-            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
-        }
+        removeNodeOnFailure(agent);
 
         throw new HandledLaunchException(errorMsg);
     }
@@ -1143,6 +1202,7 @@ public class SlurmLauncher extends JNLPLauncher {
         } catch (IOException | InterruptedException removeEx) {
             LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
         }
+        removeIfStillRegistered(agent);
 
         throw failure;
     }
@@ -1252,6 +1312,9 @@ public class SlurmLauncher extends JNLPLauncher {
      */
     public void setProblem(@CheckForNull Throwable problem) {
         this.problem = problem;
+        if (problem != null) {
+            launchFailed = true;
+        }
     }
 
     @Extension
