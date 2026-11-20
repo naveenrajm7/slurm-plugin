@@ -23,6 +23,22 @@ public class SlurmJobTemplateStepTest {
         return new SlurmCloud("test", "http://localhost:6820", null, "general", 10, 60);
     }
 
+    private SlurmCloud cloudWithMinimum(int minutes) {
+        SlurmJobTemplate parent = new SlurmJobTemplate();
+        parent.setName("parent");
+        parent.setTimeLimit(720);
+        parent.setTimeMinimum(minutes);
+        SlurmCloud cloud = createTestCloud();
+        cloud.setJobTemplates(java.util.Collections.singletonList(parent));
+        return cloud;
+    }
+
+    private static io.jenkins.plugins.slurm.client.model.JobDescMsg jobFor(SlurmJobTemplate template) {
+        template.setScript("#!/bin/bash\ntrue\n");
+        return new SlurmJobBuilder(template, "time-min-agent", "http://jenkins:8080/jenkins/", "secret")
+                .build();
+    }
+
     @Test
     public void testBasicTemplate() {
         SlurmJobTemplateStep step = new SlurmJobTemplateStep();
@@ -113,7 +129,46 @@ public class SlurmJobTemplateStepTest {
 
         SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
 
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
+        assertNull(jobFor(template).getTimeMinimum());
+    }
+
+    @Test
+    public void disabledRestMinimum_mustStayUnset() {
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setJson("{\"job\": {\"time_limit\": 720, \"time_minimum\": {\"set\": false, \"number\": 60}}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(createTestCloud());
+
         assertNull(template.getTimeMinimum());
+        assertNull(jobFor(template).getTimeMinimum());
+    }
+
+    @Test
+    public void zeroJsonMinimum_mustClearInheritedMinimum() {
+        SlurmCloud cloud = cloudWithMinimum(60);
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setInheritFrom("parent");
+        step.setJson("{\"job\": {\"time_limit\": 720, \"time_minimum\": 0}}");
+
+        SlurmJobTemplate template = step.buildJobTemplate(cloud);
+
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
+        assertNull(jobFor(template).getTimeMinimum());
+    }
+
+    @Test
+    public void zeroPipelineMinimum_mustClearInheritedMinimum() {
+        SlurmCloud cloud = cloudWithMinimum(60);
+        SlurmJobTemplateStep step = new SlurmJobTemplateStep();
+        step.setInheritFrom("parent");
+        step.setTime("720");
+        step.setTimeMinimum("0");
+
+        SlurmJobTemplate template = step.buildJobTemplate(cloud);
+
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
+        assertNull(jobFor(template).getTimeMinimum());
     }
 
     @Test

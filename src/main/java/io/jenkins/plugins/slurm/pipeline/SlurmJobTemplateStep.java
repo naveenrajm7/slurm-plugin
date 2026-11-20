@@ -252,9 +252,9 @@ public class SlurmJobTemplateStep extends Step implements Serializable {
         }
         if (!StringUtils.isEmpty(timeMinimum)) {
             Integer minutes = parseTimeToMinutes(timeMinimum);
-            if (minutes == null || minutes <= 0) {
+            if (minutes == null || minutes < 0) {
                 throw new IllegalArgumentException("Could not parse timeMinimum '" + timeMinimum
-                        + "'. Use minutes (60), hours (2h), or HH:MM:SS.");
+                        + "'. Use minutes (60), hours (2h), or HH:MM:SS. Use 0 to clear an inherited minimum.");
             }
             template.setTimeMinimum(minutes);
         }

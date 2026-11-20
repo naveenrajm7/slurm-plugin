@@ -721,12 +721,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
 
     /**
-     * Optional Slurm {@code --time-min}. Empty, null, and values that are not positive are stored
-     * as unset so they are not sent.
+     * Optional Slurm {@code --time-min}. Null and negative values are unset. Zero is kept so an
+     * explicit clear can override an inherited minimum; the job builder still omits it.
      */
     @DataBoundSetter
     public void setTimeMinimum(Integer timeMinimum) {
-        this.timeMinimum = timeMinimum != null && timeMinimum > 0 ? timeMinimum : null;
+        if (timeMinimum == null || timeMinimum < 0) {
+            this.timeMinimum = null;
+            return;
+        }
+        this.timeMinimum = timeMinimum;
     }
 
     // Resource allocation - node specs
@@ -1487,7 +1491,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
 
     /**
      * Accepts a minute count or a Slurm REST {@code {set, number}} object for {@code time_minimum}.
-     * Zero and negative values are unset.
+     * {@code set: false} is unset and the number is ignored. Zero is kept as an explicit clear.
      */
     public static final class OptionalMinutesDeserializer extends JsonDeserializer<Integer> {
 
@@ -1496,6 +1500,16 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
             JsonNode node = parser.readValueAsTree();
             if (node == null || node.isNull()) {
                 return null;
+            }
+            if (node.isObject()) {
+                JsonNode set = node.get("set");
+                if (set != null && set.isBoolean() && !set.booleanValue()) {
+                    return null;
+                }
+                node = node.get("number");
+                if (node == null || node.isNull()) {
+                    return null;
+                }
             }
             int minutes;
             if (node.isNumber()) {
@@ -1506,12 +1520,10 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
                 } catch (NumberFormatException e) {
                     return null;
                 }
-            } else if (node.isObject() && node.hasNonNull("number")) {
-                minutes = node.get("number").asInt();
             } else {
                 return null;
             }
-            return minutes > 0 ? minutes : null;
+            return minutes < 0 ? null : minutes;
         }
     }
 }

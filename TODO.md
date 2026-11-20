@@ -43,6 +43,7 @@ Issues and items to revisit, discovered during AI-assisted development and valid
   - Template form has Minimum Time Limit (minutes) beside Time Limit. Empty or 0 is not sent. The value must be ≤ the time limit
   - Help text notes that Slurm may start the job in a shorter slot and kill it (exit 143, "Connection was broken")
   - Jenkinsfile `agent { slurm { timeMinimum '60' } }` and JSON `time_minimum` (integer or `{set, number}`) both map onto the same field
+  - Review: `{set:false}` stays unset even when `number` is present. `0` is an explicit clear, so it overrides an inherited minimum and is still omitted from the submitted job
 
 - [x] **Surplus pending Slurm jobs after the queue drains (issue #58)** (`fix/issue-58-unclaimed-slurm-jobs`)
   - [PR #57](https://github.com/naveenrajm7/slurm-plugin/pull/57) is the collapsed-label fix. On mici-alola that collapse is what made `inProvisioning` drop to 0 after the agent connected, so the next pass submitted another job

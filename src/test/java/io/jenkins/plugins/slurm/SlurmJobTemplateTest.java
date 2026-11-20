@@ -51,7 +51,7 @@ public class SlurmJobTemplateTest {
         assertEquals(Integer.valueOf(60), template.getTimeMinimum());
 
         template.setTimeMinimum(0);
-        assertNull(template.getTimeMinimum());
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
 
         template.setTimeMinimum(null);
         assertNull(template.getTimeMinimum());

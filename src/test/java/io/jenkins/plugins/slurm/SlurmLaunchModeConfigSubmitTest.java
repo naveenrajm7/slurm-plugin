@@ -160,7 +160,7 @@ class SlurmLaunchModeConfigSubmitTest {
         fillEmptyNumbers(clearForm);
         input(clearForm, "timeMinimum").setValue("0");
         submit(j, clearForm);
-        assertNull(template.getTimeMinimum());
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
         assertNull(jobFor(template).getTimeMinimum());
 
         HtmlPage again = j.createWebClient().goTo("cloud/time-min-cloud/template/time-min/");
