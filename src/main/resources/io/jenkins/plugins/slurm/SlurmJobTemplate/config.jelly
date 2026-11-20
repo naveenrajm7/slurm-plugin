@@ -44,7 +44,12 @@
 
     <f:entry field="timeLimit" title="Time Limit (minutes)" 
              description="Maximum job runtime in minutes (e.g., 60 for 1 hour, 480 for 8 hours)">
-      <f:number default="60" min="10"/>
+      <f:number default="60" min="10" checkDependsOn="timeMinimum"/>
+    </f:entry>
+
+    <f:entry field="timeMinimum" title="Minimum Time Limit (minutes)"
+             description="Optional minimum runtime in minutes (--time-min). Empty or 0 is not sent. Must be less than or equal to the time limit.">
+      <f:number min="0" checkDependsOn="timeLimit"/>
     </f:entry>
 
   </f:section>

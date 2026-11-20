@@ -3,6 +3,7 @@ package io.jenkins.plugins.slurm.casc;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.jenkins.plugins.casc.ConfigurationAsCode;
@@ -49,6 +50,7 @@ class SlurmCasCTest {
         assertEquals(Integer.valueOf(4), cpuTemplate.getCpusPerTask());
         assertEquals(Long.valueOf(8192), cpuTemplate.getMemoryPerNode());
         assertEquals(Integer.valueOf(120), cpuTemplate.getTimeLimit());
+        assertEquals(Integer.valueOf(90), cpuTemplate.getTimeMinimum());
         assertEquals(10, cpuTemplate.getInstanceCap());
         assertEquals(3, cpuTemplate.getIdleMinutes());
         assertTrue(cpuTemplate.isRunOnce());
@@ -61,6 +63,7 @@ class SlurmCasCTest {
         assertEquals(Long.valueOf(32768), gpuTemplate.getMemoryPerNode());
         assertEquals("gres/gpu:a100:4", gpuTemplate.getTresPerJob());
         assertEquals(Integer.valueOf(480), gpuTemplate.getTimeLimit());
+        assertNull(gpuTemplate.getTimeMinimum());
         assertEquals(2, gpuTemplate.getInstanceCap());
         assertFalse(gpuTemplate.isRunOnce());
 

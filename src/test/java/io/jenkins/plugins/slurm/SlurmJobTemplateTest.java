@@ -46,6 +46,15 @@ public class SlurmJobTemplateTest {
 
         template.setTimeLimit(120); // 2 hours in minutes
         assertEquals(Integer.valueOf(120), template.getTimeLimit());
+
+        template.setTimeMinimum(60);
+        assertEquals(Integer.valueOf(60), template.getTimeMinimum());
+
+        template.setTimeMinimum(0);
+        assertEquals(Integer.valueOf(0), template.getTimeMinimum());
+
+        template.setTimeMinimum(null);
+        assertNull(template.getTimeMinimum());
     }
 
     @Test
@@ -89,10 +98,34 @@ public class SlurmJobTemplateTest {
         assertEquals(FormValidation.Kind.ERROR, validation.kind);
 
         // Time limit validation (expects numeric minutes, not "01:30:00" format)
-        validation = descriptor.doCheckTimeLimit("90"); // 90 minutes
+        validation = descriptor.doCheckTimeLimit("90", null); // 90 minutes
         assertEquals(FormValidation.Kind.OK, validation.kind);
 
-        validation = descriptor.doCheckTimeLimit("invalid");
+        validation = descriptor.doCheckTimeLimit("invalid", null);
+        assertEquals(FormValidation.Kind.ERROR, validation.kind);
+
+        validation = descriptor.doCheckTimeLimit("60", "90");
+        assertEquals(FormValidation.Kind.ERROR, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("", "720");
+        assertEquals(FormValidation.Kind.OK, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("0", "720");
+        assertEquals(FormValidation.Kind.OK, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("60", "720");
+        assertEquals(FormValidation.Kind.OK, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("720", "720");
+        assertEquals(FormValidation.Kind.OK, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("800", "720");
+        assertEquals(FormValidation.Kind.ERROR, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("-1", "720");
+        assertEquals(FormValidation.Kind.ERROR, validation.kind);
+
+        validation = descriptor.doCheckTimeMinimum("abc", "720");
         assertEquals(FormValidation.Kind.ERROR, validation.kind);
     }
 

@@ -2,11 +2,12 @@ package io.jenkins.plugins.slurm;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.jenkins.plugins.slurm.client.model.JobDescMsg;
-
 import java.util.List;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -68,6 +69,30 @@ public class SlurmJobBuilderTest {
         assertTrue(script.contains("java -jar"));
         assertTrue(script.contains("$AGENT_JAR"));
         assertTrue(script.contains("-workDir \"$JENKINS_AGENT_ROOT\""));
+    }
+
+    @Test
+    public void testTimeMinimumIsSentOnlyWhenPositive() {
+        SlurmJobTemplate template = baseTemplate();
+        template.setLaunchMode("NATIVE");
+        AgentLaunchConfig agent = new AgentLaunchConfig();
+        agent.setJarPath("/opt/jenkins/agent.jar");
+        template.setAgent(agent);
+        template.setTimeLimit(720);
+
+        JobDescMsg omitted = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET).build();
+        assertNull(omitted.getTimeMinimum());
+
+        template.setTimeMinimum(0);
+        omitted = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET).build();
+        assertNull(omitted.getTimeMinimum());
+
+        template.setTimeMinimum(60);
+        JobDescMsg job = new SlurmJobBuilder(template, AGENT_NAME, JENKINS_URL, SECRET).build();
+        assertNotNull(job.getTimeMinimum());
+        assertEquals(Boolean.TRUE, job.getTimeMinimum().getSet());
+        assertEquals(60, job.getTimeMinimum().getNumber().intValue());
+        assertEquals(720, job.getTimeLimit().getNumber().intValue());
     }
 
     @Test
@@ -400,9 +425,8 @@ public class SlurmJobBuilderTest {
         @Test
         void commaSeparatedValuesStayIntact() {
             SlurmJobTemplate template = baseTemplate();
-            template.setEnvironment(
-                    "[\"NUMBER_OF_EXECUTORS=1\",\"DOCKER_GPU_MASK_0=0,1,2,3\","
-                            + "\"DOCKER_GPU_MASK_ROCR_0=--env ROCR_VISIBLE_DEVICES=0,1,2,3\"]");
+            template.setEnvironment("[\"NUMBER_OF_EXECUTORS=1\",\"DOCKER_GPU_MASK_0=0,1,2,3\","
+                    + "\"DOCKER_GPU_MASK_ROCR_0=--env ROCR_VISIBLE_DEVICES=0,1,2,3\"]");
 
             List<String> env = buildEnvironment(template);
 

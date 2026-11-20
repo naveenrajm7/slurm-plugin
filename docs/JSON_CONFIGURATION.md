@@ -290,6 +290,7 @@ The `job` section is **identical** between REST API and plugin!
 | `cpus` | `cpus_per_task` | integer |
 | `memory` | `memory_per_node` | object/integer |
 | `time` | `time_limit` | object/integer |
+| `timeMinimum` | `time_minimum` | object/integer |
 | `workingDir` | `current_working_directory` | string |
 | `gres` | `tres_per_job` | string |
 | `tasksPerNode` | `tasks_per_node` | integer |

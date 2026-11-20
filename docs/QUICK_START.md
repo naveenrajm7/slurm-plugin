@@ -78,6 +78,7 @@ pipeline {
 | cpusPerTask | Integer | CPUs per task | 8 |
 | memoryPerNode | Long | Memory in MB | 16384 |
 | timeLimit | Integer | Max time in minutes | 240 |
+| timeMinimum | Integer | Optional minimum time in minutes. Empty or 0 is omitted | 60 |
 | tresPerJob | String | GPUs/resources | "gres/gpu:a100:2" |
 | instanceCap | Integer | Max concurrent agents | 5 |
 | script | String | Custom setup script | "module load cuda" |
