@@ -1,254 +1,141 @@
-# SLURM Version Upgrade Guide
+# Slurm REST API versions: how the plugin handles them and how to add one
 
-This document explains how to upgrade the Jenkins SLURM plugin to support newer versions of the SLURM REST API.
+## How it works
 
-## Overview
+slurmrestd puts a version in every path (`/slurm/v0.0.42/jobs/`). Each Slurm release serves
+several versions and removes the oldest about two years after adding it:
 
-The plugin uses version-independent OpenAPI-generated client code that can be easily upgraded to newer SLURM versions. This design follows the SLURM documentation's recommendation to "strip out the version tag from the struct names" to create maintainable client code.
+| REST API version | Added in Slurm | Removed in Slurm |
+|------------------|----------------|------------------|
+| `v0.0.42` | 24.11 | 26.11 |
+| `v0.0.43` | 25.05 | 27.05 |
+| `v0.0.44` | 25.11 | 27.11 |
+| `v0.0.45` | 26.05 | 28.05 |
 
-## Architecture
+Source: [REST API client guide, data_parser lifecycle](https://slurm.schedmd.com/rest_clients.html).
 
-The plugin uses a two-stage process for generating client code:
+The plugin talks to all versions in `SlurmApiVersion` with one generated client:
 
-1. **Preprocessing**: A Python script (`scripts/preprocess-openapi-spec.py`) removes version prefixes from the OpenAPI specification
-2. **Code Generation**: OpenAPI Generator creates version-independent Java client classes
+- **One set of generated types.** The client is generated from
+  `src/main/openapi/client/slurm-client.json`. That file is the reference spec
+  (`SlurmApiVersion.REFERENCE`, currently `v0.0.42`) with the version removed from schema names
+  and operation ids, so the classes are `JobDescMsg` and `slurmPostJobSubmit()`, not
+  `V0042JobDescMsg`.
+- **The version in the path is chosen at runtime.** `SlurmClient` replaces the version segment of
+  each request in its request interceptor.
+- **Detection.** With no version configured, the first call pings each supported version, newest
+  first, and keeps the first that is not a 404. The result lives as long as the cached client
+  (30 minutes), so a cluster upgrade is picked up without a restart. A cloud can also be pinned
+  with **REST API version** (`apiVersion` in JCasC).
+- **Lenient parsing.** Unknown response fields are ignored, and an enum value this client does not
+  know parses to a sentinel instead of failing the response (`enumUnknownDefaultCase`).
 
-### Version Prefixes Removed
+This works because the plugin uses six operations and a few dozen fields:
 
-The preprocessing removes version identifiers from:
-- **Schema names**: `v0.0.42_job_desc_msg` → `job_desc_msg` → `JobDescMsg.java`
-- **Operation IDs**: `slurm_v0042_post_job_submit` → `slurm_post_job_submit` → `slurmPostJobSubmit()`
-- **All references**: All `$ref` pointers are updated to use the new non-versioned names
+| Operation | Used for |
+|-----------|----------|
+| `GET /slurm/{v}/ping/` | Test Connection, version detection |
+| `POST /slurm/{v}/job/submit` | Submitting the agent job |
+| `DELETE /slurm/{v}/jobs/` | Cancelling a job |
+| `GET /slurm/{v}/jobs/` | Garbage collection of orphaned jobs |
+| `GET /slurm/{v}/jobs/state/` | Job state |
+| `GET /slurmdb/{v}/job/{job_id}` | Job state and nodes from accounting |
 
-### Generated Classes
+Status and cancel use the plural endpoints on purpose: the singular `/job/{id}` handler rejects
+federated job ids. Keep that when adding a version.
 
-The build generates these key classes **without version prefixes**:
-- `JobDescMsg`, `JobSubmitReq`, `OpenapiJobSubmitResponse`
-- `Uint64NoValStruct`, `Uint32NoValStruct`
-- `OpenapiPingArrayResp`, `ControllerPing`
-- `OpenapiError`, `OpenapiKillJobResp`, `OpenapiKillJobsResp`, `KillJobsMsg`
-- API methods: `slurmGetPing()`, `slurmPostJobSubmit()`, `slurmDeleteJobs()`, `slurmGetJobsState()`
+## What is checked
 
-> **Federation note**: status polling and cancellation use the *plural* endpoints
-> (`GET /slurm/v0.0.42/jobs/state/` and `DELETE /slurm/v0.0.42/jobs/`) rather than
-> the singular `/job/{id}` handler, which rejects federated job IDs (`>= MAX_JOB_ID`)
-> before reaching `slurmctld`. When upgrading, ensure the new spec still exposes
-> `slurm_v0042_get_jobs_state` and `slurm_v0042_delete_jobs` (or their renamed
-> equivalents).
+`SlurmApiCompatibilityTest` reads every `src/main/openapi/slurm-v*.json` and checks that:
 
-## Upgrading to a New SLURM Version
+- the six operations exist in that version;
+- every field the plugin reads or writes exists and has the same type, format and referenced
+  schema as in the reference spec;
+- `client/slurm-client.json` is exactly the reference spec with version prefixes removed.
 
-### Step 1: Generate New OpenAPI Specification
+`SlurmClientVersionTest` runs the client against a local HTTP server that serves a chosen set of
+versions, and checks detection, the configured override, and that all six calls go to the selected
+version on both `/slurm/` and `/slurmdb/`.
 
-On your SLURM controller, generate the OpenAPI spec for the new version:
+Specs for all four versions are in the repository. `slurm-v0.0.42.json` was generated on a
+24.11 cluster. The `v0.0.43`, `v0.0.44` and `v0.0.45` specs come from SchedMD's
+[SlinkyProject/slurm-client](https://github.com/SlinkyProject/slurm-client) (`api/v00NN/slurm-openapi.gen.json`,
+commit `17ec635`), generated from Slurm 25.05.8, 25.11.8 and 26.05.3.
 
-```bash
-# Example for SLURM v0.0.43 (hypothetical)
-slurmrestd --generate-openapi-spec -s slurmctld,slurmdbd -d v0.0.43 > slurm-v0.0.43.json
-```
+Known differences the plugin tolerates:
 
-### Step 2: Add Spec to Project
+- `v0.0.45` drops `pinged` and `mode` from the ping response (both were deprecated). They are only
+  shown in Test Connection, which leaves those lines out.
+- Specs differ in whether a named array such as `job_state` is written inline or as a reference.
+  The wire format is the same, and the test follows such references before comparing.
 
-Copy the new specification to the project:
+If a supported version ever has no spec, `everySupportedVersionHasASpec` is reported as skipped,
+not failed, to mark that version as unverified.
 
-```bash
-cp slurm-v0.0.43.json /path/to/slurm-plugin/src/main/resources/openapi/
-```
+## Adding a REST API version
 
-### Step 3: Update pom.xml
+1. Generate the spec on a cluster that serves the version:
 
-Update the OpenAPI spec file reference in `pom.xml`:
-
-```xml
-<execution>
-  <id>preprocess-openapi-spec</id>
-  <phase>generate-sources</phase>
-  <goals>
-    <goal>exec</goal>
-  </goals>
-  <configuration>
-    <executable>python</executable>
-    <arguments>
-      <argument>${project.basedir}/scripts/preprocess-openapi-spec.py</argument>
-      <!-- Update this line to point to new spec file -->
-      <argument>${project.basedir}/src/main/resources/openapi/slurm-v0.0.43.json</argument>
-      <argument>${project.build.directory}/generated-resources/openapi/slurm-processed.json</argument>
-    </arguments>
-    ...
-  </configuration>
-</execution>
-```
-
-### Step 4: Regenerate Client Code
-
-Run Maven to regenerate the client code:
-
-```bash
-mvn clean generate-sources
-```
-
-The preprocessing script will:
-- Process 181+ schema definitions (number may vary)
-- Process 38+ operation IDs (number may vary)
-- Output version-independent class names
-- Generate Java classes in `target/generated-sources/openapi/`
-
-### Step 5: Review API Changes
-
-Check if SLURM made any breaking changes in the new version:
-
-1. **New fields**: Added fields will be automatically available
-2. **Removed fields**: Will cause compilation errors that need to be addressed
-3. **Changed field types**: Will cause compilation errors that need to be fixed
-4. **New endpoints**: Will automatically become available as new methods
-5. **Deprecated endpoints**: May need to update code if removed
-
-### Step 6: Update Code if Needed
-
-If there are breaking changes, update the affected files:
-
-**Files Most Likely to Need Updates:**
-- `src/main/java/io/jenkins/plugins/slurm/client/SlurmClient.java` - Core client wrapper
-- `src/main/java/io/jenkins/plugins/slurm/SlurmJobBuilder.java` - Job construction
-- `src/main/java/io/jenkins/plugins/slurm/SlurmCloud.java` - Job submission
-- `src/main/java/io/jenkins/plugins/slurm/SlurmLauncher.java` - Agent launching
-
-### Step 7: Test
-
-1. **Compilation test**:
    ```bash
-   mvn compile
+   slurmrestd --generate-openapi-spec -s slurmctld,slurmdbd -d v0.0.46 > slurm-v0.0.46.json
    ```
 
-2. **Unit tests**:
+2. Copy it to `src/main/openapi/slurm-v0.0.46.json`.
+
+3. Add the constant to `SlurmApiVersion`, at the top (the order is newest first), with the Slurm
+   releases that add and remove it. Skip this if the constant already exists.
+
+4. Run the compatibility test:
+
    ```bash
-   mvn test
+   mvn test -Dtest=SlurmApiCompatibilityTest
    ```
 
-3. **Integration test**:
-   - Deploy to test Jenkins instance
-   - Configure SLURM cloud with new API version
-   - Test job submission and agent provisioning
+   If it passes, the shared client is safe for the new version. If it reports a missing or
+   changed field, either stop using that field, or handle the difference in `SlurmClient` or
+   `SlurmJobBuilder` for that version.
 
-### Step 8: Update Documentation
+5. Update the tables in this file and in `README.md`. The dropdown on the cloud page is built
+   from the enum, so it needs no change.
 
-Update version references in:
-- `README.md` - Note the supported SLURM version
-- `pom.xml` - Update any version comments
-- This document - Add notes about version-specific considerations
+6. Test against a real cluster: Test Connection should show the new version, then run one build.
 
-## Version Compatibility
+## Removing a REST API version
 
-### SLURM API Versioning Policy
+Remove the constant from `SlurmApiVersion` and delete its spec. A cloud that was pinned to the
+removed version falls back to auto-detect and logs a warning.
 
-According to SLURM documentation:
-- API versions are **forward compatible** within support window
-- Example: v0.0.38 added in Slurm-22.05, usable until Slurm-24.05
-- New features only appear in newer versions
-- Security fixes backported to supported versions
+If the removed version is the reference, move the reference first (next section).
 
-### Plugin Version Support
+## Changing the reference spec
 
-This plugin currently supports:
-- **Current**: SLURM v0.0.42 (Slurm 24.x)
-- **Upgrade path**: Can upgrade to any newer v0.0.4x or v0.0.5x version
-- **Breaking changes**: Rare, but possible between major version increments
+Do this when the plugin needs a field that only exists in a newer version, or before removing the
+current reference version.
+
+1. Point `SlurmApiVersion.REFERENCE` at the new version.
+2. Regenerate the client spec (the only step that needs Python, and only on a developer machine):
+
+   ```bash
+   python scripts/preprocess-openapi-spec.py \
+       src/main/openapi/slurm-v0.0.44.json \
+       src/main/openapi/client/slurm-client.json
+   ```
+
+3. `mvn clean test`. Compile errors in `SlurmClient`, `SlurmJobBuilder` or the tests show where a
+   generated type changed. The compatibility test then shows which older versions differ from the
+   new reference.
 
 ## Troubleshooting
 
-### Compilation Errors After Upgrade
-
-**Problem**: Code won't compile after upgrading SLURM version
-
-**Solutions**:
-1. Check if SLURM removed or renamed fields you're using
-2. Review the SLURM release notes for breaking changes
-3. Use `git diff` to compare old vs. new generated API classes
-4. Update affected code to use new field names or methods
-
-### Missing Methods/Classes
-
-**Problem**: Getting "cannot find symbol" errors
-
-**Solutions**:
-1. Verify the preprocessing step completed successfully
-2. Check `target/generated-resources/openapi/slurm-processed.json` exists
-3. Ensure all version prefixes were removed from schema names
-4. Re-run `mvn generate-sources`
-
-### Runtime API Errors
-
-**Problem**: Plugin compiles but fails at runtime with API errors
-
-**Solutions**:
-1. Verify SLURM controller is running the matching version
-2. Check slurmrestd is serving the correct API version
-3. Test API endpoints directly with curl:
-   ```bash
-   curl -H "X-SLURM-USER-TOKEN: your-token" \
-        http://your-controller:6820/slurm/v0.0.43/ping/
-   ```
-
-## Best Practices
-
-1. **Keep version-specific specs**: Maintain the original OpenAPI spec files with version numbers in the filename (e.g., `slurm-v0.0.42.json`, `slurm-v0.0.43.json`) for reference and rollback
-
-2. **Test in stages**: 
-   - First test preprocessing: `python scripts/preprocess-openapi-spec.py ...`
-   - Then test generation: `mvn generate-sources`
-   - Then test compilation: `mvn compile`
-   - Finally test functionality: Deploy and run
-
-3. **Document changes**: Keep notes about what changed between SLURM versions, especially if you had to modify plugin code
-
-4. **Backward compatibility**: The actual API endpoint paths still include the version (e.g., `/slurm/v0.0.42/job/submit`), so the plugin can only talk to the matching SLURM API version
-
-## Files Modified During Upgrade
-
-### Automatic Changes (from regeneration)
-- `target/generated-sources/openapi/**` - All generated client code
-
-### Manual Changes Required
-- `pom.xml` - Update input spec file path
-- Potentially `src/main/java/io/jenkins/plugins/slurm/**` - If API breaking changes occurred
-
-### No Changes Needed
-- `scripts/preprocess-openapi-spec.py` - Reusable across versions
-- Most plugin logic - Thanks to version-independent design
-
-## Example Upgrade Session
+**"serves none of the REST API versions this plugin supports"**: the server answered 404 on the
+ping of every supported version. Either the URL is wrong (it should be the slurmrestd base URL,
+without `/slurm`), or the cluster is newer or older than this plugin release supports. Check what
+the server serves:
 
 ```bash
-# 1. Get new spec from SLURM controller
-slurmrestd --generate-openapi-spec -s slurmctld,slurmdbd -d v0.0.43 > slurm-v0.0.43.json
-
-# 2. Copy to project
-cp slurm-v0.0.43.json /path/to/slurm-plugin/src/main/resources/openapi/
-
-# 3. Update pom.xml (edit manually)
-#    Change: slurm-v0.0.42.json → slurm-v0.0.43.json
-
-# 4. Test preprocessing
-python scripts/preprocess-openapi-spec.py \
-    src/main/resources/openapi/slurm-v0.0.43.json \
-    target/generated-resources/openapi/slurm-processed.json
-
-# 5. Regenerate and compile
-mvn clean generate-sources
-mvn compile
-
-# 6. Run tests
-mvn test
-
-# 7. Build plugin
-mvn package
-
-# 8. Deploy and test in Jenkins
+curl -s -H "X-SLURM-USER-TOKEN: $SLURM_JWT" http://controller:6820/openapi/v3 | grep -o '/slurm/v[0-9.]*/ping' | sort -u
 ```
 
-## Additional Resources
-
-- [SLURM REST API Documentation](https://slurm.schedmd.com/rest_api.html)
-- [OpenAPI Generator Documentation](https://openapi-generator.tech)
-- [Plugin README](../README.md)
-- [Quick Start Guide](QUICK_START.md)
+**A build works on one version and fails on another**: pin the cloud to the working version with
+**REST API version**, then compare the two specs for the field involved and add it to the
+`FIELDS` list in `SlurmApiCompatibilityTest`.

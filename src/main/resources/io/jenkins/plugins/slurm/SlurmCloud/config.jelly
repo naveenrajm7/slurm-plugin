@@ -16,6 +16,10 @@
       <f:select />
     </f:entry>
     
+    <f:entry title="REST API version" field="apiVersion">
+      <f:select />
+    </f:entry>
+
     <f:entry title="Default Partition" field="defaultPartition"
              description="Default Slurm partition to submit jobs to (optional)">
       <f:textbox />
@@ -40,7 +44,7 @@
       <f:checkbox />
     </f:entry>
     
-    <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId" />
+    <f:validateButton title="Test Connection" progress="Testing..." method="testConnection" with="slurmRestApiUrl,credentialsId,apiVersion" />
     
   </f:section>
 

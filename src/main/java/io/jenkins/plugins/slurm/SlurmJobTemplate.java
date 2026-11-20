@@ -40,7 +40,7 @@ import org.kohsuke.stapler.interceptor.RequirePOST;
  * from the REST API, allowing users to define different job configurations for different
  * build requirements.
  *
- * The template structure follows Slurm's v0.0.42_job_desc_msg to minimize processing
+ * The template structure follows the Slurm REST job_desc_msg to minimize processing
  * and allow future code-based template definitions to match the API structure.
  */
 public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> {
@@ -57,7 +57,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     private boolean runOnce; // If true, agent terminates after one build (default: true)
     private boolean keepJobOnFailure; // If true, don't cancel Slurm job when build fails (for debugging)
 
-    // Core Slurm job submission fields (maps to v0.0.42_job_desc_msg)
+    // Core Slurm job submission fields (maps to the Slurm REST job_desc_msg)
     @JsonProperty("partition")
     private String partition; // partition: which Slurm partition to use
 
@@ -379,7 +379,7 @@ public class SlurmJobTemplate extends AbstractDescribableImpl<SlurmJobTemplate> 
     }
 
     // ====================
-    // Slurm Job Submission Fields (maps to v0.0.42_job_desc_msg)
+    // Slurm Job Submission Fields (maps to the Slurm REST job_desc_msg)
     // ====================
 
     public String getPartition() {

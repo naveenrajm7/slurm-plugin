@@ -2,12 +2,12 @@
 
 ## Cursor Cloud specific instructions
 
-This repository is a single **Maven-based Jenkins plugin** (the Slurm plugin). There is no database, frontend, or `docker-compose` — building, testing, and running the dev instance only need JDK + Maven + Python.
+This repository is a single **Maven-based Jenkins plugin** (the Slurm plugin). There is no database, frontend, or `docker-compose` — building, testing, and running the dev instance only need JDK + Maven.
 
 ### Toolchain notes (already provisioned on the VM)
 - **JDK 21** and **Maven 3.9.x** are used. The Jenkins parent POM (`plugin:5.21`) requires **Maven >= 3.9**; the distro `apt` Maven (3.8.x) is too old, so a 3.9.x is installed at `/opt/maven` and wired via `update-alternatives` (`mvn` resolves to it).
-- The build's `generate-sources` phase invokes `python` (not `python3`) via `exec-maven-plugin` to run `scripts/preprocess-openapi-spec.py`. `python-is-python3` is installed so `python` resolves to Python 3. Without a `python` on PATH, `mvn compile/test/package` fails early.
-- The build auto-generates a Slurm REST API client from `src/main/resources/openapi/slurm-v0.0.42.json` into `target/generated-sources/`. A `mvn clean` wipes it; it is regenerated on the next build.
+- The build does not need Python. `scripts/preprocess-openapi-spec.py` is run by hand only when the reference OpenAPI spec changes (see `docs/SLURM_VERSION_UPGRADE_GUIDE.md`).
+- The build auto-generates a Slurm REST API client from `src/main/openapi/client/slurm-client.json` into `target/generated-sources/`. A `mvn clean` wipes it; it is regenerated on the next build.
 
 ### Build / test / lint / run (standard commands; see README.md and CLAUDE.md for the full list)
 - Build the plugin: `mvn -ntp clean package` → produces `target/slurm.hpi` (also runs the 43 unit tests).

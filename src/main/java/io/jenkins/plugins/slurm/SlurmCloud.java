@@ -21,6 +21,7 @@ import hudson.util.FormValidation;
 import hudson.util.ListBoxModel;
 import hudson.util.Secret;
 import io.jenkins.plugins.slurm.client.ApiException;
+import io.jenkins.plugins.slurm.client.SlurmApiVersion;
 import io.jenkins.plugins.slurm.client.SlurmClient;
 import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import io.jenkins.plugins.slurm.client.SlurmPingInfo;
@@ -74,6 +75,13 @@ public class SlurmCloud extends AbstractCloudImpl {
     private final int maxAgents;
     private final int agentTimeoutMinutes;
     private String jenkinsUrl; // Optional - if not set, will auto-detect
+
+    /**
+     * Slurm REST API version to use, as a path segment such as {@code v0.0.44}. Null means the
+     * client picks the newest supported version the server answers on.
+     */
+    private String apiVersion;
+
     private List<SlurmJobTemplate> jobTemplates;
     private boolean usageRestricted = false;
     private AgentLaunchConfig agent;
@@ -155,6 +163,42 @@ public class SlurmCloud extends AbstractCloudImpl {
     @DataBoundSetter
     public void setJenkinsUrl(String jenkinsUrl) {
         this.jenkinsUrl = jenkinsUrl;
+    }
+
+    /**
+     * @return the configured REST API version path segment, or {@code null} for auto-detect
+     */
+    @CheckForNull
+    public String getApiVersion() {
+        return apiVersion;
+    }
+
+    /**
+     * @param apiVersion a supported version such as {@code v0.0.44}; blank selects auto-detect
+     * @throws IllegalArgumentException for a version this plugin does not support
+     */
+    @DataBoundSetter
+    public void setApiVersion(@CheckForNull String apiVersion) {
+        String trimmed = hudson.Util.fixEmptyAndTrim(apiVersion);
+        if (trimmed != null && SlurmApiVersion.fromWireName(trimmed) == null) {
+            throw new IllegalArgumentException("Unsupported Slurm REST API version '" + trimmed + "'. Supported: "
+                    + SlurmApiVersion.supportedWireNames() + ", or leave empty to auto-detect.");
+        }
+        this.apiVersion = trimmed;
+    }
+
+    /**
+     * The configured version as an enum. A saved value this plugin release no longer supports is
+     * treated as auto-detect, so an old configuration still loads and connects.
+     */
+    @CheckForNull
+    SlurmApiVersion getConfiguredApiVersion() {
+        SlurmApiVersion version = SlurmApiVersion.fromWireName(apiVersion);
+        if (version == null && apiVersion != null) {
+            LOGGER.warning("Slurm cloud " + name + ": configured REST API version " + apiVersion
+                    + " is not supported by this plugin release; auto-detecting instead");
+        }
+        return version;
     }
 
     public List<SlurmJobTemplate> getJobTemplates() {
@@ -1281,6 +1325,19 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
         }
 
+        /** Auto-detect plus every REST API version this plugin release supports, newest first. */
+        public ListBoxModel doFillApiVersionItems() {
+            ListBoxModel items = new ListBoxModel();
+            items.add("Auto-detect (newest version the server serves)", "");
+            for (SlurmApiVersion version : SlurmApiVersion.newestFirst()) {
+                items.add(
+                        version.getWireName() + " (Slurm " + version.getAddedIn() + " and later, removed in "
+                                + version.getRemovedIn() + ")",
+                        version.getWireName());
+            }
+            return items;
+        }
+
         public ListBoxModel doFillCredentialsIdItems(@AncestorInPath Item item) {
             StandardListBoxModel result = new StandardListBoxModel();
             if (item == null) {
@@ -1305,11 +1362,19 @@ public class SlurmCloud extends AbstractCloudImpl {
         @RequirePOST
         public FormValidation doTestConnection(
                 @QueryParameter("slurmRestApiUrl") String slurmRestApiUrl,
-                @QueryParameter("credentialsId") String credentialsId) {
+                @QueryParameter("credentialsId") String credentialsId,
+                @QueryParameter("apiVersion") String apiVersion) {
             Jenkins.get().checkPermission(Jenkins.MANAGE);
 
             if (slurmRestApiUrl == null || slurmRestApiUrl.trim().isEmpty()) {
                 return FormValidation.error("Slurm REST API URL is required");
+            }
+
+            String requestedVersion = hudson.Util.fixEmptyAndTrim(apiVersion);
+            SlurmApiVersion configuredVersion = SlurmApiVersion.fromWireName(requestedVersion);
+            if (requestedVersion != null && configuredVersion == null) {
+                return FormValidation.error("Unsupported Slurm REST API version '" + requestedVersion + "'. Supported: "
+                        + SlurmApiVersion.supportedWireNames());
             }
 
             try {
@@ -1320,7 +1385,7 @@ public class SlurmCloud extends AbstractCloudImpl {
                 }
 
                 // Test connection using ping endpoint
-                String pingResult = testSlurmConnection(slurmRestApiUrl, credentialsId);
+                String pingResult = testSlurmConnection(slurmRestApiUrl, credentialsId, configuredVersion);
                 return FormValidation.ok(pingResult);
 
             } catch (java.net.MalformedURLException e) {
@@ -1334,7 +1399,8 @@ public class SlurmCloud extends AbstractCloudImpl {
          * Tests the connection to Slurm REST API using the ping endpoint with OpenAPI client.
          * Validates both REST API connectivity and JWT token authentication.
          */
-        private String testSlurmConnection(String apiUrl, String credentialsId) throws Exception {
+        private String testSlurmConnection(
+                String apiUrl, String credentialsId, @CheckForNull SlurmApiVersion configuredVersion) throws Exception {
             // Normalize API URL - ensure it doesn't end with slash
             String baseUrl = apiUrl.replaceAll("/+$", "");
 
@@ -1347,14 +1413,28 @@ public class SlurmCloud extends AbstractCloudImpl {
             }
 
             try {
-                SlurmClient client = new SlurmClient(baseUrl, authToken);
+                SlurmClient client = new SlurmClient(baseUrl, authToken, configuredVersion);
+
+                // Resolve the REST API version first: a server that serves none of the supported
+                // versions, or a rejected token, is reported with its own message.
+                SlurmApiVersion version;
+                try {
+                    version = client.getApiVersion();
+                } catch (ApiException e) {
+                    if (e.getCode() == 401 || e.getCode() == 403) {
+                        throw new Exception("slurmrestd rejected the token (HTTP " + e.getCode()
+                                + "). Please verify your JWT token credentials.");
+                    }
+                    throw e;
+                }
 
                 // Test ping and get detailed controller information
                 SlurmPingInfo slurmInfo = client.getSlurmInfo();
 
                 if (slurmInfo == null) {
-                    throw new Exception(
-                            "Ping failed - no response from Slurm REST API. Check if slurmrestd is running.");
+                    throw new Exception("Ping failed - no response from Slurm REST API on " + version
+                            + ". Check if slurmrestd is running"
+                            + (configuredVersion != null ? " and serves that API version." : "."));
                 }
 
                 // Check if controller is actually responding
@@ -1421,6 +1501,14 @@ public class SlurmCloud extends AbstractCloudImpl {
                             .append("\n");
                 }
 
+                statusMsg
+                        .append("REST API version: ")
+                        .append(version)
+                        .append(configuredVersion != null ? " (configured" : " (auto-detected")
+                        .append("; Slurm stops serving it in ")
+                        .append(version.getRemovedIn())
+                        .append(")\n");
+
                 statusMsg.append("\nAPI URL: ").append(baseUrl);
                 statusMsg.append("\nAuthentication: ✓ Valid JWT token");
 
@@ -1431,9 +1519,12 @@ public class SlurmCloud extends AbstractCloudImpl {
                 LOGGER.warning("Slurm connection test failed: " + e.getMessage());
 
                 // Re-throw with better context if not already formatted
-                if (e.getMessage().contains("controller is not responding")
-                        || e.getMessage().contains("no response from Slurm REST API")
-                        || e.getMessage().contains("No authentication token")) {
+                if (e.getMessage() != null
+                        && (e.getMessage().contains("controller is not responding")
+                                || e.getMessage().contains("no response from Slurm REST API")
+                                || e.getMessage().contains("No authentication token")
+                                || e.getMessage().contains("rejected the token")
+                                || e.getMessage().contains("serves none of the REST API versions"))) {
                     throw e;
                 }
 

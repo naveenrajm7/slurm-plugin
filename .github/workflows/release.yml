@@ -34,13 +34,8 @@ jobs:
           java-version: '21'
           cache: maven
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
       - name: Build plugin
-        run: mvn --batch-mode -ntp clean package
+        run: mvn --batch-mode -ntp -s .github/maven-settings.xml clean package
 
       - name: Prepare release artifact
         run: cp target/slurm.hpi "target/slurm-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}.hpi"
