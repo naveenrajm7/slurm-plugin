@@ -48,6 +48,7 @@ class SlurmLaunchFailureTest {
             SlurmAgent agent = agent(cloud, "transient-agent", launcher);
             agent.trackProvisioningOwner(waiting.ownerA);
             j.jenkins.addNode(agent);
+            agent.toComputer().connect(false);
 
             awaitNodeGone(j, agent.getNodeName());
             assertTrue(cloud.submits.get() >= SlurmLauncher.SUBMIT_ATTEMPTS, "submits=" + cloud.submits.get());
@@ -156,6 +157,7 @@ class SlurmLaunchFailureTest {
             SlurmAgent agent = agent(cloud, "reject-agent", launcher);
             agent.trackProvisioningOwner(waiting.ownerA);
             j.jenkins.addNode(agent);
+            agent.toComputer().connect(false);
 
             awaitNodeGone(j, agent.getNodeName());
             assertTrue(cloud.submits.get() == 1, "a real HTTP 4xx must not be retried, submits=" + cloud.submits.get());
@@ -182,6 +184,7 @@ class SlurmLaunchFailureTest {
             SlurmAgent agent = agent(cloud, "pending-agent", launcher);
             agent.trackProvisioningOwner(waiting.ownerA);
             j.jenkins.addNode(agent);
+            agent.toComputer().connect(false);
 
             awaitNodeGone(j, agent.getNodeName());
             assertTrue(cloud.cancelled.contains("424200"), "cancelled=" + cloud.cancelled);
@@ -214,6 +217,7 @@ class SlurmLaunchFailureTest {
             SlurmAgent agent = agent(cloud, "running-agent", launcher);
             agent.trackProvisioningOwner(waiting.ownerA);
             j.jenkins.addNode(agent);
+            agent.toComputer().connect(false);
 
             awaitNodeGone(j, agent.getNodeName());
             assertTrue(polls.get() >= 2, "polls=" + polls.get());
@@ -248,10 +252,10 @@ class SlurmLaunchFailureTest {
     }
 
     private static SlurmAgent agent(RecordingCloud cloud, String name, SlurmLauncher launcher) throws Exception {
-        return SlurmTestHelper.createAgent(name, cloud.name, cloud.templateId, launcher);
+        return noopAgent(name, cloud, launcher);
     }
 
-    /** Does not auto-connect, so the test thread is the one that calls {@code launch()}. */
+    /** Tests start launch explicitly after node registration has finished. */
     private static SlurmAgent noopAgent(String name, RecordingCloud cloud, SlurmLauncher launcher) throws Exception {
         return new SlurmAgent(
                 name,
