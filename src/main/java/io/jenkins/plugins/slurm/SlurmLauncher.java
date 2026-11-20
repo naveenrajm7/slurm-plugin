@@ -1244,6 +1244,8 @@ public class SlurmLauncher extends JNLPLauncher {
             LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
         }
 
+        removeIfStillRegistered(agent);
+
         throw failure;
     }
 

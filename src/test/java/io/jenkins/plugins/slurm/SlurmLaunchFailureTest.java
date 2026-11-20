@@ -71,23 +71,52 @@ class SlurmLaunchFailureTest {
         template.setInstanceCap(1);
         cloud.submitFailure = new ApiException(new IOException("Invalid status line: \"HTTP/0.9 400 BAD REQUEST\""));
 
+        WaitingBuilds waiting = waitingBuilds(j);
+        try {
+            SlurmLauncher launcher = fastLauncher();
+            SlurmAgent agent = new ReSavingAgent("race-agent", cloud, launcher);
+            agent.trackProvisioningOwner(waiting.ownerA);
+            j.jenkins.addNode(agent);
+
+            SlurmProvisioningLimits limits = SlurmProvisioningLimits.get();
+            assertTrue(limits.isTemplateAtCapacity(cloud, template), "the saved-back node must count toward the cap");
+            assertEquals(1, limits.getTemplateCount(template.getId()));
+
+            SlaveComputer computer = (SlaveComputer) agent.toComputer();
+            assertNotNull(computer);
+            assertThrows(RuntimeException.class, () -> launcher.launch(computer, TaskListener.NULL));
+
+            assertNull(j.jenkins.getNode(agent.getNodeName()), "terminate-then-save must not leave the agent registered");
+            assertFalse(limits.isTemplateAtCapacity(cloud, template));
+            assertEquals(0, limits.getTemplateCount(template.getId()));
+            assertFalse(launcher.isLaunchSupported());
+            assertTrue(cloud.submits.get() >= SlurmLauncher.SUBMIT_ATTEMPTS);
+            assertTrue(cloud.cancelled.isEmpty(), "submit never returned a job id");
+        } finally {
+            waiting.close(j);
+        }
+    }
+
+    @Test
+    void surplus_resaveAfterTerminate_freesTheTemplateSlot(JenkinsRule j) throws Exception {
+        RecordingCloud cloud = cloud(j, "surplus-race-cloud");
+        SlurmJobTemplate template = cloud.getTemplateById(cloud.templateId);
+        template.setInstanceCap(1);
         SlurmLauncher launcher = fastLauncher();
-        SlurmAgent agent = new ReSavingAgent("race-agent", cloud, launcher);
+        SlurmAgent agent = new ReSavingAgent("surplus-race-agent", cloud, launcher);
         j.jenkins.addNode(agent);
 
         SlurmProvisioningLimits limits = SlurmProvisioningLimits.get();
-        assertTrue(limits.isTemplateAtCapacity(cloud, template), "the saved-back node must count toward the cap");
-        assertEquals(1, limits.getTemplateCount(template.getId()));
-
+        assertTrue(limits.isTemplateAtCapacity(cloud, template));
         SlaveComputer computer = (SlaveComputer) agent.toComputer();
         assertNotNull(computer);
         assertThrows(RuntimeException.class, () -> launcher.launch(computer, TaskListener.NULL));
 
-        assertNull(j.jenkins.getNode(agent.getNodeName()), "terminate-then-save must not leave the agent registered");
+        assertNull(j.jenkins.getNode(agent.getNodeName()), "surplus cleanup must remove a saved-back node");
         assertFalse(limits.isTemplateAtCapacity(cloud, template));
         assertEquals(0, limits.getTemplateCount(template.getId()));
+        assertEquals(0, cloud.submits.get(), "surplus agents must stop before submit");
         assertFalse(launcher.isLaunchSupported());
-        assertTrue(cloud.cancelled.isEmpty(), "submit never returned a job id");
     }
 
     @Test
