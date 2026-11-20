@@ -1056,15 +1056,15 @@ public class SlurmLauncher extends JNLPLauncher {
      * True when this agent should drop its Slurm job before it connects.
      *
      * <p>A claimed build that is still waiting keeps the agent. A claim that left the queue
-     * stops it. An agent that never claimed a build tries once more, then stops: Jenkins has
-     * no queued work for it, and waiting out the connect timeout is what leaves pending Slurm
-     * jobs behind after the queue is empty.
+     * stops it. An agent that never claimed a build tries once more, matching unlabeled work
+     * when the agent is NORMAL and labeled work against its full labels including its name.
+     * If that still finds nothing, the agent is surplus: waiting out the connect timeout is
+     * what leaves pending Slurm jobs behind after the queue is empty.
      */
     static boolean shouldStopWaitingForBuild(SlurmAgent agent) {
         Long queueItemId = agent.getProvisioningQueueItemId();
         if (queueItemId == null) {
-            JobUtils.ProvisioningOwner owner =
-                    JobUtils.claimProvisioningOwner(null, agent.getLabelString(), agent.getNodeName());
+            JobUtils.ProvisioningOwner owner = JobUtils.claimProvisioningOwner(agent);
             if (owner != null) {
                 agent.trackProvisioningOwner(owner);
                 return false;
