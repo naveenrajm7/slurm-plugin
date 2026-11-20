@@ -179,6 +179,11 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
             }
         }
 
+        /**
+         * Job ids Jenkins is actually using. An offline computer is not proof: it still counts
+         * toward the template cap, and treating it as live stops garbage collection from
+         * cancelling a job whose channel is already gone.
+         */
         @NonNull
         static Set<String> liveJobIdsForCloud(@NonNull String cloudName) {
             Set<String> liveJobIds = new HashSet<>();
@@ -190,11 +195,23 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
                 if (!Objects.equals(cloudName, agent.getCloudName())) {
                     continue;
                 }
-                if (agent.getSlurmJobId() != null) {
+                if (agent.getSlurmJobId() != null && protectsJob(agent)) {
                     liveJobIds.add(agent.getSlurmJobId());
                 }
             }
             return liveJobIds;
+        }
+
+        /** Online agents, and agents still inside {@code waitForAgentConnection}. */
+        static boolean protectsJob(@NonNull SlurmAgent agent) {
+            Computer computer = agent.toComputer();
+            if (computer == null) {
+                return false;
+            }
+            if (computer.isOnline()) {
+                return true;
+            }
+            return computer instanceof SlurmComputer && ((SlurmComputer) computer).isLaunching();
         }
 
         @Override

@@ -26,6 +26,14 @@ class SlurmLauncherTest {
     }
 
     @Test
+    void setProblem_disablesAnotherLaunch() {
+        SlurmLauncher launcher = new SlurmLauncher();
+        launcher.setProblem(new IOException("submit failed"));
+        assertTrue(launcher.isLaunchFailed());
+        assertFalse(launcher.isLaunchSupported());
+    }
+
+    @Test
     void getProblem_defaultsToNull() {
         SlurmLauncher launcher = new SlurmLauncher();
         assertEquals(null, launcher.getProblem());

@@ -26,3 +26,5 @@ work
 # E2E local config (hostnames, usernames, cluster URLs)
 scripts/e2e/config.env
 scripts/jenkins-instance/config.env
+# Jenkins instance harness (machine-specific scripts; not committed)
+scripts/jenkins-instance/
