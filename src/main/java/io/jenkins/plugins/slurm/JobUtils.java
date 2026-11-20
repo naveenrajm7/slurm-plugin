@@ -17,6 +17,7 @@ package io.jenkins.plugins.slurm;
 import edu.umd.cs.findbugs.annotations.CheckForNull;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Label;
+import hudson.model.Node;
 import hudson.model.Queue;
 import hudson.model.Run;
 import hudson.model.TaskListener;
@@ -179,8 +180,8 @@ public final class JobUtils {
      * Pairs {@code agentName} with one queued build for {@code provisionLabel}.
      *
      * <p>The oldest unclaimed item is taken so two agents planned for the same label watch
-     * different builds. Returns null when nothing is waiting; the launcher then keeps the
-     * agent-timeout path.
+     * different builds. Returns null when nothing is waiting. The launcher treats that as
+     * surplus and cancels the agent instead of waiting out the connect timeout.
      */
     @CheckForNull
     static ProvisioningOwner claimProvisioningOwner(
@@ -197,13 +198,56 @@ public final class JobUtils {
                         || !itemMatches(item, provisionLabel, templateLabelString)) {
                     continue;
                 }
-                PROVISIONING_CLAIMS.put(item.getId(), agentName);
-                Run<?, ?> run = runForQueueItem(item);
-                LOGGER.log(
-                        Level.FINE,
-                        () -> "Claimed queue item " + item.getId() + " for agent " + agentName
-                                + (run != null ? " (run " + run.getExternalizableId() + ")" : ""));
-                return new ProvisioningOwner(item.getId(), run);
+                return recordClaim(item, agentName);
+            }
+        }
+        return null;
+    }
+
+    @NonNull
+    private static ProvisioningOwner recordClaim(@NonNull Queue.Item item, @NonNull String agentName) {
+        PROVISIONING_CLAIMS.put(item.getId(), agentName);
+        Run<?, ?> run = runForQueueItem(item);
+        LOGGER.log(
+                Level.FINE,
+                () -> "Claimed queue item " + item.getId() + " for agent " + agentName
+                        + (run != null ? " (run " + run.getExternalizableId() + ")" : ""));
+        return new ProvisioningOwner(item.getId(), run);
+    }
+
+    /**
+     * True when this agent would be allowed to run the queued item.
+     *
+     * <p>Unlabeled work is accepted only in {@link Node.Mode#NORMAL}, which is the same rule
+     * {@link SlurmJobTemplateLabelFilter} uses. Labeled work uses the agent's full assigned
+     * labels, including its own name.
+     */
+    private static boolean agentCanTake(@NonNull SlurmAgent agent, @NonNull Queue.Item item) {
+        Label assigned = item.getAssignedLabel();
+        if (assigned == null) {
+            return agent.getMode() == Node.Mode.NORMAL;
+        }
+        return assigned.matches(agent.getAssignedLabels());
+    }
+
+    /**
+     * Pairs this agent with the oldest queued build it can actually run.
+     *
+     * <p>The label-only claim misses two cases the launcher has to get right before it treats
+     * the agent as surplus. A NORMAL agent can run an unlabeled {@code node} block. A labeled
+     * item is matched with {@link Node#getAssignedLabels()}, which includes the agent name, so
+     * {@code testcloud && !excluded-agent} is not reserved by {@code excluded-agent}.
+     */
+    @CheckForNull
+    static ProvisioningOwner claimProvisioningOwner(@NonNull SlurmAgent agent) {
+        synchronized (PROVISIONING_CLAIMS) {
+            Queue.Item[] items = Jenkins.get().getQueue().getItems();
+            Arrays.sort(items, Comparator.comparingLong(Queue.Item::getId));
+            for (Queue.Item item : items) {
+                if (PROVISIONING_CLAIMS.containsKey(item.getId()) || !agentCanTake(agent, item)) {
+                    continue;
+                }
+                return recordClaim(item, agent.getNodeName());
             }
         }
         return null;

@@ -121,6 +121,9 @@ class SlurmAgentNameCollisionTest {
                 for (SlurmAgent agent : created) {
                     awaitJobId(agent);
                 }
+                assertTrue(
+                        cloud.launchesFinished.await(30, TimeUnit.SECONDS),
+                        "both launchers must finish recording their cloud-stats lifecycle");
 
                 Set<String> jobIds = created.stream().map(SlurmAgent::getSlurmJobId).collect(Collectors.toSet());
                 assertEquals(2, jobIds.size(), "each launch submits its own Slurm job id");
@@ -229,6 +232,7 @@ class SlurmAgentNameCollisionTest {
     /** Cloud whose launcher records the agent instance {@code launch()} updated. */
     public static final class HoldingCloud extends SlurmCloud {
         final transient CountDownLatch gate = new CountDownLatch(1);
+        final transient CountDownLatch launchesFinished = new CountDownLatch(2);
         final transient ConcurrentMap<String, SlurmAgent> launchedByLaunch = new ConcurrentHashMap<>();
         final transient AtomicInteger nextJobId = new AtomicInteger(1000);
 
@@ -294,6 +298,7 @@ class SlurmAgentNameCollisionTest {
                     operationListener.onOnline(computer, listener);
                 }
             }
+            cloud.launchesFinished.countDown();
         }
     }
 }

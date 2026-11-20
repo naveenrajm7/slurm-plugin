@@ -123,12 +123,14 @@ class SlurmProvisioningAbortTest {
     }
 
     @Test
-    void stopForFinishedBuild_cancelsSlurmJobAndDeletesNode(JenkinsRule j) throws Exception {
+    void unclaimedAgent_cancelsSlurmJobAndDeletesNode(JenkinsRule j) throws Exception {
         RecordingCloud cloud = new RecordingCloud();
         j.jenkins.clouds.add(cloud);
         SlurmAgent agent = SlurmTestHelper.createStaticAgent("abort-agent", cloud.name, "template");
         agent.setSlurmJobId("68298173");
-        assertFalse(SlurmLauncher.shouldStopWaitingForBuild(agent));
+        assertTrue(
+                SlurmLauncher.shouldStopWaitingForBuild(agent),
+                "an agent with no queued build must not wait out the connect timeout");
 
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         TaskListener listener = new StreamTaskListener(output);
@@ -143,11 +145,14 @@ class SlurmProvisioningAbortTest {
                 () -> launcher.stopForFinishedBuild(computer, agent, cloud, "68298173", listener));
 
         assertTrue(failure.getMessage().contains("abort-agent"));
-        assertTrue(failure.getMessage().contains("Build finished"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("No queued build is waiting"), failure.getMessage());
+        assertTrue(failure.getMessage().contains("68298173"), failure.getMessage());
+        assertFalse(failure.getMessage().contains("Build finished"), failure.getMessage());
         assertTrue(cloud.cancelled.contains("68298173"));
         assertNull(j.jenkins.getNode("abort-agent"));
         String log = output.toString();
-        assertTrue(log.contains("[Slurm] Agent provisioning interrupted"), log);
+        assertTrue(log.contains("[Slurm] No queued build is waiting for agent abort-agent"), log);
+        assertFalse(log.contains("Agent provisioning interrupted"), log);
         assertTrue(log.contains("Canceled Slurm job: 68298173"), log);
         SlurmTestHelper.awaitLaunchThreadsSettled(j.jenkins);
     }

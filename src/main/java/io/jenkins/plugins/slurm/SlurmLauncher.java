@@ -1112,13 +1112,23 @@ public class SlurmLauncher extends JNLPLauncher {
     }
 
     /**
-     * True when the build this agent was provisioned for left the queue or finished
-     * before the agent connected.
+     * True when this agent should drop its Slurm job before it connects.
+     *
+     * <p>A claimed build that is still waiting keeps the agent. A claim that left the queue
+     * stops it. An agent that never claimed a build tries once more, matching unlabeled work
+     * when the agent is NORMAL and labeled work against its full labels including its name.
+     * If that still finds nothing, the agent is surplus: waiting out the connect timeout is
+     * what leaves pending Slurm jobs behind after the queue is empty.
      */
     static boolean shouldStopWaitingForBuild(SlurmAgent agent) {
         Long queueItemId = agent.getProvisioningQueueItemId();
         if (queueItemId == null) {
-            return false;
+            JobUtils.ProvisioningOwner owner = JobUtils.claimProvisioningOwner(agent);
+            if (owner != null) {
+                agent.trackProvisioningOwner(owner);
+                return false;
+            }
+            return true;
         }
         return JobUtils.provisioningOwnerReleased(queueItemId, agent.getProvisioningRun());
     }
@@ -1135,9 +1145,12 @@ public class SlurmLauncher extends JNLPLauncher {
             SlurmComputer computer, SlurmAgent agent, SlurmCloud cloud, String jobId, TaskListener listener)
             throws IOException {
         Long queueItemId = agent.getProvisioningQueueItemId();
-        JobUtils.ProvisioningRelease release = queueItemId == null
-                ? JobUtils.ProvisioningRelease.BUILD_FINISHED
-                : JobUtils.classifyProvisioningRelease(queueItemId, agent.getProvisioningRun());
+        if (queueItemId == null) {
+            stopUnclaimedSurplus(computer, agent, cloud, jobId, listener);
+            return;
+        }
+        JobUtils.ProvisioningRelease release =
+                JobUtils.classifyProvisioningRelease(queueItemId, agent.getProvisioningRun());
         boolean handoff = release == JobUtils.ProvisioningRelease.TAKEN_BY_ANOTHER_EXECUTOR;
         String message = handoff ? handoffMessage(jobId) : finishedBeforeConnectMessage(agent);
 
@@ -1192,6 +1205,55 @@ public class SlurmLauncher extends JNLPLauncher {
         removeIfStillRegistered(agent);
 
         throw failure;
+    }
+
+    /**
+     * Cancels a Slurm job that no queued build is waiting on.
+     *
+     * <p>This is not a launch failure. The agent never claimed a build, so the queue item that
+     * caused provisioning — if it still exists — belongs to another agent and must keep running.
+     */
+    private void stopUnclaimedSurplus(
+            SlurmComputer computer, SlurmAgent agent, SlurmCloud cloud, String jobId, TaskListener listener)
+            throws IOException {
+        String message = surplusMessage(agent, jobId);
+        TaskListener console = consoleListener(agent, listener);
+        console.getLogger().println("[Slurm] " + message);
+        if (console != listener) {
+            listener.getLogger().println("[Slurm] " + message);
+        }
+        SlurmCloudStats.attachLaunchingOk(agent, message);
+
+        ProvisioningOwnerGoneException failure = new ProvisioningOwnerGoneException(message);
+        setProblem(failure);
+        LOGGER.info(message);
+
+        if (jobId != null && cloud != null) {
+            cloud.cancelJob(jobId, console);
+            SlurmCloudStats.attachLaunchingOk(agent, "Slurm job " + jobId + " cancelled");
+        }
+
+        if (computer != null) {
+            computer.setTemporarilyOffline(true, new OfflineCause.UserCause(null, message));
+        }
+
+        try {
+            agent.terminate();
+            LOGGER.info("Terminated surplus agent " + agent.getNodeName());
+        } catch (IOException | InterruptedException removeEx) {
+            LOGGER.log(Level.WARNING, "Failed to terminate node " + agent.getNodeName(), removeEx);
+        }
+
+        removeIfStillRegistered(agent);
+
+        throw failure;
+    }
+
+    private static String surplusMessage(SlurmAgent agent, @CheckForNull String jobId) {
+        if (jobId != null) {
+            return "No queued build is waiting for agent " + agent.getNodeName() + "; cancelling Slurm job " + jobId;
+        }
+        return "No queued build is waiting for agent " + agent.getNodeName() + "; no Slurm job was submitted";
     }
 
     private static String finishedBeforeConnectMessage(SlurmAgent agent) {
