@@ -33,6 +33,8 @@ import jenkins.util.SystemProperties;
  * {@code Jenkins.getNodes()} and keeps counting toward the template instance cap until something
  * deletes the node. {@code terminate()} is supposed to do that, but a node save can put the agent
  * back, and {@code OnceRetentionStrategy} will not retry a launcher that has already failed.
+ * A job that is still PENDING is left running. A permanently failed launch is removed after the
+ * offline grace even if that job is still queued. {@code keepJobOnFailure} keeps a running allocation.
  */
 @Extension
 public class SlurmReaper extends AsyncPeriodicWork {
@@ -117,9 +119,11 @@ public class SlurmReaper extends AsyncPeriodicWork {
 
         SlurmCloud cloud = cloudOrNull(agent);
         JobLookup lookup = lookupJob(cloud, jobId);
-        if (lookup.pending || lookup.unknown) {
-            // Queued work, or a status we could not read. Cancelling here would drop a job
-            // that is still waiting for a machine. The in-memory launching flag is not required.
+        if (lookup.unknown || (lookup.pending && !launchFailed)) {
+            // A launch that is still waiting for a machine, or a status we could not read.
+            // Cancelling here would drop a job that may still be queued. A launch that has
+            // already failed permanently is not this case: it falls through and is removed
+            // after the offline grace so it cannot hold a template slot indefinitely.
             OFFLINE_SINCE.remove(agent.getNodeName());
             return;
         }
@@ -128,16 +132,27 @@ public class SlurmReaper extends AsyncPeriodicWork {
             return;
         }
 
-        // RUNNING, or another non-terminal state that already has a node.
-        if (launchFailed) {
-            removeNode(jenkins, agent, cloud, true);
+        // RUNNING, or a PENDING job whose launch already failed. Never cancel a job that
+        // is still queued. A running allocation is kept when the template says so.
+        boolean cancelJob = !lookup.pending && !keepsJobOnFailure(agent, cloud);
+        if (launchFailed && !lookup.pending) {
+            removeNode(jenkins, agent, cloud, cancelJob);
             return;
         }
         long offlineSince = OFFLINE_SINCE.computeIfAbsent(agent.getNodeName(), name -> nowEpochMs);
         if (nowEpochMs - offlineSince < offlineGraceMs) {
             return;
         }
-        removeNode(jenkins, agent, cloud, true);
+        removeNode(jenkins, agent, cloud, cancelJob);
+    }
+
+    /** Template asked to leave the Slurm allocation up for debugging. The Jenkins node is still removed. */
+    private static boolean keepsJobOnFailure(@NonNull SlurmAgent agent, @CheckForNull SlurmCloud cloud) {
+        if (cloud == null) {
+            return false;
+        }
+        SlurmJobTemplate template = cloud.getTemplateById(agent.getTemplateId());
+        return template != null && template.isKeepJobOnFailure();
     }
 
     private static void removeNode(

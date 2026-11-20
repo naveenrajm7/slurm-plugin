@@ -59,15 +59,52 @@ class SlurmReaperTest {
         SlurmAgent agent = agent(cloud, "still-queued");
         agent.setSlurmJobId("58");
         j.jenkins.addNode(agent);
-        // The launch thread is gone, which is what a controller restart leaves behind.
-        ((SlurmLauncher) ((SlaveComputer) agent.toComputer()).getLauncher())
-                .setProblem(new java.io.IOException("launch thread gone"));
+        agent.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, "waiting for a node"));
 
         long now = 1_000_000L;
         SlurmReaper.reap(now, 60_000);
         SlurmReaper.reap(now + 120_000, 60_000);
         assertNotNull(j.jenkins.getNode(agent.getNodeName()));
         assertTrue(cloud.cancelled.isEmpty(), "a PENDING job is waiting for a machine");
+    }
+
+    @Test
+    void failedLaunchWithPendingJob_isRemovedAfterGraceWithoutCancel(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-failed-pending");
+        cloud.status = new SlurmJobStatus("59", "PENDING", "JobHeldUser", null);
+        SlurmAgent agent = agent(cloud, "abandoned-queue");
+        agent.setSlurmJobId("59");
+        j.jenkins.addNode(agent);
+        ((SlurmLauncher) ((SlaveComputer) agent.toComputer()).getLauncher())
+                .setProblem(new java.io.IOException("cancel failed"));
+
+        long now = 1_000_000L;
+        SlurmReaper.reap(now, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()), "inside the grace period the agent stays");
+        assertTrue(cloud.cancelled.isEmpty());
+
+        SlurmReaper.reap(now + 60_000, 60_000);
+        assertNull(j.jenkins.getNode(agent.getNodeName()), "a permanently failed launch must release its slot");
+        assertTrue(cloud.cancelled.isEmpty(), "a PENDING job is not cancelled");
+    }
+
+    @Test
+    void runningJob_keepJobOnFailure_isRemovedWithoutCancel(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-keep");
+        cloud.getTemplateById(cloud.templateId).setKeepJobOnFailure(true);
+        cloud.status = new SlurmJobStatus("60", "RUNNING", null, "nid1");
+        SlurmAgent agent = agent(cloud, "debug-running");
+        agent.setSlurmJobId("60");
+        j.jenkins.addNode(agent);
+        agent.toComputer().setTemporarilyOffline(true, new OfflineCause.UserCause(null, "channel gone"));
+
+        long now = 1_000_000L;
+        SlurmReaper.reap(now, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()));
+
+        SlurmReaper.reap(now + 60_000, 60_000);
+        assertNull(j.jenkins.getNode(agent.getNodeName()));
+        assertTrue(cloud.cancelled.isEmpty(), "keepJobOnFailure leaves the allocation running");
     }
 
     @Test
