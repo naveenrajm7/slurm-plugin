@@ -14,6 +14,7 @@ import io.jenkins.plugins.slurm.client.ApiException;
 import io.jenkins.plugins.slurm.client.SlurmClient;
 import io.jenkins.plugins.slurm.client.SlurmJobStatus;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
@@ -35,6 +36,12 @@ import jenkins.util.SystemProperties;
  * back, and {@code OnceRetentionStrategy} will not retry a launcher that has already failed.
  * A job that is still PENDING is left running. A permanently failed launch is removed after the
  * offline grace even if that job is still queued. {@code keepJobOnFailure} keeps a running allocation.
+ *
+ * <p>Like the Kubernetes reaper, this reacts to the backing resource and the remoting channel, not
+ * to the Jenkins offline flag. A computer that is still connected but temporarily offline (the
+ * disk space monitor, or an admin marking it offline) only stops taking new work: its running build
+ * finishes and the retention strategy terminates the agent afterwards. A RUNNING job is never
+ * cancelled while a build still holds one of the agent's executors.
  */
 @Extension
 public class SlurmReaper extends AsyncPeriodicWork {
@@ -46,11 +53,11 @@ public class SlurmReaper extends AsyncPeriodicWork {
      * A job that is still PENDING is waiting for a machine and is never reaped.
      * Launch that is still inside {@code waitForAgentConnection} is not subject to this.
      */
-    static final long OFFLINE_GRACE_MS = SystemProperties.getLong(
-            SlurmReaper.class.getName() + ".offlineGraceMs", TimeUnit.SECONDS.toMillis(60));
+    static final long OFFLINE_GRACE_MS =
+            SystemProperties.getLong(SlurmReaper.class.getName() + ".offlineGraceMs", TimeUnit.SECONDS.toMillis(60));
 
-    private static final long RECURRENCE_SECONDS = SystemProperties.getLong(
-            SlurmReaper.class.getName() + ".recurrencePeriod", Main.isUnitTest ? 3600L : 60L);
+    private static final long RECURRENCE_SECONDS =
+            SystemProperties.getLong(SlurmReaper.class.getName() + ".recurrencePeriod", Main.isUnitTest ? 3600L : 60L);
 
     /** First time a computer was observed offline, keyed by node name. */
     private static final ConcurrentMap<String, Long> OFFLINE_SINCE = new ConcurrentHashMap<>();
@@ -98,15 +105,14 @@ public class SlurmReaper extends AsyncPeriodicWork {
         if (!(computer instanceof SlurmComputer slurmComputer)) {
             return;
         }
-        if (slurmComputer.isOnline() || slurmComputer.isLaunching()) {
+        if (isConnected(slurmComputer) || slurmComputer.isLaunching()) {
             OFFLINE_SINCE.remove(agent.getNodeName());
             return;
         }
 
         String jobId = agent.getSlurmJobId();
         SlurmLauncher launcher = slurmLauncher(slurmComputer);
-        boolean launchFailed =
-                launcher != null && (launcher.isLaunchFailed() || launcher.getProblem() != null);
+        boolean launchFailed = launcher != null && (launcher.isLaunchFailed() || launcher.getProblem() != null);
         boolean offlineWithCause = slurmComputer.getOfflineCause() != null;
 
         if (jobId == null || jobId.isBlank()) {
@@ -134,6 +140,11 @@ public class SlurmReaper extends AsyncPeriodicWork {
 
         // RUNNING, or a PENDING job whose launch already failed. Never cancel a job that
         // is still queued. A running allocation is kept when the template says so.
+        if (!lookup.pending && !slurmComputer.isIdle()) {
+            // A build still holds an executor. The grace period starts once it has ended.
+            OFFLINE_SINCE.remove(agent.getNodeName());
+            return;
+        }
         boolean cancelJob = !lookup.pending && !keepsJobOnFailure(agent, cloud);
         if (launchFailed && !lookup.pending) {
             removeNode(jenkins, agent, cloud, cancelJob);
@@ -146,6 +157,14 @@ public class SlurmReaper extends AsyncPeriodicWork {
         removeNode(jenkins, agent, cloud, cancelJob);
     }
 
+    /**
+     * Whether the agent still has a remoting channel. {@code isOnline()} is false for a connected
+     * computer that is only temporarily offline, so it cannot tell a dead agent from a busy one.
+     */
+    static boolean isConnected(@NonNull Computer computer) {
+        return computer.getChannel() != null;
+    }
+
     /** Template asked to leave the Slurm allocation up for debugging. The Jenkins node is still removed. */
     private static boolean keepsJobOnFailure(@NonNull SlurmAgent agent, @CheckForNull SlurmCloud cloud) {
         if (cloud == null) {
@@ -156,14 +175,17 @@ public class SlurmReaper extends AsyncPeriodicWork {
     }
 
     private static void removeNode(
-            @NonNull Jenkins jenkins,
-            @NonNull SlurmAgent agent,
-            @CheckForNull SlurmCloud cloud,
-            boolean cancelJob) {
+            @NonNull Jenkins jenkins, @NonNull SlurmAgent agent, @CheckForNull SlurmCloud cloud, boolean cancelJob) {
         String jobId = agent.getSlurmJobId();
+        String reason = reapReason(agent);
         if (cancelJob && jobId != null && cloud != null) {
-            LOGGER.info("Cancelling Slurm job " + jobId + " for stale agent " + agent.getNodeName());
-            cloud.cancelJob(jobId, TaskListener.NULL);
+            String message =
+                    "Cancelling Slurm job " + jobId + " for stale agent " + agent.getNodeName() + ": " + reason;
+            LOGGER.info(message);
+            TaskListener buildListener = agent.getRunListener();
+            buildListener.getLogger().println("[Slurm] " + message);
+            agentLog(agent).println("[Slurm] " + message);
+            cloud.cancelJob(jobId, buildListener);
         }
         Node registered = jenkins.getNode(agent.getNodeName());
         if (registered == null) {
@@ -172,12 +194,32 @@ public class SlurmReaper extends AsyncPeriodicWork {
         }
         try {
             LOGGER.info("Removing stale Slurm agent " + agent.getNodeName()
-                    + (jobId != null ? " (job " + jobId + ")" : ""));
+                    + (jobId != null ? " (job " + jobId + ")" : "") + ": " + reason);
             jenkins.removeNode(registered);
         } catch (IOException e) {
             LOGGER.log(Level.WARNING, "Failed to remove Slurm agent " + agent.getNodeName(), e);
         }
         OFFLINE_SINCE.remove(agent.getNodeName());
+    }
+
+    @NonNull
+    private static String reapReason(@NonNull SlurmAgent agent) {
+        Computer computer = agent.toComputer();
+        if (computer == null) {
+            return "no computer";
+        }
+        String state = isConnected(computer) ? "connected" : "disconnected";
+        String cause = computer.getOfflineCauseReason();
+        return cause == null || cause.isBlank() ? state : state + ", offline cause: " + cause;
+    }
+
+    @NonNull
+    private static PrintStream agentLog(@NonNull SlurmAgent agent) {
+        Computer computer = agent.toComputer();
+        if (computer instanceof SlaveComputer slaveComputer) {
+            return slaveComputer.getListener().getLogger();
+        }
+        return TaskListener.NULL.getLogger();
     }
 
     @CheckForNull

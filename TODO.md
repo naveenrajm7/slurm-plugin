@@ -39,6 +39,12 @@ Issues and items to revisit, discovered during AI-assisted development and valid
 
 ## Done
 
+- [x] **Reaper cancelled RUNNING jobs on temporarily offline agents (issue #68)** (`fix/issue-68-reaper-temporarily-offline`)
+  - `SlurmReaper` and `SlurmGarbageCollection` decide on the remoting channel, not `isOnline()`. A connected agent that the disk space monitor (or an admin) marked temporarily offline keeps its Slurm job; the build finishes and run-once retention ends the agent
+  - A RUNNING job is not cancelled while a build still holds an executor. The offline grace starts once the agent is idle
+  - A reaper cancel logs the offline cause to the controller log, the agent log, and the build console when a build listener is known
+  - Live check: `scripts/jenkins-instance/run-disk-space-offline-scenario.ps1`
+
 - [x] **Template UI minimum time limit (issue #60)** (`fix/issue-60-minimum-time-limit`)
   - Template form has Minimum Time Limit (minutes) beside Time Limit. Empty or 0 is not sent. The value must be ≤ the time limit
   - Help text notes that Slurm may start the job in a shorter slot and kill it (exit 143, "Connection was broken")

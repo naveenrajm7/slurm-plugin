@@ -108,7 +108,7 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
 
         static void refreshLiveAgents() {
             for (Computer computer : Jenkins.get().getComputers()) {
-                if (!(computer instanceof SlurmComputer) || !computer.isOnline()) {
+                if (!(computer instanceof SlurmComputer) || !SlurmReaper.isConnected(computer)) {
                     continue;
                 }
                 SlurmAgent agent = ((SlurmComputer) computer).getNode();
@@ -180,7 +180,7 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
         }
 
         /**
-         * Job ids Jenkins is actually using. An offline computer is not proof: it still counts
+         * Job ids Jenkins is actually using. A disconnected, idle computer is not proof: it still counts
          * toward the template cap, and treating it as live stops garbage collection from
          * cancelling a job whose channel is already gone.
          */
@@ -202,13 +202,16 @@ public class SlurmGarbageCollection extends AbstractDescribableImpl<SlurmGarbage
             return liveJobIds;
         }
 
-        /** Online agents, and agents still inside {@code waitForAgentConnection}. */
+        /**
+         * Connected agents (including ones only temporarily offline, e.g. for disk space), agents
+         * with a build still on an executor, and agents still inside {@code waitForAgentConnection}.
+         */
         static boolean protectsJob(@NonNull SlurmAgent agent) {
             Computer computer = agent.toComputer();
             if (computer == null) {
                 return false;
             }
-            if (computer.isOnline()) {
+            if (SlurmReaper.isConnected(computer) || !computer.isIdle()) {
                 return true;
             }
             return computer instanceof SlurmComputer && ((SlurmComputer) computer).isLaunching();

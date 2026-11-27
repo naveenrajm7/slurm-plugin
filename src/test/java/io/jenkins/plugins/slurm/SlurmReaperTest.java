@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.model.Node;
 import hudson.model.TaskListener;
+import hudson.node_monitors.DiskSpaceMonitorDescriptor;
+import hudson.slaves.ComputerLauncher;
 import hudson.slaves.OfflineCause;
 import hudson.slaves.SlaveComputer;
 import io.jenkins.plugins.slurm.client.ApiException;
@@ -17,7 +19,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import org.jenkinsci.plugins.cloudstats.ProvisioningActivity;
+import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.job.WorkflowJob;
+import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -50,6 +56,67 @@ class SlurmReaperTest {
         SlurmReaper.reap(now + 60_000, 60_000);
         assertNull(j.jenkins.getNode(agent.getNodeName()));
         assertEquals(List.of("55"), cloud.cancelled);
+    }
+
+    @Test
+    void connectedAgentOfflineForDiskSpace_keepsRunningBuildAndJob(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-disk-space");
+        cloud.status = new SlurmJobStatus("61", "RUNNING", null, "nid1");
+        SlurmAgent agent = connectedAgent(j, cloud, "disk-space-busy", "61");
+        WorkflowRun build = startBuildOn(j, agent);
+        SlurmComputer computer = (SlurmComputer) agent.toComputer();
+
+        computer.setTemporarilyOffline(true, new DiskSpaceMonitorDescriptor.DiskSpace("/tmp", 1L));
+        assertTrue(computer.isOffline());
+
+        long now = 1_000_000L;
+        SlurmReaper.reap(now, 60_000);
+        SlurmReaper.reap(now + 600_000, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()), "a temporarily offline agent is still connected");
+        assertTrue(cloud.cancelled.isEmpty(), "disk space must not cancel the running job");
+        assertTrue(build.isBuilding());
+        assertTrue(SlurmGarbageCollection.PeriodicGarbageCollection.protectsJob(agent));
+
+        j.assertBuildStatusSuccess(j.waitForCompletion(build));
+    }
+
+    @Test
+    void connectedIdleAgentOfflineForDiskSpace_isNotReaped(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-disk-space-idle");
+        cloud.status = new SlurmJobStatus("62", "RUNNING", null, "nid1");
+        SlurmAgent agent = connectedAgent(j, cloud, "disk-space-idle", "62");
+        agent.toComputer().setTemporarilyOffline(true, new DiskSpaceMonitorDescriptor.DiskSpace("/tmp", 1L));
+
+        SlurmReaper.reap(1_000_000L, 60_000);
+        SlurmReaper.reap(1_600_000L, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()), "retention, not the reaper, ends a connected agent");
+        assertTrue(cloud.cancelled.isEmpty());
+        assertTrue(SlurmGarbageCollection.PeriodicGarbageCollection.liveJobIdsForCloud(cloud.name)
+                .contains("62"));
+    }
+
+    @Test
+    void agentWhoseChannelDropped_isStillReapedAfterGrace(JenkinsRule j) throws Exception {
+        StatusCloud cloud = cloud(j, "reap-disconnected");
+        cloud.status = new SlurmJobStatus("63", "RUNNING", null, "nid1");
+        SlurmAgent agent = connectedAgent(j, cloud, "channel-dropped", "63");
+        WorkflowRun build = startBuildOn(j, agent);
+        SlurmComputer computer = (SlurmComputer) agent.toComputer();
+        computer.setTemporarilyOffline(true, new DiskSpaceMonitorDescriptor.DiskSpace("/tmp", 1L));
+
+        computer.disconnect(new OfflineCause.ChannelTermination(new java.io.IOException("agent JVM gone")))
+                .get(30, TimeUnit.SECONDS);
+        j.waitForCompletion(build);
+        assertFalse(SlurmReaper.isConnected(computer));
+        assertTrue(computer.isIdle());
+        assertFalse(SlurmGarbageCollection.PeriodicGarbageCollection.protectsJob(agent));
+
+        long now = 1_000_000L;
+        SlurmReaper.reap(now, 60_000);
+        assertNotNull(j.jenkins.getNode(agent.getNodeName()), "inside the grace period the agent stays");
+        SlurmReaper.reap(now + 60_000, 60_000);
+        assertNull(j.jenkins.getNode(agent.getNodeName()), "a dead agent must still release its slot");
+        assertEquals(List.of("63"), cloud.cancelled);
     }
 
     @Test
@@ -188,9 +255,8 @@ class SlurmReaperTest {
         ((SlurmComputer) launching.toComputer()).setLaunching(false);
         // isOnline() is the other half of protectsJob. This computer has no channel, so it is offline.
         assertFalse(((SlurmComputer) launching.toComputer()).isOnline());
-        assertFalse(
-                SlurmGarbageCollection.PeriodicGarbageCollection.liveJobIdsForCloud(cloud.name)
-                        .contains("71"));
+        assertFalse(SlurmGarbageCollection.PeriodicGarbageCollection.liveJobIdsForCloud(cloud.name)
+                .contains("71"));
     }
 
     private static StatusCloud cloud(JenkinsRule j, String name) {
@@ -202,7 +268,34 @@ class SlurmReaperTest {
         return cloud;
     }
 
+    /** A Slurm agent with a real remoting channel, as after JNLP connect. */
+    private static SlurmAgent connectedAgent(JenkinsRule j, StatusCloud cloud, String name, String jobId)
+            throws Exception {
+        SlurmAgent agent = agent(cloud, name, j.createComputerLauncher(null));
+        agent.setSlurmJobId(jobId);
+        j.jenkins.addNode(agent);
+        agent.toComputer().connect(false).get(60, TimeUnit.SECONDS);
+        j.waitOnline(agent);
+        return agent;
+    }
+
+    private static WorkflowRun startBuildOn(JenkinsRule j, SlurmAgent agent) throws Exception {
+        WorkflowJob job = j.createProject(WorkflowJob.class, "busy-" + agent.getNodeName());
+        job.setDefinition(new CpsFlowDefinition("node('" + agent.getNodeName() + "') { sleep 20 }", true));
+        WorkflowRun build = job.scheduleBuild2(0).waitForStart();
+        long deadline = System.currentTimeMillis() + 60_000;
+        while (agent.toComputer().isIdle() && System.currentTimeMillis() < deadline) {
+            Thread.sleep(100);
+        }
+        assertFalse(agent.toComputer().isIdle(), "the build should be on the agent");
+        return build;
+    }
+
     private static SlurmAgent agent(StatusCloud cloud, String name) throws Exception {
+        return agent(cloud, name, new SlurmLauncher());
+    }
+
+    private static SlurmAgent agent(StatusCloud cloud, String name, ComputerLauncher launcher) throws Exception {
         return new SlurmAgent(
                 name,
                 "test agent",
@@ -210,7 +303,7 @@ class SlurmReaperTest {
                 1,
                 Node.Mode.NORMAL,
                 "linux",
-                new SlurmLauncher(),
+                launcher,
                 SlurmTestHelper.noConnect(),
                 Collections.emptyList(),
                 cloud.name,
